@@ -1,0 +1,177 @@
+// 線上課程學習網站 — 資料模型
+// 金額一律用整數（新台幣元），避免浮點誤差。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  passwordHash String? // OAuth 使用者可為 null
+  name         String?
+  image        String?
+  role         Role    @default(USER)
+
+  // 會員等級（依累積消費/購課數自動升級）
+  currentTierId String?
+  currentTier   MembershipTier? @relation(fields: [currentTierId], references: [id])
+  totalSpent    Int             @default(0) // 累積實付金額
+  coursesBought Int             @default(0) // 累積購課數
+
+  accounts    Account[]
+  orders      Order[]
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 等級門檻設定表（可由後台調整，免重新部署）
+model MembershipTier {
+  id               String @id @default(cuid())
+  name             String // 銅 / 銀 / 金
+  level            Int    @unique // 0,1,2,3…（用於排序與比較）
+  minTotalSpent    Int    @default(0) // 升級門檻：累積消費
+  minCoursesBought Int    @default(0) // 升級門檻：購課數（與上者並用，須同時達標）
+  discountPercent  Int    @default(0) // 折扣 %（0-100）
+
+  users User[]
+}
+
+model Course {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  title       String
+  description String  @db.Text
+  coverImage  String?
+  price       Int // 新台幣整數
+  isPublished Boolean @default(false)
+
+  lessons     Lesson[]
+  orderItems  OrderItem[]
+  enrollments Enrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Lesson {
+  id          String  @id @default(cuid())
+  courseId    String
+  course      Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  youtubeId   String // 只存 YouTube video id，播放頁才組成 embed
+  order       Int
+  durationSec Int?
+
+  @@index([courseId])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNo     String      @unique // ECPay MerchantTradeNo（≤20 字元）
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  status      OrderStatus @default(PENDING)
+  subtotal    Int // 折扣前總額
+  discount    Int         @default(0) // 套用的折扣金額
+  total       Int // 實付 = subtotal - discount
+  tierAtOrder Int? // 下單當下等級 level（稽核用）
+
+  items   OrderItem[]
+  payment Payment?
+
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+
+  @@index([userId])
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course @relation(fields: [courseId], references: [id])
+  unitPrice Int // 下單當下價格快照
+
+  @@unique([orderId, courseId])
+  @@index([courseId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  orderId     String        @unique
+  order       Order         @relation(fields: [orderId], references: [id])
+  provider    String // "ecpay" | "newebpay"
+  status      PaymentStatus @default(PENDING)
+  amount      Int
+  tradeNo     String? // 金流商交易序號（回傳）
+  paymentType String? // Credit / ATM / CVS…
+  rawCallback Json? // 完整 callback 存證
+  notifiedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 已購買關係 — 「能不能看課程」的唯一真實來源
+model Enrollment {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id])
+  courseId String
+  course   Course  @relation(fields: [courseId], references: [id])
+  orderId  String? // 來源訂單
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, courseId]) // 防重複授權，並保證 webhook 冪等
+  @@index([userId])
+}
+
+// Auth.js OAuth 帳號（採 JWT session 策略，故不需 Session model）
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
