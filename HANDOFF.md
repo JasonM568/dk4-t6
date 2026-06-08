@@ -1,10 +1,11 @@
 # HANDOFF — 線上課程學習平台
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-06-06**
+> 最後更新：**2026-06-08**
 
 ## 目前狀態：MVP 完成，本地可跑、測試全通過
 
+GitHub repo：<https://github.com/JasonM568/dk4-t6.git>（`main` 已 push）
 dev server：`pnpm dev` → http://localhost:3000
 測試帳號：管理員 `admin@example.com/admin1234`、學員 `user@example.com/user1234`
 
@@ -23,19 +24,19 @@ dev server：`pnpm dev` → http://localhost:3000
 - [x] 後台：課程 CRUD、章節管理、訂單查詢、會員與等級規則設定
 - [x] 自動化測試：簽章、付款流程（含冪等）、等級升級 — 全通過
 - [x] 本地 git 初始 commit
+- [x] Push 到 GitHub（2026-06-08）— remote `origin` → JasonM568/dk4-t6
 
 ---
 
 ## 📌 待辦（依優先序）
 
-1. **Push 到 GitHub**（目前無 remote）— 需使用者授權建 repo
-2. **真實金流測試**：`ngrok http 3000` → 改 `.env` 的 `NEXT_PUBLIC_BASE_URL` → ECPay sandbox 信用卡跑完整付款
-3. **部署 Vercel + Neon**：Marketplace 開 Neon、設環境變數、Build Command 加 `prisma migrate deploy`、ECPay 後台設 ReturnURL
-4. Google OAuth 登入（填 `AUTH_GOOGLE_ID/SECRET` 即啟用，登入頁按鈕 UI 待補）
-5. 購物車（一次買多門課；目前是單門直接結帳）
-6. 課程進度追蹤（已看章節、完課率）
-7. 訂單逾期處理（PENDING → EXPIRED 的 cron）
-8. 後台刪除課程：若已有售出 OrderItem 會被 FK 擋下，需先處理（軟刪除或擋 UI）
+1. **真實金流測試**：`ngrok http 3000` → 改 `.env` 的 `NEXT_PUBLIC_BASE_URL` → ECPay sandbox 信用卡跑完整付款
+2. **部署 Vercel + Neon**：Marketplace 開 Neon、設環境變數、Build Command 加 `prisma migrate deploy`、ECPay 後台設 ReturnURL
+3. Google OAuth 登入（填 `AUTH_GOOGLE_ID/SECRET` 即啟用，登入頁按鈕 UI 待補）
+4. 購物車（一次買多門課；目前是單門直接結帳）
+5. 課程進度追蹤（已看章節、完課率）
+6. 訂單逾期處理（PENDING → EXPIRED 的 cron）
+7. 後台刪除課程：若已有售出 OrderItem 會被 FK 擋下，需先處理（軟刪除或擋 UI）
 
 ---
 
