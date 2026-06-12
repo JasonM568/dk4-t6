@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/server";
 import { formatNT } from "@/lib/format";
-import { computeDiscount } from "@/lib/membership/tier";
+import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { BuyButton } from "@/components/buy-button";
 
 export default async function CourseDetailPage({
@@ -30,10 +30,13 @@ export default async function CourseDetailPage({
       prisma.enrollment.findUnique({
         where: { userId_courseId: { userId, courseId: course.id } },
       }),
-      prisma.memberStats.findUnique({
-        where: { userId },
-        include: { currentTier: true },
-      }),
+      // 分級制度停用時不查等級，一律顯示原價
+      TIER_SYSTEM_ENABLED
+        ? prisma.memberStats.findUnique({
+            where: { userId },
+            include: { currentTier: true },
+          })
+        : Promise.resolve(null),
     ]);
     isEnrolled = !!enrollment;
     discountPercent = stats?.currentTier?.discountPercent ?? 0;

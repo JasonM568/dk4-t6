@@ -3,7 +3,7 @@
 import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment";
-import { computeDiscount } from "@/lib/membership/tier";
+import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 
 export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
@@ -39,10 +39,13 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
   }
 
   // 讀取會員等級折扣（MemberStats 是 lazy upsert，沒有就視為無折扣）
-  const stats = await prisma.memberStats.findUnique({
-    where: { userId },
-    include: { currentTier: true },
-  });
+  // 分級制度停用時一律原價，不查等級
+  const stats = TIER_SYSTEM_ENABLED
+    ? await prisma.memberStats.findUnique({
+        where: { userId },
+        include: { currentTier: true },
+      })
+    : null;
   const discountPercent = stats?.currentTier?.discountPercent ?? 0;
   const tierLevel = stats?.currentTier?.level ?? 0;
 

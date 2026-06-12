@@ -1,6 +1,13 @@
 import type { Prisma } from "@prisma/client";
 
 /**
+ * 會員分級制度總開關。
+ * false：前台不顯示等級與折扣、結帳一律原價；
+ *        後台等級規則設定與 webhook 的消費統計照常運作，重新啟用時資料無缺。
+ */
+export const TIER_SYSTEM_ENABLED = false;
+
+/**
  * 依會員目前的累積消費 / 購課數（MemberStats），重算並更新會員等級。
  * 在付款成功 webhook 的同一個 transaction 內呼叫。
  */
