@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 
 export const metadata = { title: "我的課程" };
 
 export default async function MyCoursesPage() {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
 
   const enrollments = await prisma.enrollment.findMany({
-    where: { userId: session.user.id },
+    where: { userId: user.id },
     include: { course: { include: { _count: { select: { lessons: true } } } } },
     orderBy: { createdAt: "desc" },
   });

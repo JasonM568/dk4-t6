@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 import {
   formatNT,
@@ -15,15 +15,15 @@ export default async function OrderDetailPage({
   params: Promise<{ orderNo: string }>;
 }) {
   const { orderNo } = await params;
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
 
   const order = await prisma.order.findUnique({
     where: { orderNo },
     include: { items: { include: { course: true } }, payment: true },
   });
   // 只能看自己的訂單
-  if (!order || order.userId !== session.user.id) notFound();
+  if (!order || order.userId !== user.id) notFound();
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">

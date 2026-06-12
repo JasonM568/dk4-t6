@@ -1,6 +1,6 @@
 "use server";
 
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount } from "@/lib/membership/tier";
@@ -19,11 +19,11 @@ function genOrderNo(): string {
  * 折扣依「下單當下」的會員等級在 server 端計算，前端無法竄改。
  */
 export async function createCheckout(courseId: string): Promise<CheckoutResult> {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAuthUser();
+  if (!user) {
     return { ok: false, error: "請先登入", redirect: "/login" };
   }
-  const userId = session.user.id;
+  const userId = user.id;
 
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   if (!course || !course.isPublished) {
@@ -38,13 +38,13 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
     return { ok: false, error: "你已擁有此課程", redirect: "/my-courses" };
   }
 
-  // 讀取會員等級折扣
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  // 讀取會員等級折扣（MemberStats 是 lazy upsert，沒有就視為無折扣）
+  const stats = await prisma.memberStats.findUnique({
+    where: { userId },
     include: { currentTier: true },
   });
-  const discountPercent = user?.currentTier?.discountPercent ?? 0;
-  const tierLevel = user?.currentTier?.level ?? 0;
+  const discountPercent = stats?.currentTier?.discountPercent ?? 0;
+  const tierLevel = stats?.currentTier?.level ?? 0;
 
   const subtotal = course.price;
   const discount = computeDiscount(subtotal, discountPercent);
@@ -57,6 +57,7 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
     data: {
       orderNo,
       userId,
+      buyerEmail: user.email, // 下單當下 email 快照（後台顯示與稽核用）
       status: "PENDING",
       subtotal,
       discount,

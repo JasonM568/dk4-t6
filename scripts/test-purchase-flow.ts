@@ -3,7 +3,10 @@
  * 執行：npx tsx scripts/test-purchase-flow.ts
  *
  * 模擬：建立 PENDING 訂單 → 用 ECPay 簽章組 notify → POST 兩次（測冪等）
- * 驗證：訂單轉 PAID、建立 enrollment、totalSpent 只加一次、等級重算。
+ * 驗證：訂單轉 PAID、建立 enrollment、MemberStats.totalSpent 只加一次、等級重算。
+ *
+ * 會員帳號在 Supabase Auth，本機 DB 不存使用者——
+ * 一律用固定測試 uuid（對齊 prisma/seed.ts 的 TEST_USER_ID）。
  */
 import { PrismaClient } from "@prisma/client";
 import { ecpayCheckMacValue } from "../src/lib/payment/ecpay";
@@ -13,9 +16,15 @@ const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
 const HASH_KEY = process.env.ECPAY_HASH_KEY ?? "5294y06JbISpM5x9";
 const HASH_IV = process.env.ECPAY_HASH_IV ?? "v77hoKGq4kWxNNIS";
 
+// 固定測試用 uuid（須與 prisma/seed.ts 的 TEST_USER_ID 一致；
+// seed.ts 匯入即執行 main()，故不直接 import）
+const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
+const TEST_BUYER_EMAIL = "testuser@example.com"; // 下單當下 email 快照（模擬）
+
 async function main() {
-  const user = await prisma.user.findUniqueOrThrow({
-    where: { email: "user@example.com" },
+  // MemberStats 是 lazy upsert，首次跑可能還沒有 → 以預設值起算
+  const statsBefore = await prisma.memberStats.findUnique({
+    where: { userId: TEST_USER_ID },
     include: { currentTier: true },
   });
   const course = await prisma.course.findUniqueOrThrow({
@@ -24,20 +33,21 @@ async function main() {
 
   // 乾淨起點
   await prisma.enrollment.deleteMany({
-    where: { userId: user.id, courseId: course.id },
+    where: { userId: TEST_USER_ID, courseId: course.id },
   });
 
-  const spentBefore = user.totalSpent;
+  const spentBefore = statsBefore?.totalSpent ?? 0;
   const orderNo = "ITG" + Date.now();
   await prisma.order.create({
     data: {
       orderNo,
-      userId: user.id,
+      userId: TEST_USER_ID,
+      buyerEmail: TEST_BUYER_EMAIL,
       status: "PENDING",
       subtotal: course.price,
       discount: 0,
       total: course.price,
-      tierAtOrder: user.currentTier?.level ?? 0,
+      tierAtOrder: statsBefore?.currentTier?.level ?? 0,
       items: { create: [{ courseId: course.id, unitPrice: course.price }] },
       payment: { create: { provider: "ecpay", status: "PENDING", amount: course.price } },
     },
@@ -80,10 +90,11 @@ async function main() {
     include: { payment: true },
   });
   const enrollment = await prisma.enrollment.findUnique({
-    where: { userId_courseId: { userId: user.id, courseId: course.id } },
+    where: { userId_courseId: { userId: TEST_USER_ID, courseId: course.id } },
   });
-  const after = await prisma.user.findUniqueOrThrow({
-    where: { id: user.id },
+  // webhook 內 memberStats.upsert 後一定存在
+  const after = await prisma.memberStats.findUniqueOrThrow({
+    where: { userId: TEST_USER_ID },
     include: { currentTier: true },
   });
 
@@ -91,9 +102,10 @@ async function main() {
   const checks: [string, boolean, string][] = [
     ["訂單狀態 PAID", order.status === "PAID", order.status],
     ["付款狀態 SUCCESS", order.payment?.status === "SUCCESS", String(order.payment?.status)],
+    ["buyerEmail 快照保存", order.buyerEmail === TEST_BUYER_EMAIL, String(order.buyerEmail)],
     ["已建立 enrollment", !!enrollment, enrollment ? "yes" : "no"],
     [
-      `totalSpent 只加一次 (+${course.price})`,
+      `MemberStats.totalSpent 只加一次 (+${course.price})`,
       after.totalSpent === spentBefore + course.price,
       `${spentBefore} → ${after.totalSpent}`,
     ],

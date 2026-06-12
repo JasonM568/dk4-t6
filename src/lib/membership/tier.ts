@@ -1,15 +1,15 @@
 import type { Prisma } from "@prisma/client";
 
 /**
- * 依使用者目前的累積消費 / 購課數，重算並更新會員等級。
+ * 依會員目前的累積消費 / 購課數（MemberStats），重算並更新會員等級。
  * 在付款成功 webhook 的同一個 transaction 內呼叫。
  */
 export async function recalcTier(
   tx: Prisma.TransactionClient,
   userId: string,
 ): Promise<void> {
-  const user = await tx.user.findUnique({ where: { id: userId } });
-  if (!user) return;
+  const stats = await tx.memberStats.findUnique({ where: { userId } });
+  if (!stats) return;
 
   const tiers = await tx.membershipTier.findMany({
     orderBy: { level: "desc" },
@@ -18,13 +18,13 @@ export async function recalcTier(
   // 找出「同時符合消費門檻與購課數門檻」的最高等級
   const matched = tiers.find(
     (t) =>
-      user.totalSpent >= t.minTotalSpent &&
-      user.coursesBought >= t.minCoursesBought,
+      stats.totalSpent >= t.minTotalSpent &&
+      stats.coursesBought >= t.minCoursesBought,
   );
 
-  if (matched && matched.id !== user.currentTierId) {
-    await tx.user.update({
-      where: { id: userId },
+  if (matched && matched.id !== stats.currentTierId) {
+    await tx.memberStats.update({
+      where: { userId },
       data: { currentTierId: matched.id },
     });
   }

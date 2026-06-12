@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { formatNT } from "@/lib/format";
 import { computeDiscount } from "@/lib/membership/tier";
 import { BuyButton } from "@/components/buy-button";
@@ -17,26 +17,27 @@ export default async function CourseDetailPage({
   });
   if (!course || !course.isPublished) notFound();
 
-  const session = await auth();
-  const userId = session?.user?.id;
+  // 可選登入：未登入也能看課程詳情，只是沒有會員折扣
+  const user = await getAuthUser();
+  const userId = user?.id;
 
   let isEnrolled = false;
   let discountPercent = 0;
   let tierName: string | null = null;
 
   if (userId) {
-    const [enrollment, user] = await Promise.all([
+    const [enrollment, stats] = await Promise.all([
       prisma.enrollment.findUnique({
         where: { userId_courseId: { userId, courseId: course.id } },
       }),
-      prisma.user.findUnique({
-        where: { id: userId },
+      prisma.memberStats.findUnique({
+        where: { userId },
         include: { currentTier: true },
       }),
     ]);
     isEnrolled = !!enrollment;
-    discountPercent = user?.currentTier?.discountPercent ?? 0;
-    tierName = user?.currentTier?.name ?? null;
+    discountPercent = stats?.currentTier?.discountPercent ?? 0;
+    tierName = stats?.currentTier?.name ?? null;
   }
 
   const discount = computeDiscount(course.price, discountPercent);

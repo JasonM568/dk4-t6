@@ -1,16 +1,21 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
+import { getProfileRole } from "@/lib/supabase/admin";
+import { isAdminRole } from "@/lib/auth/role";
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // 縱深防禦：middleware 已擋一次，layout 再以 DB session 二次驗證
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  // proxy 只驗「已登入」，admin 角色檢查由這層負責——
+  // 這是後台唯一守門員，不可省略
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
+
+  const role = await getProfileRole(user.id);
+  if (!isAdminRole(role)) redirect("/dashboard");
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">

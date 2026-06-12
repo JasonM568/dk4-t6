@@ -1,18 +1,33 @@
 import { prisma } from "@/lib/db";
+import { listProfiles } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
 import { updateTier } from "@/actions/admin";
 
 export const metadata = { title: "會員與等級" };
 
 export default async function AdminMembersPage() {
-  const [members, tiers] = await Promise.all([
-    prisma.user.findMany({
-      include: { currentTier: true, _count: { select: { enrollments: true } } },
-      orderBy: { totalSpent: "desc" },
-      take: 100,
-    }),
+  // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
+  // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
+  const [profiles, statsList, tiers] = await Promise.all([
+    listProfiles(),
+    prisma.memberStats.findMany({ include: { currentTier: true } }),
     prisma.membershipTier.findMany({ orderBy: { level: "asc" } }),
   ]);
+
+  const statsByUserId = new Map(statsList.map((s) => [s.userId, s]));
+  // MemberStats 是 lazy upsert（首次付款才建立），沒有統計的會員以 0 顯示
+  const members = profiles
+    .map((p) => {
+      const stats = statsByUserId.get(p.id);
+      return {
+        ...p,
+        currentTier: stats?.currentTier ?? null,
+        totalSpent: stats?.totalSpent ?? 0,
+        coursesBought: stats?.coursesBought ?? 0,
+      };
+    })
+    .sort((a, b) => b.totalSpent - a.totalSpent)
+    .slice(0, 100);
 
   return (
     <div className="space-y-10">
@@ -78,19 +93,19 @@ export default async function AdminMembersPage() {
               {members.map((m) => (
                 <tr key={m.id}>
                   <td className="px-4 py-3">
-                    <div className="font-medium">{m.name ?? "—"}</div>
+                    <div className="font-medium">{m.display_name ?? "—"}</div>
                     <div className="text-xs text-gray-400">{m.email}</div>
                   </td>
                   <td className="px-4 py-3">{m.currentTier?.name ?? "—"}</td>
                   <td className="px-4 py-3">{formatNT(m.totalSpent)}</td>
                   <td className="px-4 py-3">{m.coursesBought}</td>
                   <td className="px-4 py-3">
-                    {m.role === "ADMIN" ? (
+                    {m.role === "admin" ? (
                       <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
                         管理員
                       </span>
                     ) : (
-                      "會員"
+                      (m.role ?? "會員")
                     )}
                   </td>
                 </tr>

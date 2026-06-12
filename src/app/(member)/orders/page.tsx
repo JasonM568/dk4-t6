@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 import {
   formatNT,
@@ -12,11 +12,11 @@ import {
 export const metadata = { title: "訂單管理" };
 
 export default async function OrdersPage() {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
 
   const orders = await prisma.order.findMany({
-    where: { userId: session.user.id },
+    where: { userId: user.id },
     include: { items: { include: { course: true } } },
     orderBy: { createdAt: "desc" },
   });

@@ -1,7 +1,10 @@
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+
+// 固定測試用 uuid（對應 Supabase auth.users.id 的格式；本機測試腳本共用）
+// 注意：會員帳號在 Supabase Auth，本 seed 不建立任何使用者。
+export const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
 
 async function main() {
   // ── 會員等級（依累積消費自動升級）──────────────────────────
@@ -19,31 +22,15 @@ async function main() {
   }
   const bronze = await prisma.membershipTier.findUnique({ where: { level: 0 } });
 
-  // ── 管理員帳號 ─────────────────────────────────────────────
-  const adminPassword = await bcrypt.hash("admin1234", 10);
-  await prisma.user.upsert({
-    where: { email: "admin@example.com" },
-    update: { role: "ADMIN" },
-    create: {
-      email: "admin@example.com",
-      name: "系統管理員",
-      passwordHash: adminPassword,
-      role: "ADMIN",
-      currentTierId: bronze?.id,
-    },
-  });
-
-  // ── 一般測試會員 ───────────────────────────────────────────
-  const userPassword = await bcrypt.hash("user1234", 10);
-  await prisma.user.upsert({
-    where: { email: "user@example.com" },
+  // ── 測試會員統計（lazy upsert 的初始示範資料）───────────────
+  await prisma.memberStats.upsert({
+    where: { userId: TEST_USER_ID },
     update: {},
     create: {
-      email: "user@example.com",
-      name: "測試學員",
-      passwordHash: userPassword,
-      role: "USER",
+      userId: TEST_USER_ID,
       currentTierId: bronze?.id,
+      totalSpent: 0,
+      coursesBought: 0,
     },
   });
 
@@ -53,7 +40,7 @@ async function main() {
       slug: "nextjs-fullstack",
       title: "Next.js 全端開發實戰",
       description:
-        "從零打造一個具備會員、金流、後台的全端網站。涵蓋 App Router、Server Actions、Prisma、Auth.js 與 ECPay 金流串接。",
+        "從零打造一個具備會員、金流、後台的全端網站。涵蓋 App Router、Server Actions、Prisma、Supabase Auth 與 ECPay 金流串接。",
       coverImage: "https://images.unsplash.com/photo-1517180102446-f3ece451e9d8?w=800",
       price: 2400,
       isPublished: true,
@@ -105,9 +92,8 @@ async function main() {
     });
   }
 
-  console.log("✅ Seed 完成：3 個等級、admin/user 帳號、3 門課程");
-  console.log("   管理員：admin@example.com / admin1234");
-  console.log("   學員：  user@example.com / user1234");
+  console.log("✅ Seed 完成：3 個等級、3 門課程、測試會員統計");
+  console.log(`   測試用 userId：${TEST_USER_ID}（會員帳號在 Supabase Auth，不在本 DB）`);
 }
 
 main()

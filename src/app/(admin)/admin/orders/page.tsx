@@ -11,7 +11,6 @@ export const metadata = { title: "訂單查詢" };
 export default async function AdminOrdersPage() {
   const orders = await prisma.order.findMany({
     include: {
-      user: true,
       items: { include: { course: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -37,7 +36,8 @@ export default async function AdminOrdersPage() {
             {orders.map((o) => (
               <tr key={o.id}>
                 <td className="px-4 py-3 font-mono text-xs">{o.orderNo}</td>
-                <td className="px-4 py-3">{o.user.email}</td>
+                {/* 會員 email 用下單當下的快照欄位（User 關聯已移除） */}
+                <td className="px-4 py-3">{o.buyerEmail ?? "—"}</td>
                 <td className="px-4 py-3">
                   {o.items.map((it) => it.course.title).join("、")}
                 </td>

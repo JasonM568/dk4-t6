@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/db";
+import { countProfiles } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
 
 export const metadata = { title: "後台總覽" };
 
 export default async function AdminDashboard() {
+  // 會員人數改數 Supabase public.profiles（唯讀）；其餘統計仍在 course schema
   const [courseCount, userCount, paidOrders, revenue] = await Promise.all([
     prisma.course.count(),
-    prisma.user.count(),
+    countProfiles(),
     prisma.order.count({ where: { status: "PAID" } }),
     prisma.order.aggregate({
       where: { status: "PAID" },

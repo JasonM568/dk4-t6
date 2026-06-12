@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 
 export default async function LearnPage({
@@ -13,9 +13,9 @@ export default async function LearnPage({
   const { courseSlug } = await params;
   const { lesson } = await searchParams;
 
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
-  const userId = session.user.id;
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
+  const userId = user.id;
 
   const course = await prisma.course.findUnique({
     where: { slug: courseSlug },

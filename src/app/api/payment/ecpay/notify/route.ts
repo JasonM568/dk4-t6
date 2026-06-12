@@ -71,11 +71,17 @@ export async function POST(req: NextRequest) {
         }
 
         // 累加消費並重算會員等級
-        await tx.user.update({
-          where: { id: order.userId },
-          data: {
+        // MemberStats 採 lazy upsert：首次付款成功時建立，之後累加
+        await tx.memberStats.upsert({
+          where: { userId: order.userId },
+          update: {
             totalSpent: { increment: order.total },
             coursesBought: { increment: order.items.length },
+          },
+          create: {
+            userId: order.userId,
+            totalSpent: order.total,
+            coursesBought: order.items.length,
           },
         });
         await recalcTier(tx, order.userId);

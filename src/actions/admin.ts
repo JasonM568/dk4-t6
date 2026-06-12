@@ -3,12 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
+import { getProfileRole } from "@/lib/supabase/admin";
+import { isAdminRole } from "@/lib/auth/role";
 import { prisma } from "@/lib/db";
 
+// 後台 action 守門：先驗登入，再查 profiles.role 確認 admin
 async function requireAdmin() {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN") {
+  const user = await getAuthUser();
+  if (!user) {
+    throw new Error("需要管理員權限");
+  }
+  const role = await getProfileRole(user.id);
+  if (!isAdminRole(role)) {
     throw new Error("需要管理員權限");
   }
 }

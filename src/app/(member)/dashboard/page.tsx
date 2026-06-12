@@ -1,35 +1,39 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 import { formatNT } from "@/lib/format";
 
 export const metadata = { title: "會員中心" };
 
 export default async function DashboardPage() {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    include: {
-      currentTier: true,
-      _count: { select: { enrollments: true, orders: true } },
-    },
-  });
+  const user = await getAuthUser();
   if (!user) redirect("/login");
+
+  // MemberStats 是 lazy upsert（首次付款成功才建立），新會員可能還沒有 → 用預設值
+  const [stats, orderCount] = await Promise.all([
+    prisma.memberStats.findUnique({
+      where: { userId: user.id },
+      include: { currentTier: true },
+    }),
+    prisma.order.count({ where: { userId: user.id } }),
+  ]);
+
+  const totalSpent = stats?.totalSpent ?? 0;
+  const coursesBought = stats?.coursesBought ?? 0;
+  const currentTier = stats?.currentTier ?? null;
 
   // 下一個等級門檻
   const tiers = await prisma.membershipTier.findMany({
     orderBy: { level: "asc" },
   });
-  const currentLevel = user.currentTier?.level ?? 0;
+  const currentLevel = currentTier?.level ?? 0;
   const nextTier = tiers.find((t) => t.level > currentLevel);
   const remaining = nextTier
-    ? Math.max(0, nextTier.minTotalSpent - user.totalSpent)
+    ? Math.max(0, nextTier.minTotalSpent - totalSpent)
     : 0;
   const progress = nextTier
-    ? Math.min(100, Math.round((user.totalSpent / nextTier.minTotalSpent) * 100))
+    ? Math.min(100, Math.round((totalSpent / nextTier.minTotalSpent) * 100))
     : 100;
 
   return (
@@ -40,16 +44,18 @@ export default async function DashboardPage() {
       <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 p-6 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm opacity-80">{user.name ?? user.email}</div>
+            <div className="text-sm opacity-80">
+              {user.displayName ?? user.email}
+            </div>
             <div className="mt-1 text-2xl font-bold">
-              {user.currentTier?.name ?? "一般會員"}
+              {currentTier?.name ?? "一般會員"}
             </div>
           </div>
           <div className="text-right">
             <div className="text-sm opacity-80">目前折扣</div>
             <div className="text-2xl font-bold">
-              {user.currentTier?.discountPercent
-                ? `${100 - user.currentTier.discountPercent} 折`
+              {currentTier?.discountPercent
+                ? `${100 - currentTier.discountPercent} 折`
                 : "無"}
             </div>
           </div>
@@ -75,9 +81,9 @@ export default async function DashboardPage() {
 
       {/* 統計 */}
       <div className="mt-6 grid grid-cols-3 gap-4">
-        <Stat label="累積消費" value={formatNT(user.totalSpent)} />
-        <Stat label="購買課程" value={`${user.coursesBought} 門`} />
-        <Stat label="訂單數" value={`${user._count.orders} 筆`} />
+        <Stat label="累積消費" value={formatNT(totalSpent)} />
+        <Stat label="購買課程" value={`${coursesBought} 門`} />
+        <Stat label="訂單數" value={`${orderCount} 筆`} />
       </div>
 
       {/* 快速連結 */}

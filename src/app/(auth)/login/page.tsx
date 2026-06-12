@@ -20,7 +20,6 @@ export default function LoginPage() {
             name="email"
             type="email"
             required
-            defaultValue="user@example.com"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
           />
         </div>
@@ -30,7 +29,6 @@ export default function LoginPage() {
             name="password"
             type="password"
             required
-            defaultValue="user1234"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
           />
         </div>
@@ -48,13 +46,21 @@ export default function LoginPage() {
         </button>
       </form>
       <p className="mt-4 text-center text-sm text-gray-600">
+        <Link
+          href="/forgot-password"
+          className="text-gray-600 underline transition hover:text-black"
+        >
+          忘記密碼？
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-sm text-gray-600">
         還沒有帳號？{" "}
         <Link href="/register" className="font-medium text-black underline">
           註冊
         </Link>
       </p>
       <p className="mt-2 text-center text-xs text-gray-400">
-        測試帳號 user@example.com / user1234（已預填）
+        帳號與希望學院（hope.huangxi.info）通用
       </p>
     </div>
   );

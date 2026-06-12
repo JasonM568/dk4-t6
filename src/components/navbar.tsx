@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { auth } from "@/auth";
+import { getAuthUser } from "@/lib/supabase/server";
+import { getProfileRole } from "@/lib/supabase/admin";
+import { isAdminRole } from "@/lib/auth/role";
 import { LogoutButton } from "./logout-button";
 
 export async function Navbar() {
-  const session = await auth();
-  const user = session?.user;
+  const user = await getAuthUser();
+  // admin 連結：查 profiles.role（proxy 不驗角色，這裡只影響顯示，後台另有 layout 守門）
+  const isAdmin = user ? isAdminRole(await getProfileRole(user.id)) : false;
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
@@ -27,7 +30,7 @@ export async function Navbar() {
               我的課程
             </Link>
           )}
-          {user?.role === "ADMIN" && (
+          {isAdmin && (
             <Link
               href="/admin"
               className="text-sm font-medium text-indigo-600 transition hover:text-indigo-800"
@@ -43,7 +46,7 @@ export async function Navbar() {
                 href="/dashboard"
                 className="text-sm text-gray-600 transition hover:text-black"
               >
-                {user.name ?? user.email}
+                {user.displayName ?? user.email}
               </Link>
               <LogoutButton />
             </>
