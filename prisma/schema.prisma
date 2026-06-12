@@ -60,10 +60,12 @@ model Course {
   description String   @db.Text
   coverImage  String?
   introImages String[] @default([]) // 課程介紹圖（詳情頁描述下方依序顯示）
-  price       Int // 新台幣整數
+  listPrice   Int? // 建議售價（僅展示用，前台劃線價；空 = 不顯示）
+  price       Int // 優惠價 = 實際售價（新台幣整數，金流以此計算）
   isPublished Boolean  @default(false)
 
   lessons     Lesson[]
+  materials   CourseMaterial[]
   orderItems  OrderItem[]
   enrollments Enrollment[]
 
@@ -77,8 +79,22 @@ model Lesson {
   course      Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   title       String
   youtubeId   String // 只存 YouTube video id，播放頁才組成 embed
+  slideUrl    String? // 線上簡報嵌入網址（Google Slides/Canva），播放頁影片下方顯示
   order       Int
   durationSec Int?
+
+  @@index([courseId])
+}
+
+// 課程講義（下載檔案，存 Supabase Storage 或外部網址）
+model CourseMaterial {
+  id       String @id @default(cuid())
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title    String
+  url      String
+
+  createdAt DateTime @default(now())
 
   @@index([courseId])
 }

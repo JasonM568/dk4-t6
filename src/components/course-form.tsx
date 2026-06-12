@@ -11,6 +11,7 @@ type CourseFormProps = {
     description?: string;
     coverImage?: string | null;
     introImages?: string[];
+    listPrice?: number | null;
     price?: number;
     isPublished?: boolean;
   };
@@ -122,16 +123,28 @@ export function CourseForm({
           可一次選多張，新圖會接在既有圖之後；單張 5MB 內
         </p>
       </Field>
-      <Field label="售價（新台幣整數）">
-        <input
-          name="price"
-          type="number"
-          min={0}
-          required
-          defaultValue={defaultValues.price ?? 0}
-          className="input"
-        />
-      </Field>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="建議售價（選填，前台顯示劃線價）">
+          <input
+            name="listPrice"
+            type="number"
+            min={0}
+            defaultValue={defaultValues.listPrice ?? ""}
+            placeholder="例：3600"
+            className="input"
+          />
+        </Field>
+        <Field label="優惠價＝實際售價（新台幣整數）">
+          <input
+            name="price"
+            type="number"
+            min={0}
+            required
+            defaultValue={defaultValues.price ?? 0}
+            className="input"
+          />
+        </Field>
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input
           name="isPublished"

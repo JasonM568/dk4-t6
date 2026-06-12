@@ -6,6 +6,7 @@ type Lesson = {
   id: string;
   title: string;
   youtubeId: string;
+  slideUrl: string | null;
   order: number;
   durationSec: number | null;
 };
@@ -99,6 +100,18 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
             name="durationSec"
             type="number"
             defaultValue={lesson.durationSec ?? ""}
+            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="w-full">
+          <label className="mb-1 block text-xs text-gray-500">
+            線上簡報網址（選填，貼 Google Slides / Canva 分享連結即可）
+          </label>
+          <input
+            name="slideUrl"
+            type="url"
+            defaultValue={lesson.slideUrl ?? ""}
+            placeholder="https://docs.google.com/presentation/…"
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
         </div>

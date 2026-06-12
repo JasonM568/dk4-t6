@@ -7,9 +7,12 @@ import {
   addLesson,
   updateLesson,
   deleteLesson,
+  addMaterialAction,
+  deleteMaterial,
 } from "@/actions/admin";
 import { CourseForm } from "@/components/course-form";
 import { LessonRow } from "./lesson-row";
+import { MaterialsSection } from "./materials-section";
 
 export default async function EditCoursePage({
   params,
@@ -19,7 +22,10 @@ export default async function EditCoursePage({
   const { id } = await params;
   const course = await prisma.course.findUnique({
     where: { id },
-    include: { lessons: { orderBy: { order: "asc" } } },
+    include: {
+      lessons: { orderBy: { order: "asc" } },
+      materials: { orderBy: { createdAt: "asc" } },
+    },
   });
   if (!course) notFound();
 
@@ -96,11 +102,34 @@ export default async function EditCoursePage({
               className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
             />
           </div>
+          <div className="w-full">
+            <label className="mb-1 block text-xs text-gray-500">
+              線上簡報網址（選填，貼 Google Slides / Canva 分享連結即可）
+            </label>
+            <input
+              name="slideUrl"
+              type="url"
+              placeholder="https://docs.google.com/presentation/…"
+              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </div>
           <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white">
             新增章節
           </button>
         </form>
       </div>
+
+      {/* 講義管理 */}
+      <MaterialsSection
+        materials={course.materials}
+        addAction={addMaterialAction.bind(null, course.id)}
+        deleteActions={Object.fromEntries(
+          course.materials.map((m) => [
+            m.id,
+            deleteMaterial.bind(null, m.id, course.id),
+          ]),
+        )}
+      />
 
       {/* 危險操作 */}
       <div className="mt-10 max-w-2xl rounded-xl border border-red-200 bg-red-50 p-4">

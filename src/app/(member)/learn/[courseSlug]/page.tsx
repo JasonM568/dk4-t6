@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
 import { extractYoutubeId } from "@/lib/youtube";
+import { toSlideEmbedUrl } from "@/lib/embed";
 import { prisma } from "@/lib/db";
 
 export default async function LearnPage({
@@ -20,7 +21,10 @@ export default async function LearnPage({
 
   const course = await prisma.course.findUnique({
     where: { slug: courseSlug },
-    include: { lessons: { orderBy: { order: "asc" } } },
+    include: {
+      lessons: { orderBy: { order: "asc" } },
+      materials: { orderBy: { createdAt: "asc" } },
+    },
   });
   if (!course) notFound();
 
@@ -69,6 +73,22 @@ export default async function LearnPage({
             })()}
           </div>
           <h2 className="mt-4 text-xl font-bold">{current.title}</h2>
+
+          {/* 線上簡報（章節有設定才顯示） */}
+          {current.slideUrl && (
+            <div className="mt-6">
+              <h3 className="mb-2 font-medium">📑 本章簡報</h3>
+              <div className="aspect-video overflow-hidden rounded-xl border border-gray-200">
+                <iframe
+                  key={`slide-${current.id}`}
+                  className="h-full w-full"
+                  src={toSlideEmbedUrl(current.slideUrl)}
+                  title={`${current.title} 簡報`}
+                  allowFullScreen
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 章節列表 */}
@@ -99,6 +119,31 @@ export default async function LearnPage({
               })}
             </ul>
           </div>
+
+          {/* 課程講義下載 */}
+          {course.materials.length > 0 && (
+            <div className="mt-6 rounded-xl border border-gray-200">
+              <div className="border-b border-gray-100 px-4 py-3 font-medium">
+                課程講義（{course.materials.length}）
+              </div>
+              <ul className="divide-y divide-gray-100">
+                {course.materials.map((m) => (
+                  <li key={m.id}>
+                    <a
+                      href={m.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-gray-50"
+                    >
+                      <span>📄</span>
+                      <span className="flex-1">{m.title}</span>
+                      <span className="text-xs text-indigo-600">下載</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </aside>
       </div>
     </div>

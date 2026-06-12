@@ -160,6 +160,47 @@ export async function uploadCourseImage(
   return { ok: true, url: data.publicUrl };
 }
 
+// 講義允許的檔案格式（bucket 的 allowed_mime_types 須同步包含這些）
+const ALLOWED_MATERIAL_TYPES: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/zip": "zip",
+};
+const MAX_MATERIAL_BYTES = 20 * 1024 * 1024; // 20MB
+
+// 上傳課程講義（PDF/Office/ZIP），回傳公開網址
+export async function uploadCourseMaterial(file: File): Promise<UploadResult> {
+  const ext = ALLOWED_MATERIAL_TYPES[file.type];
+  if (!ext) {
+    return {
+      ok: false,
+      error: `「${file.name}」格式不支援（限 PDF、PPT、Word、Excel、ZIP）`,
+    };
+  }
+  if (file.size > MAX_MATERIAL_BYTES) {
+    return { ok: false, error: `「${file.name}」超過 20MB，請壓縮後再上傳` };
+  }
+
+  const path = `materials/${crypto.randomUUID()}.${ext}`;
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage
+    .from(COURSE_ASSETS_BUCKET)
+    .upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+
+  if (error) {
+    console.error("[supabase/admin] 講義上傳失敗：", file.name, error.message);
+    return { ok: false, error: `「${file.name}」上傳失敗：${error.message}` };
+  }
+
+  const { data } = supabase.storage.from(COURSE_ASSETS_BUCKET).getPublicUrl(path);
+  return { ok: true, url: data.publicUrl };
+}
+
 // 後台會員列表用：唯讀撈出全部 profiles
 export async function listProfiles(): Promise<Profile[]> {
   const supabase = createAdminClient();

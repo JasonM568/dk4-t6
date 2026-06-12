@@ -120,8 +120,23 @@ export default async function CourseDetailPage({
                 </div>
               </div>
             ) : (
-              <div className="mb-4 text-3xl font-bold text-indigo-600">
-                {formatNT(course.price)}
+              <div className="mb-4">
+                {course.listPrice != null && course.listPrice > course.price && (
+                  <div className="text-sm text-gray-400">
+                    建議售價{" "}
+                    <span className="line-through">
+                      {formatNT(course.listPrice)}
+                    </span>
+                  </div>
+                )}
+                <div className="text-3xl font-bold text-indigo-600">
+                  {formatNT(course.price)}
+                </div>
+                {course.listPrice != null && course.listPrice > course.price && (
+                  <div className="mt-1 text-xs text-green-600">
+                    限時優惠，省 {formatNT(course.listPrice - course.price)}
+                  </div>
+                )}
               </div>
             )}
 

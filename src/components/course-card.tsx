@@ -7,6 +7,7 @@ type CourseCardProps = {
     title: string;
     description: string;
     coverImage: string | null;
+    listPrice: number | null;
     price: number;
   };
 };
@@ -32,8 +33,15 @@ export function CourseCard({ course }: CourseCardProps) {
         <p className="mt-1 line-clamp-2 flex-1 text-sm text-gray-500">
           {course.description}
         </p>
-        <div className="mt-3 text-lg font-bold text-indigo-600">
-          {formatNT(course.price)}
+        <div className="mt-3 flex items-baseline gap-2">
+          {course.listPrice != null && course.listPrice > course.price && (
+            <span className="text-sm text-gray-400 line-through">
+              {formatNT(course.listPrice)}
+            </span>
+          )}
+          <span className="text-lg font-bold text-indigo-600">
+            {formatNT(course.price)}
+          </span>
         </div>
       </div>
     </Link>

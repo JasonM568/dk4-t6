@@ -9,7 +9,9 @@ import {
   getProfilesByEmails,
   createMember,
   uploadCourseImage,
+  uploadCourseMaterial,
 } from "@/lib/supabase/admin";
+import { toSlideEmbedUrl } from "@/lib/embed";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { prisma } from "@/lib/db";
@@ -40,8 +42,20 @@ const courseSchema = z.object({
     .string()
     .url("封面圖片要填完整網址（https:// 開頭），沒有圖片請留空")
     .or(z.literal("")),
-  price: z.coerce.number({ message: "售價要填數字" }).int("售價要填整數").min(0, "售價不能是負數"),
+  listPrice: z
+    .union([
+      z.literal("").transform(() => null),
+      z.coerce
+        .number({ message: "建議售價要填數字" })
+        .int("建議售價要填整數")
+        .min(0, "建議售價不能是負數"),
+    ])
+    .nullable(),
+  price: z.coerce.number({ message: "優惠價要填數字" }).int("優惠價要填整數").min(0, "優惠價不能是負數"),
   isPublished: z.coerce.boolean(),
+}).refine((d) => d.listPrice == null || d.listPrice >= d.price, {
+  message: "建議售價要大於或等於優惠價",
+  path: ["listPrice"],
 });
 
 export type CourseFormState = { error?: string } | null;
@@ -53,6 +67,7 @@ function courseInput(formData: FormData) {
     title: String(formData.get("title") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim(),
     coverImage: String(formData.get("coverImage") ?? "").trim(),
+    listPrice: String(formData.get("listPrice") ?? "").trim(),
     price: formData.get("price"),
     isPublished: formData.get("isPublished") === "on",
   };
@@ -174,9 +189,11 @@ export async function addLesson(courseId: string, formData: FormData) {
   const durationSec = formData.get("durationSec")
     ? Number(formData.get("durationSec"))
     : null;
+  // 線上簡報：分享網址自動轉嵌入格式（Google Slides/Canva）
+  const slideUrl = toSlideEmbedUrl(String(formData.get("slideUrl") ?? "")) || null;
   if (!title || !youtubeId) return;
   await prisma.lesson.create({
-    data: { courseId, title, youtubeId, order, durationSec },
+    data: { courseId, title, youtubeId, slideUrl, order, durationSec },
   });
   revalidatePath(`/admin/courses/${courseId}`);
 }
@@ -194,10 +211,11 @@ export async function updateLesson(
   const durationSec = formData.get("durationSec")
     ? Number(formData.get("durationSec"))
     : null;
+  const slideUrl = toSlideEmbedUrl(String(formData.get("slideUrl") ?? "")) || null;
   if (!title || !youtubeId) return;
   await prisma.lesson.update({
     where: { id: lessonId },
-    data: { title, youtubeId, order, durationSec },
+    data: { title, youtubeId, slideUrl, order, durationSec },
   });
   revalidatePath(`/admin/courses/${courseId}`);
 }
@@ -221,6 +239,41 @@ export async function updateTier(id: string, formData: FormData) {
   });
   await prisma.membershipTier.update({ where: { id }, data });
   revalidatePath("/admin/members");
+}
+
+// ───────────────────────── 課程講義 ─────────────────────────
+
+export type MaterialState = { error?: string } | null;
+
+/** 新增講義：上傳檔案（優先）或填外部網址 */
+export async function addMaterialAction(
+  courseId: string,
+  _prev: MaterialState,
+  formData: FormData,
+): Promise<MaterialState> {
+  await requireAdmin();
+
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return { error: "請填寫講義名稱" };
+
+  let url = String(formData.get("url") ?? "").trim();
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    const up = await uploadCourseMaterial(file);
+    if (!up.ok) return { error: up.error };
+    url = up.url;
+  }
+  if (!url) return { error: "請上傳檔案或填寫外部網址" };
+
+  await prisma.courseMaterial.create({ data: { courseId, title, url } });
+  revalidatePath(`/admin/courses/${courseId}`);
+  return null;
+}
+
+export async function deleteMaterial(materialId: string, courseId: string) {
+  await requireAdmin();
+  await prisma.courseMaterial.delete({ where: { id: materialId } });
+  revalidatePath(`/admin/courses/${courseId}`);
 }
 
 // ───────────────────────── 批次功能 ─────────────────────────
