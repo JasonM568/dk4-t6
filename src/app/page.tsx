@@ -6,7 +6,7 @@ import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 export default async function HomePage() {
   const courses = await prisma.course.findMany({
     where: { isPublished: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     take: 3,
   });
 

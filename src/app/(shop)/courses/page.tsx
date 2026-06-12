@@ -6,7 +6,7 @@ export const metadata = { title: "所有課程 — 希望學院學習平台" };
 export default async function CoursesPage() {
   const courses = await prisma.course.findMany({
     where: { isPublished: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
   });
 
   return (

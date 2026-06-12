@@ -62,6 +62,7 @@ model Course {
   introImages String[] @default([]) // 課程介紹圖（詳情頁描述下方依序顯示）
   listPrice   Int? // 建議售價（僅展示用，前台劃線價；空 = 不顯示）
   price       Int // 優惠價 = 實際售價（新台幣整數，金流以此計算）
+  sortOrder   Int      @default(0) // 前台顯示順序（小的在前，後台上移/下移調整）
   isPublished Boolean  @default(false)
 
   lessons     Lesson[]

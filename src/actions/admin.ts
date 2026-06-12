@@ -173,6 +173,30 @@ export async function updateCourse(
   redirect("/admin/courses");
 }
 
+/** 課程上移/下移：以目前顯示順序重新編號後與鄰居交換 */
+export async function moveCourse(courseId: string, direction: "up" | "down") {
+  await requireAdmin();
+
+  const courses = await prisma.course.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    select: { id: true },
+  });
+  const idx = courses.findIndex((c) => c.id === courseId);
+  const swap = direction === "up" ? idx - 1 : idx + 1;
+  if (idx < 0 || swap < 0 || swap >= courses.length) return;
+
+  [courses[idx], courses[swap]] = [courses[swap], courses[idx]];
+  await prisma.$transaction(
+    courses.map((c, i) =>
+      prisma.course.update({ where: { id: c.id }, data: { sortOrder: i } }),
+    ),
+  );
+
+  revalidatePath("/admin/courses");
+  revalidatePath("/courses");
+  revalidatePath("/");
+}
+
 export async function deleteCourse(id: string) {
   await requireAdmin();
   await prisma.course.delete({ where: { id } });

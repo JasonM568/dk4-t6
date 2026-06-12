@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { moveCourse } from "@/actions/admin";
 import { formatNT } from "@/lib/format";
 
 export const metadata = { title: "課程管理" };
@@ -7,7 +8,7 @@ export const metadata = { title: "課程管理" };
 export default async function AdminCoursesPage() {
   const courses = await prisma.course.findMany({
     include: { _count: { select: { lessons: true, enrollments: true } } },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
   });
 
   return (
@@ -26,6 +27,7 @@ export default async function AdminCoursesPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-gray-500">
             <tr>
+              <th className="px-4 py-3">順序</th>
               <th className="px-4 py-3">標題</th>
               <th className="px-4 py-3">售價</th>
               <th className="px-4 py-3">章節</th>
@@ -35,8 +37,30 @@ export default async function AdminCoursesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {courses.map((c) => (
+            {courses.map((c, i) => (
               <tr key={c.id}>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1">
+                    <form action={moveCourse.bind(null, c.id, "up")}>
+                      <button
+                        disabled={i === 0}
+                        title="上移"
+                        className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+                      >
+                        ↑
+                      </button>
+                    </form>
+                    <form action={moveCourse.bind(null, c.id, "down")}>
+                      <button
+                        disabled={i === courses.length - 1}
+                        title="下移"
+                        className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+                      >
+                        ↓
+                      </button>
+                    </form>
+                  </div>
+                </td>
                 <td className="px-4 py-3">
                   <div className="font-medium">{c.title}</div>
                   <div className="font-mono text-xs text-gray-400">{c.slug}</div>
