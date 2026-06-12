@@ -30,6 +30,24 @@ function createAdminClient() {
   );
 }
 
+// 會員詳情頁用：查單一會員的完整 profile（含建立時間）
+export async function getProfile(
+  userId: string,
+): Promise<(Profile & { created_at: string | null }) | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, display_name, nickname, role, created_at")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[supabase/admin] 查詢 profile 失敗：", error.message);
+    return null;
+  }
+  return (data as Profile & { created_at: string | null }) ?? null;
+}
+
 // 查單一使用者的 role（admin layout / requireAdmin 二次驗證用）
 export async function getProfileRole(userId: string): Promise<string | null> {
   const supabase = createAdminClient();

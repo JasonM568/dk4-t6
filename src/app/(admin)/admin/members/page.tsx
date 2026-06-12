@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
@@ -87,6 +88,7 @@ export default async function AdminMembersPage() {
                 <th className="px-4 py-3">累積消費</th>
                 <th className="px-4 py-3">購課數</th>
                 <th className="px-4 py-3">角色</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -107,6 +109,14 @@ export default async function AdminMembersPage() {
                     ) : (
                       (m.role ?? "會員")
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      href={`/admin/members/${m.id}`}
+                      className="text-indigo-600 hover:underline"
+                    >
+                      檢視
+                    </Link>
                   </td>
                 </tr>
               ))}
