@@ -62,6 +62,20 @@ export function BroadcastForm({ courses, memberCount, sendAction }: BroadcastFor
         </select>
       </div>
 
+      <div>
+        <label className="mb-1 block text-sm font-medium">
+          預設發送時間（選填，留空 = 按下群發立即寄出）
+        </label>
+        <input
+          name="scheduledAt"
+          type="datetime-local"
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          台灣時間；到點後 5 分鐘內寄出。排程後可在下方紀錄取消；寄送名單以寄出當下的會員為準
+        </p>
+      </div>
+
       <div className="flex items-center gap-3">
         <button
           type="submit"
@@ -78,11 +92,15 @@ export function BroadcastForm({ courses, memberCount, sendAction }: BroadcastFor
           value="all"
           disabled={pending}
           onClick={(e) => {
-            if (
-              !confirm(
-                `確定要群發給全部 ${memberCount} 位會員嗎？\n\n建議先寄測試信確認版面無誤。送出後無法收回。`,
-              )
-            ) {
+            const when = (
+              formRef.current?.elements.namedItem(
+                "scheduledAt",
+              ) as HTMLInputElement | null
+            )?.value;
+            const msg = when
+              ? `確定排程在 ${when.replace("T", " ")} 群發給全部會員（約 ${memberCount} 位）嗎？\n\n建議先寄測試信確認版面無誤。`
+              : `確定要立即群發給全部 ${memberCount} 位會員嗎？\n\n建議先寄測試信確認版面無誤。送出後無法收回。`;
+            if (!confirm(msg)) {
               e.preventDefault();
             }
           }}

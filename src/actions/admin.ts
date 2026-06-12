@@ -15,6 +15,7 @@ import {
 } from "@/lib/supabase/admin";
 import { toSlideEmbedUrl } from "@/lib/embed";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
+import { executeBroadcast } from "@/lib/email/dispatch";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
@@ -486,7 +487,8 @@ export async function bulkSetPasswordAction(
 
 export type BroadcastState = { error?: string; success?: string } | null;
 
-/** 群發通知：mode=test 只寄給操作的管理員本人；mode=all 寄給全部會員並留紀錄 */
+/** 群發通知：mode=test 只寄給操作的管理員本人；mode=all 寄給全部會員並留紀錄。
+ *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
 export async function sendBroadcastAction(
   _prev: BroadcastState,
   formData: FormData,
@@ -498,6 +500,7 @@ export async function sendBroadcastAction(
   const body = String(formData.get("body") ?? "").trim();
   const courseId = String(formData.get("courseId") ?? "");
   const mode = String(formData.get("mode") ?? "test");
+  const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
 
   if (!subject) return { error: "請填寫主旨" };
   if (!body) return { error: "請填寫內文" };
@@ -515,48 +518,73 @@ export async function sendBroadcastAction(
       })
     : null;
 
-  const html = buildBroadcastHtml(body, course);
-
-  // 測試模式：只寄給自己
+  // 測試模式：只寄給自己（排程時間不影響測試信，立即寄）
   if (mode === "test") {
     if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
+    const html = buildBroadcastHtml(body, course);
     const r = await sendBroadcast([admin.email], `[測試] ${subject}`, html);
     return r.failed > 0
       ? { error: `測試信寄送失敗：${r.error ?? "未知錯誤"}` }
       : { success: `測試信已寄到 ${admin.email}，請收信確認版面` };
   }
 
-  // 正式群發：全部有 email 的會員（去重）
-  const profiles = await listProfiles();
-  const recipients = [
-    ...new Set(
-      profiles
-        .map((p) => p.email?.trim().toLowerCase())
-        .filter((e): e is string => !!e && EMAIL_RE.test(e)),
-    ),
-  ];
-  if (recipients.length === 0) return { error: "找不到任何會員 email" };
+  // 排程模式：datetime-local 值無時區，固定以台灣時間解讀
+  if (scheduledAtRaw) {
+    const scheduledAt = new Date(`${scheduledAtRaw}:00+08:00`);
+    if (isNaN(scheduledAt.getTime())) return { error: "發送時間格式不正確" };
+    if (scheduledAt.getTime() < Date.now() + 60_000) {
+      return { error: "發送時間需晚於現在（要立即寄出請清空發送時間）" };
+    }
+    await prisma.emailBroadcast.create({
+      data: {
+        subject,
+        body,
+        courseId: courseId || null,
+        status: "SCHEDULED",
+        scheduledAt,
+        sentBy: admin?.email ?? null,
+      },
+    });
+    revalidatePath("/admin/broadcast");
+    const shown = scheduledAt.toLocaleString("zh-TW", {
+      timeZone: "Asia/Taipei",
+      hour12: false,
+    });
+    return {
+      success: `已排程：${shown} 寄出（實際寄出時間最多晚 5 分鐘；寄送名單以當下會員為準）`,
+    };
+  }
 
-  const r = await sendBroadcast(recipients, subject, html);
-
-  await prisma.emailBroadcast.create({
+  // 立即群發：先建紀錄再寄，結果回寫同一筆
+  const record = await prisma.emailBroadcast.create({
     data: {
       subject,
       body,
       courseId: courseId || null,
-      sentCount: r.sent,
-      failedCount: r.failed,
+      status: "SENDING",
       sentBy: admin?.email ?? null,
     },
   });
+  const r = await executeBroadcast(record.id);
 
   revalidatePath("/admin/broadcast");
+  if (r.sent === 0) return { error: `群發失敗：${r.error ?? "未知錯誤"}` };
   if (r.failed > 0) {
     return {
       error: `寄送完成但有失敗：成功 ${r.sent}、失敗 ${r.failed}（${r.error ?? ""}）`,
     };
   }
   return { success: `群發完成！已寄給 ${r.sent} 位會員` };
+}
+
+/** 取消排程中的群發（只動 SCHEDULED 狀態，已寄出/處理中不受影響） */
+export async function cancelScheduledBroadcast(id: string) {
+  await requireAdmin();
+  await prisma.emailBroadcast.updateMany({
+    where: { id, status: "SCHEDULED" },
+    data: { status: "CANCELED" },
+  });
+  revalidatePath("/admin/broadcast");
 }
 
 // ───────────────────────── 課程分類 ─────────────────────────

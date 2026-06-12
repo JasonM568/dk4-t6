@@ -60,15 +60,19 @@ model SiteSetting {
   updatedAt DateTime @updatedAt
 }
 
-// 群發通知紀錄（課程上架通知等）
+// 群發通知（課程上架通知等）：立即寄出的歷史紀錄＋排程待寄
+// status：SCHEDULED（排程待寄）/ SENDING（cron 處理中）/ SENT / CANCELED / FAILED
 model EmailBroadcast {
-  id          String  @id @default(cuid())
+  id          String    @id @default(cuid())
   subject     String
-  body        String  @db.Text
+  body        String    @db.Text
   courseId    String? // 關聯課程（選填，信中帶課程連結）
-  sentCount   Int     @default(0)
-  failedCount Int     @default(0)
+  sentCount   Int       @default(0)
+  failedCount Int       @default(0)
   sentBy      String? // 操作的管理員 email
+  status      String    @default("SENT")
+  scheduledAt DateTime? // 預設發送時間（null = 立即寄出）
+  sentAt      DateTime? // 實際寄出時間
 
   createdAt DateTime @default(now())
 }
