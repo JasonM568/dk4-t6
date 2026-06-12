@@ -58,6 +58,12 @@ export default async function AdminLayout({
           >
             群發通知
           </Link>
+          <Link
+            href="/admin/settings"
+            className="text-gray-600 hover:text-black"
+          >
+            分頁管理
+          </Link>
         </nav>
       </div>
       {children}

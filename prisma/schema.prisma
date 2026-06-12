@@ -53,6 +53,13 @@ model MembershipTier {
   members MemberStats[]
 }
 
+// 站台設定（key-value）：目前用於前台分頁開關（page:<key> = "on"/"off"，無資料列視為開啟）
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 // 群發通知紀錄（課程上架通知等）
 model EmailBroadcast {
   id          String  @id @default(cuid())

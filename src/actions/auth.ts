@@ -16,11 +16,15 @@ export type ForgotPasswordState = ActionState & {
   sentAt?: number; // 本次回應的時間戳（前端據此推算倒數終點）
 };
 
-// 規則對齊 hope 站：密碼至少 6 字元；display_name 至少 2 個中文字
+// 規則對齊 hope 站：密碼至少 6 字元；姓名開放中英文（2026-06-12 放寬，原本僅限中文）
 const registerSchema = z.object({
   displayName: z
     .string()
-    .regex(/^[一-鿿]{2,}$/, "姓名請輸入至少 2 個中文字"),
+    .trim()
+    .regex(
+      /^[一-鿿A-Za-z][一-鿿A-Za-z\s.·'-]*[一-鿿A-Za-z.]$/,
+      "姓名請輸入至少 2 個字（中文或英文）",
+    ),
   email: z.string().email("Email 格式不正確"),
   password: z.string().min(6, "密碼至少 6 字元"),
 });

@@ -40,7 +40,7 @@ export default function RegisterPage() {
             required
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
           />
-          <p className="mt-1 text-xs text-gray-400">至少 2 個中文字</p>
+          <p className="mt-1 text-xs text-gray-400">至少 2 個字，中英文皆可</p>
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium">Email</label>

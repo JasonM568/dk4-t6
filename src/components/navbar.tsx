@@ -2,12 +2,15 @@ import Link from "next/link";
 import { getAuthUser } from "@/lib/supabase/server";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
+import { getPageStates } from "@/lib/site-pages";
 import { LogoutButton } from "./logout-button";
 
 export async function Navbar() {
   const user = await getAuthUser();
   // admin 連結：查 profiles.role（proxy 不驗角色，這裡只影響顯示，後台另有 layout 守門）
   const isAdmin = user ? isAdminRole(await getProfileRole(user.id)) : false;
+  // 前台分頁（量子講師群/知識專區/講座邀約）：後台「分頁管理」可開關
+  const sitePages = (await getPageStates()).filter((p) => p.enabled);
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
@@ -28,6 +31,15 @@ export async function Navbar() {
           >
             課程
           </Link>
+          {sitePages.map((p) => (
+            <Link
+              key={p.key}
+              href={p.path}
+              className="text-sm text-gray-600 transition hover:text-black"
+            >
+              {p.title}
+            </Link>
+          ))}
           {user && (
             <Link
               href="/my-courses"

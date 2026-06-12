@@ -17,6 +17,7 @@ import { toSlideEmbedUrl } from "@/lib/embed";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
+import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門：先驗登入，再查 profiles.role 確認 admin
@@ -726,4 +727,14 @@ export async function batchEnrollAction(
     summary: `「${course.title}」開通完成：成功 ${c("enrolled")}、已有權限 ${c("already")}、查無會員 ${c("notfound")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}`,
     results,
   };
+}
+
+// ── 分頁管理（前台導覽分頁開關）──
+
+export async function togglePageAction(key: SitePageKey, enabled: boolean) {
+  await requireAdmin();
+  await setPageEnabled(key, enabled);
+  // navbar 在 root layout，全站重新驗證
+  revalidatePath("/", "layout");
+  revalidatePath("/admin/settings");
 }
