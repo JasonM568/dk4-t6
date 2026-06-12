@@ -55,6 +55,19 @@
 - LOGO 用絕對網址 `https://course.huangxi.info/brand/hope-academy-logo-email.jpg`（360px，34KB）——**course 站部署上線後此圖才存在**；上線前測試時信件圖片會破圖，屬預期現象。
 - 文案站台中性（「重設你的希望學院帳號密碼」），不寫死任一站網址。
 
+## （選用）開啟「註冊確認信」— Confirm email
+
+> course 站程式已支援（未驗證者註冊後會看到「請收確認信」提示）。
+> ⚠️ **這是專案層級開關，會同時要求 hope 站的新註冊者驗證 Email**——
+> hope 站的註冊流程若未處理 token_hash 確認連結，hope 的新註冊會卡在未驗證。
+> 開啟前請先確認 hope 端有對應處理；開啟後立刻測一次 hope 站註冊，有問題馬上關回。
+
+1. Dashboard → **Authentication → Sign In / Up → Email → Confirm email** 開啟。
+2. **Email Templates → Confirm signup**：Subject 填 `歡迎加入希望學院 — 請完成 Email 驗證`，
+   Body 貼上 [`confirm-signup.html`](./confirm-signup.html) 全文（先備份原模板）。
+3. 驗收：course 站註冊新帳號 → 收到品牌確認信 → 點「完成驗證」→ 自動登入進會員中心。
+4. 注意：後台「會員批次匯入」建立的帳號**不受影響**（建立時即視為已驗證，可直接登入）。
+
 ## 完成後驗收
 
 1. course 站 `/forgot-password` 發起重置 → 收到「希望學院」抬頭品牌信。

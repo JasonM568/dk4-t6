@@ -8,6 +8,7 @@ import {
   getProfileRole,
   getProfilesByEmails,
   createMember,
+  uploadCourseImage,
 } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
 import { prisma } from "@/lib/db";
@@ -60,6 +61,40 @@ function firstZodError(parsed: { error: z.ZodError }): string {
   return parsed.error.issues[0]?.message ?? "輸入內容有誤，請檢查後再試";
 }
 
+// 處理表單裡的圖片：上傳封面與介紹圖，回傳要存進 DB 的網址。
+// - 封面：有選新檔案就上傳並取代；否則沿用網址欄位的值
+// - 介紹圖：保留的既有圖（keepIntroImages）+ 新上傳的檔案，依序合併
+async function resolveCourseImages(
+  formData: FormData,
+  coverUrlFromText: string,
+): Promise<
+  { ok: true; coverImage: string; introImages: string[] } | { ok: false; error: string }
+> {
+  let coverImage = coverUrlFromText;
+
+  const coverFile = formData.get("coverImageFile");
+  if (coverFile instanceof File && coverFile.size > 0) {
+    const up = await uploadCourseImage(coverFile, "cover");
+    if (!up.ok) return { ok: false, error: up.error };
+    coverImage = up.url;
+  }
+
+  const introImages = formData
+    .getAll("keepIntroImages")
+    .map(String)
+    .filter(Boolean);
+
+  for (const f of formData.getAll("introImageFiles")) {
+    if (f instanceof File && f.size > 0) {
+      const up = await uploadCourseImage(f, "intro");
+      if (!up.ok) return { ok: false, error: up.error };
+      introImages.push(up.url);
+    }
+  }
+
+  return { ok: true, coverImage, introImages };
+}
+
 export async function createCourse(
   _prev: CourseFormState,
   formData: FormData,
@@ -68,8 +103,17 @@ export async function createCourse(
   const parsed = courseSchema.safeParse(courseInput(formData));
   if (!parsed.success) return { error: firstZodError(parsed) };
 
+  const images = await resolveCourseImages(formData, parsed.data.coverImage);
+  if (!images.ok) return { error: images.error };
+
   try {
-    await prisma.course.create({ data: parsed.data });
+    await prisma.course.create({
+      data: {
+        ...parsed.data,
+        coverImage: images.coverImage,
+        introImages: images.introImages,
+      },
+    });
   } catch (e) {
     // slug 是 @unique，撞名給友善訊息
     if (e instanceof Error && e.message.includes("Unique constraint")) {
@@ -90,8 +134,18 @@ export async function updateCourse(
   const parsed = courseSchema.safeParse(courseInput(formData));
   if (!parsed.success) return { error: firstZodError(parsed) };
 
+  const images = await resolveCourseImages(formData, parsed.data.coverImage);
+  if (!images.ok) return { error: images.error };
+
   try {
-    await prisma.course.update({ where: { id }, data: parsed.data });
+    await prisma.course.update({
+      where: { id },
+      data: {
+        ...parsed.data,
+        coverImage: images.coverImage,
+        introImages: images.introImages,
+      },
+    });
   } catch (e) {
     if (e instanceof Error && e.message.includes("Unique constraint")) {
       return { error: `slug「${parsed.data.slug}」已被其他課程使用，請換一個` };

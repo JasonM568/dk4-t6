@@ -106,6 +106,9 @@ export async function registerAction(
         nickname: displayName,
         role: "student",
       },
+      // 專案開啟 Confirm email 時，確認連結導回本站 /auth/confirm
+      //（token_hash/type/next 由信件模板附上，這裡不能帶 query string）
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL}/auth/confirm`,
     },
   });
 

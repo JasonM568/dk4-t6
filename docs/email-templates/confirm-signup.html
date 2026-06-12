@@ -1,0 +1,126 @@
+<!--
+  希望學院 — 註冊確認信（Supabase Confirm signup 模板）
+  貼到：Supabase Dashboard → Authentication → Email Templates → Confirm signup
+
+  設計重點：
+  - 連結 = {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup&next=/dashboard
+    → course 站註冊時 emailRedirectTo 已指向 /auth/confirm，驗證成功直接登入進會員中心
+  - ⚠️ 注意：此模板兩站共用。hope 站的註冊流程若未處理 token_hash 連結，
+    開啟 Confirm email 後 hope 的新註冊會卡住——開啟前先與 QBC 端確認（見 SETUP.md）
+  - 全部 inline style + table 排版（Gmail/Outlook 相容）
+-->
+<html>
+  <body style="margin: 0; padding: 0; background-color: #f4f4f4;">
+    <!-- 預覽列文字（收件匣摘要），不顯示在信件內文 -->
+    <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+      點擊連結完成希望學院帳號驗證，即可開始使用。
+    </div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4;">
+      <tr>
+        <td align="center" style="padding: 32px 16px;">
+
+          <!-- 主卡片：白底 + 紅框 + 金邊 -->
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border: 1px solid #c9a24b; border-radius: 12px; overflow: hidden;">
+
+            <!-- 頂部金色細線 -->
+            <tr>
+              <td style="height: 4px; background: linear-gradient(90deg, #c9a24b, #f5d77a, #c9a24b); background-color: #c9a24b; font-size: 0; line-height: 0;">&nbsp;</td>
+            </tr>
+
+            <!-- 紅底品牌區 -->
+            <tr>
+              <td align="center" style="background: linear-gradient(135deg, #b71c1c 0%, #d32f2f 60%, #e53935 100%); background-color: #d32f2f; padding: 32px 24px 28px;">
+                <img
+                  src="https://course.huangxi.info/brand/hope-academy-logo-email.jpg"
+                  width="96"
+                  height="96"
+                  alt="希望學院 HOPE Academy"
+                  style="display: block; width: 96px; height: 96px; border-radius: 50%; border: 0;"
+                />
+                <p style="margin: 16px 0 0; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 20px; font-weight: bold; color: #ffffff; letter-spacing: 2px;">
+                  希望學院
+                </p>
+                <p style="margin: 4px 0 0; font-family: Arial, sans-serif; font-size: 11px; color: #f5d77a; letter-spacing: 4px;">
+                  HOPE ACADEMY
+                </p>
+              </td>
+            </tr>
+
+            <!-- 內文 -->
+            <tr>
+              <td style="padding: 36px 40px 16px;">
+                <h1 style="margin: 0 0 20px; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 22px; line-height: 1.4; color: #1a1a1a;">
+                  歡迎加入希望學院！
+                </h1>
+                <p style="margin: 0 0 12px; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 15px; line-height: 1.8; color: #444444;">
+                  {{ if .Data.display_name }}{{ .Data.display_name }}，您好：{{ else }}您好：{{ end }}
+                </p>
+                <p style="margin: 0 0 24px; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 15px; line-height: 1.8; color: #444444;">
+                  感謝你註冊希望學院帳號。請點擊下方按鈕完成 Email 驗證，驗證後即可開始使用。此連結將於 <strong>24 小時</strong>後失效。
+                </p>
+              </td>
+            </tr>
+
+            <!-- CTA 按鈕 -->
+            <tr>
+              <td align="center" style="padding: 0 40px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="background: linear-gradient(135deg, #b71c1c, #d32f2f); background-color: #d32f2f; border-radius: 8px;">
+                      <a
+                        href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup&next=/dashboard"
+                        target="_blank"
+                        style="display: inline-block; padding: 14px 48px; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 16px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 8px;"
+                      >
+                        完成驗證
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- 後備純文字連結 -->
+            <tr>
+              <td style="padding: 0 40px 28px;">
+                <p style="margin: 0 0 8px; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 13px; line-height: 1.8; color: #888888;">
+                  若按鈕無法點擊，請複製以下連結到瀏覽器開啟：
+                </p>
+                <p style="margin: 0; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; color: #b71c1c; word-break: break-all;">
+                  {{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup&next=/dashboard
+                </p>
+              </td>
+            </tr>
+
+            <!-- 安全提醒 -->
+            <tr>
+              <td style="padding: 0 40px 36px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="background-color: #fdf6e9; border-left: 3px solid #c9a24b; border-radius: 4px; padding: 12px 16px;">
+                      <p style="margin: 0; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 13px; line-height: 1.8; color: #6b5a32;">
+                        如果你沒有註冊希望學院帳號，請忽略這封信。
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- 頁尾 -->
+            <tr>
+              <td align="center" style="background-color: #faf7f0; border-top: 1px solid #ecdfc2; padding: 20px 40px;">
+                <p style="margin: 0; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 12px; line-height: 1.8; color: #999999;">
+                  此信由系統自動寄出，請勿直接回覆。<br />
+                  &copy; 希望學院 HOPE Academy
+                </p>
+              </td>
+            </tr>
+          </table>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

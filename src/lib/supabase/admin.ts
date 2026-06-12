@@ -121,6 +121,45 @@ export async function createMember(input: {
   return { ok: true, userId: data.user.id };
 }
 
+// ───── 課程圖片上傳（Supabase Storage：course-assets 公開 bucket）─────
+
+const COURSE_ASSETS_BUCKET = "course-assets";
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB，與 bucket 設定一致
+
+export type UploadResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string };
+
+// 上傳課程圖片，回傳公開網址。檔名用隨機字串避免覆蓋與中文檔名問題。
+export async function uploadCourseImage(
+  file: File,
+  prefix: string, // 例如 "cover" / "intro"
+): Promise<UploadResult> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    return { ok: false, error: `「${file.name}」格式不支援（限 JPG/PNG/WebP/GIF）` };
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    return { ok: false, error: `「${file.name}」超過 5MB，請壓縮後再上傳` };
+  }
+
+  const ext = file.type.split("/")[1].replace("jpeg", "jpg");
+  const path = `${prefix}/${crypto.randomUUID()}.${ext}`;
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage
+    .from(COURSE_ASSETS_BUCKET)
+    .upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+
+  if (error) {
+    console.error("[supabase/admin] 圖片上傳失敗：", file.name, error.message);
+    return { ok: false, error: `「${file.name}」上傳失敗：${error.message}` };
+  }
+
+  const { data } = supabase.storage.from(COURSE_ASSETS_BUCKET).getPublicUrl(path);
+  return { ok: true, url: data.publicUrl };
+}
+
 // 後台會員列表用：唯讀撈出全部 profiles
 export async function listProfiles(): Promise<Profile[]> {
   const supabase = createAdminClient();

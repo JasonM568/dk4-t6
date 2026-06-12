@@ -54,13 +54,14 @@ model MembershipTier {
 }
 
 model Course {
-  id          String  @id @default(cuid())
-  slug        String  @unique
+  id          String   @id @default(cuid())
+  slug        String   @unique
   title       String
-  description String  @db.Text
+  description String   @db.Text
   coverImage  String?
+  introImages String[] @default([]) // 課程介紹圖（詳情頁描述下方依序顯示）
   price       Int // 新台幣整數
-  isPublished Boolean @default(false)
+  isPublished Boolean  @default(false)
 
   lessons     Lesson[]
   orderItems  OrderItem[]

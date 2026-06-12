@@ -66,6 +66,21 @@ export default async function CourseDetailPage({
             {course.description}
           </p>
 
+          {/* 課程介紹圖 */}
+          {course.introImages.length > 0 && (
+            <div className="mt-6 space-y-4">
+              {course.introImages.map((url) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={url}
+                  src={url}
+                  alt={course.title}
+                  className="w-full rounded-xl border border-gray-100"
+                />
+              ))}
+            </div>
+          )}
+
           <h2 className="mt-8 mb-3 text-xl font-bold">課程章節</h2>
           <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200">
             {course.lessons.map((l, i) => (

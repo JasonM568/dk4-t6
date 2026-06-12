@@ -10,6 +10,7 @@ type CourseFormProps = {
     title?: string;
     description?: string;
     coverImage?: string | null;
+    introImages?: string[];
     price?: number;
     isPublished?: boolean;
   };
@@ -54,14 +55,72 @@ export function CourseForm({
           className="input"
         />
       </Field>
-      <Field label="封面圖片網址（選填）">
+      <Field label="封面圖片（建議 16:9，5MB 內）">
+        {defaultValues.coverImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={defaultValues.coverImage}
+            alt="目前封面"
+            className="mb-2 h-28 rounded-lg border border-gray-200 object-cover"
+          />
+        )}
+        <input
+          name="coverImageFile"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-200"
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          {defaultValues.coverImage
+            ? "選擇新檔案會取代目前封面；不選則維持原圖"
+            : "也可以直接貼外部圖片網址："}
+        </p>
         <input
           name="coverImage"
           type="url"
           defaultValue={defaultValues.coverImage ?? ""}
-          placeholder="https://…"
-          className="input"
+          placeholder="https://…（選填，有上傳檔案時以檔案為準）"
+          className="input mt-1"
         />
+      </Field>
+
+      <Field label="課程介紹圖片（可多張，顯示在課程描述下方）">
+        {(defaultValues.introImages ?? []).length > 0 && (
+          <div className="mb-2 space-y-2">
+            {(defaultValues.introImages ?? []).map((url) => (
+              <label
+                key={url}
+                className="flex items-center gap-3 rounded-lg border border-gray-200 p-2"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt="介紹圖"
+                  className="h-16 w-28 rounded object-cover"
+                />
+                <span className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    name="keepIntroImages"
+                    value={url}
+                    defaultChecked
+                  />
+                  保留這張（取消勾選＝儲存時移除）
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        <input
+          name="introImageFiles"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          multiple
+          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-200"
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          可一次選多張，新圖會接在既有圖之後；單張 5MB 內
+        </p>
       </Field>
       <Field label="售價（新台幣整數）">
         <input
