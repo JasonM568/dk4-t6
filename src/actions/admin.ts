@@ -300,6 +300,41 @@ export async function deleteMaterial(materialId: string, courseId: string) {
   revalidatePath(`/admin/courses/${courseId}`);
 }
 
+// ─────────────────── 會員觀看權限手動編輯 ───────────────────
+
+export type EnrollmentEditState = { error?: string; success?: string } | null;
+
+/** 依勾選結果同步單一會員的課程觀看權限：勾了就開通、取消就移除 */
+export async function setMemberEnrollmentsAction(
+  userId: string,
+  _prev: EnrollmentEditState,
+  formData: FormData,
+): Promise<EnrollmentEditState> {
+  await requireAdmin();
+
+  const selected = new Set(formData.getAll("courseIds").map(String));
+  const existing = await prisma.enrollment.findMany({ where: { userId } });
+  const existingByCourse = new Map(existing.map((e) => [e.courseId, e]));
+
+  const toAdd = [...selected].filter((c) => !existingByCourse.has(c));
+  const toRemove = existing.filter((e) => !selected.has(e.courseId));
+
+  if (toAdd.length === 0 && toRemove.length === 0) {
+    return { success: "權限沒有變動" };
+  }
+
+  await prisma.$transaction([
+    // 手動開通：orderId 留空，詳情頁會標示「手動開通」
+    ...toAdd.map((courseId) =>
+      prisma.enrollment.create({ data: { userId, courseId } }),
+    ),
+    ...toRemove.map((e) => prisma.enrollment.delete({ where: { id: e.id } })),
+  ]);
+
+  revalidatePath(`/admin/members/${userId}`);
+  return { success: `已更新：開通 ${toAdd.length} 門、移除 ${toRemove.length} 門` };
+}
+
 // ───────────────────────── 批次功能 ─────────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

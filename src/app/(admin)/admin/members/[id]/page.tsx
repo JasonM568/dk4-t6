@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getProfile } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
+import { setMemberEnrollmentsAction } from "@/actions/admin";
+import { EnrollmentEditor } from "./enrollment-editor";
 
 export const metadata = { title: "會員詳情 — 管理後台" };
 
@@ -22,7 +24,7 @@ export default async function MemberDetailPage({
   const { id } = await params;
 
   // 會員身分在 public.profiles（唯讀），課程資料在 course schema，應用層拼裝
-  const [profile, stats, enrollments, orders] = await Promise.all([
+  const [profile, stats, enrollments, orders, allCourses] = await Promise.all([
     getProfile(id),
     prisma.memberStats.findUnique({ where: { userId: id } }),
     prisma.enrollment.findMany({
@@ -37,8 +39,25 @@ export default async function MemberDetailPage({
       },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.course.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      select: { id: true, title: true, isPublished: true },
+    }),
   ]);
   if (!profile) notFound();
+
+  // 全部課程 + 此會員的開通狀態，給勾選編輯器用
+  const enrollmentByCourse = new Map(enrollments.map((e) => [e.courseId, e]));
+  const courseRows = allCourses.map((c) => {
+    const e = enrollmentByCourse.get(c.id);
+    return {
+      id: c.id,
+      title: c.title,
+      isPublished: c.isPublished,
+      enrolledAt: e ? e.createdAt.toISOString() : null,
+      fromOrder: !!e?.orderId,
+    };
+  });
 
   return (
     <div className="max-w-4xl">
@@ -72,50 +91,18 @@ export default async function MemberDetailPage({
         </dl>
       </section>
 
-      {/* 觀看權限 */}
+      {/* 觀看權限（可勾選編輯） */}
       <section className="mt-8">
-        <h2 className="mb-3 text-lg font-bold">
-          課程觀看權限（{enrollments.length}）
+        <h2 className="mb-1 text-lg font-bold">
+          課程觀看權限（已開通 {enrollments.length} 門）
         </h2>
-        <div className="overflow-hidden rounded-xl border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500">
-              <tr>
-                <th className="px-4 py-3">課程</th>
-                <th className="px-4 py-3">開通時間</th>
-                <th className="px-4 py-3">來源</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {enrollments.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-4 text-gray-400">
-                    尚無任何課程權限
-                  </td>
-                </tr>
-              )}
-              {enrollments.map((e) => (
-                <tr key={e.id}>
-                  <td className="px-4 py-3 font-medium">{e.course.title}</td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {e.createdAt.toLocaleString("zh-TW")}
-                  </td>
-                  <td className="px-4 py-3">
-                    {e.orderId ? (
-                      <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
-                        購買
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                        手動開通
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="mb-3 text-sm text-gray-500">
+          勾選要開放給這位會員的課程，按「儲存權限變更」生效。
+        </p>
+        <EnrollmentEditor
+          courses={courseRows}
+          saveAction={setMemberEnrollmentsAction.bind(null, id)}
+        />
       </section>
 
       {/* 訂單清單 */}
