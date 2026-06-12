@@ -1,7 +1,10 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-06-12 晚（已上線 + 後台功能大擴充 + SMTP 通了，剩 Confirm email 開關與正式金流）**
+> 最後更新：**2026-06-12 深夜（Confirm email 已開通實測 OK；新增前台三分頁+後台開關）**
+>
+> ⚠️ **下次開工第一件事**：確認 commit `8b1605d`（三分頁+姓名開放英文）已 push（`git status -sb` 不該顯示 ahead）。
+> 若還沒推：`git push origin main`（會自動部署 + 在正式庫建 SiteSetting 表），再做下方「待驗收」。
 
 ## 目前狀態：已部署上線 ✅
 
@@ -62,13 +65,23 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] 課程內容：封面/介紹圖上傳、章節行內編輯、線上簡報嵌入（Google Slides/Canva）、講義上傳下載
 - [x] YouTube 容錯（網址/嵌入碼/純 ID 皆可）；課程表單驗證錯誤友善顯示
 - [x] 群發通知（`/admin/broadcast`：品牌信+課程卡片，先測試後群發，Resend batch API，寄送紀錄）
-- [x] 註冊確認信「程式端」備妥（emailRedirectTo + confirm-signup.html 模板）——**Dashboard 開關未開**
+- [x] 註冊確認信「程式端」備妥（emailRedirectTo + confirm-signup.html 模板）
 - 會員數：135（原 QBC 87 + 本日匯入）；Storage：course-assets bucket（圖片 5MB/文件 20MB）
+
+**2026-06-12 深夜**
+- [x] **Confirm email 已開啟**（Dashboard 開關 + 品牌模板），course 站註冊實測收到確認信 ✅
+- [x] 註冊姓名開放英文（中英文皆可、至少 2 字，容許空格/·/-/'/.）
+- [x] 前台三分頁：`/lecturers` 量子講師群、`/knowledge` 知識專區、`/speaking` 講座邀約（目前為「內容籌備中」版面）
+- [x] 後台「分頁管理」`/admin/settings`：三分頁可逐頁開/關（關閉 = navbar 消失 + 直連 404），預設全開
+- [x] 新增 `SiteSetting` key-value 表（手寫 migration `20260612230000_site_settings`，本機驗證過；正式庫由 Vercel build 的 migrate deploy 自動建立）
+- ⚠️ commit `8b1605d` 收工時尚未 push（權限管控擋下）——見最上方提醒
 
 ## 📌 待辦（依優先序）
 
-1. **開啟註冊確認信**（使用者操作）：Dashboard → Auth → Sign In/Up → Confirm email 開啟 + 貼 `docs/email-templates/confirm-signup.html` 模板（步驟在 SETUP.md）。⚠️ 開啟後立即測 hope 站註冊，hope 端若沒處理確認連結要關回
+0. **待驗收（push 部署完成後）**：① 註冊頁英文姓名（如 John Smith）可過驗證 ② 首頁頂端出現三個新分頁 ③ 後台分頁管理關閉其一 → navbar 消失 + 直連 404
+1. **hope 站註冊回歸測試**：Confirm email 是專案層級開關（已開啟），hope 站新註冊也會被要求驗證 Email——hope 端若沒處理確認連結要把開關關回（course 站已實測 OK，hope 站尚未測）
 2. **與 QBC 站協調**：Recovery 模板已改 `{{ .RedirectTo }}` 格式，hope 站 reset 頁相容性回歸測試
+2.5. **三分頁正式內容**：量子講師群/知識專區/講座邀約目前是籌備中佔位頁（共用 `src/components/site-page-shell.tsx`），待提供文案/圖片後實作
 3. **正式金流**：ECPay 正式商店參數（目前是官方 sandbox）+ 真實付款測試
 4. **正式課程內容**：後台建立真實課程（分類選項也要先建）
 5. hope 站加「課程專區」按鈕連到 course 站
