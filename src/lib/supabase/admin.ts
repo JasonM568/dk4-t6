@@ -219,6 +219,57 @@ export async function uploadCourseMaterial(file: File): Promise<UploadResult> {
   return { ok: true, url: data.publicUrl };
 }
 
+export type NeverSignedInUser = {
+  id: string;
+  email: string | null;
+  createdAt: string;
+};
+
+// 撈出「從未登入」的會員（last_sign_in_at 為空）。
+// 走 GoTrue Admin API（分頁最多 1000/頁，足夠目前規模）。
+export async function listNeverSignedInUsers(): Promise<NeverSignedInUser[]> {
+  const supabase = createAdminClient();
+  const result: NeverSignedInUser[] = [];
+
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error) {
+      console.error("[supabase/admin] listUsers 失敗：", error.message);
+      break;
+    }
+    for (const u of data.users) {
+      if (!u.last_sign_in_at) {
+        result.push({
+          id: u.id,
+          email: u.email ?? null,
+          createdAt: u.created_at,
+        });
+      }
+    }
+    if (data.users.length < 1000) break;
+  }
+  return result;
+}
+
+// 批次重設密碼（管理員操作，覆蓋原密碼）
+export async function setUserPassword(
+  userId: string,
+  password: string,
+): Promise<boolean> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    password,
+  });
+  if (error) {
+    console.error("[supabase/admin] 重設密碼失敗：", userId, error.message);
+    return false;
+  }
+  return true;
+}
+
 // 後台會員列表用：唯讀撈出全部 profiles
 export async function listProfiles(): Promise<Profile[]> {
   const supabase = createAdminClient();

@@ -9,6 +9,7 @@ import {
   getProfilesByEmails,
   listProfiles,
   createMember,
+  setUserPassword,
   uploadCourseImage,
   uploadCourseMaterial,
 } from "@/lib/supabase/admin";
@@ -348,6 +349,36 @@ export async function revokeEnrollment(userId: string, courseId: string) {
   await requireAdmin();
   await prisma.enrollment.deleteMany({ where: { userId, courseId } });
   revalidatePath(`/admin/members/${userId}`);
+}
+
+// ─────────────────── 未登入會員批次設密碼 ───────────────────
+
+export type BulkPasswordState = { error?: string; success?: string } | null;
+
+/** 為勾選的會員批次重設密碼（覆蓋原密碼；用於從未登入的會員） */
+export async function bulkSetPasswordAction(
+  _prev: BulkPasswordState,
+  formData: FormData,
+): Promise<BulkPasswordState> {
+  await requireAdmin();
+
+  const userIds = formData.getAll("userIds").map(String).filter(Boolean);
+  const password = String(formData.get("password") ?? "").trim();
+
+  if (userIds.length === 0) return { error: "請至少勾選一位會員" };
+  if (password.length < 6) return { error: "密碼至少 6 字元" };
+  if (userIds.length > 300) return { error: "一次最多 300 位，請分批" };
+
+  let ok = 0;
+  let fail = 0;
+  for (const id of userIds) {
+    if (await setUserPassword(id, password)) ok++;
+    else fail++;
+  }
+
+  revalidatePath("/admin/members/inactive");
+  if (fail > 0) return { error: `完成但有失敗：成功 ${ok}、失敗 ${fail}` };
+  return { success: `已為 ${ok} 位會員設定新密碼，可用群發通知告知學員` };
 }
 
 // ───────────────────────── 群發通知 ─────────────────────────
