@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { moveCourse } from "@/actions/admin";
-import { formatNT } from "@/lib/format";
+import { CourseTable } from "./course-table";
 
 export const metadata = { title: "課程管理" };
 
@@ -14,7 +13,12 @@ export default async function AdminCoursesPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">課程管理</h1>
+        <div>
+          <h1 className="text-2xl font-bold">課程管理</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            拖曳 ⠿ 調整順序，或用 ⤒ 置頂、↑↓ 微調
+          </p>
+        </div>
         <Link
           href="/admin/courses/new"
           className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
@@ -23,75 +27,17 @@ export default async function AdminCoursesPage() {
         </Link>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-500">
-            <tr>
-              <th className="px-4 py-3">順序</th>
-              <th className="px-4 py-3">標題</th>
-              <th className="px-4 py-3">售價</th>
-              <th className="px-4 py-3">章節</th>
-              <th className="px-4 py-3">已售</th>
-              <th className="px-4 py-3">狀態</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {courses.map((c, i) => (
-              <tr key={c.id}>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1">
-                    <form action={moveCourse.bind(null, c.id, "up")}>
-                      <button
-                        disabled={i === 0}
-                        title="上移"
-                        className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-30"
-                      >
-                        ↑
-                      </button>
-                    </form>
-                    <form action={moveCourse.bind(null, c.id, "down")}>
-                      <button
-                        disabled={i === courses.length - 1}
-                        title="下移"
-                        className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-30"
-                      >
-                        ↓
-                      </button>
-                    </form>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="font-medium">{c.title}</div>
-                  <div className="font-mono text-xs text-gray-400">{c.slug}</div>
-                </td>
-                <td className="px-4 py-3">{formatNT(c.price)}</td>
-                <td className="px-4 py-3">{c._count.lessons}</td>
-                <td className="px-4 py-3">{c._count.enrollments}</td>
-                <td className="px-4 py-3">
-                  {c.isPublished ? (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                      已上架
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                      未上架
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Link
-                    href={`/admin/courses/${c.id}`}
-                    className="text-indigo-600 hover:underline"
-                  >
-                    編輯
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <CourseTable
+        courses={courses.map((c) => ({
+          id: c.id,
+          title: c.title,
+          slug: c.slug,
+          price: c.price,
+          lessons: c._count.lessons,
+          enrollments: c._count.enrollments,
+          isPublished: c.isPublished,
+        }))}
+      />
     </div>
   );
 }

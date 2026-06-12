@@ -216,6 +216,106 @@ export async function moveCourse(courseId: string, direction: "up" | "down") {
   revalidatePath("/");
 }
 
+// 排序相關 action 共用：依指定 id 順序重寫所有 sortOrder
+async function renumberCourses(orderedIds: string[]) {
+  await prisma.$transaction(
+    orderedIds.map((id, i) =>
+      prisma.course.update({ where: { id }, data: { sortOrder: i } }),
+    ),
+  );
+  revalidatePath("/admin/courses");
+  revalidatePath("/courses");
+  revalidatePath("/");
+}
+
+/** 課程置頂：移到最前，其餘順序不變 */
+export async function pinCourseToTop(courseId: string) {
+  await requireAdmin();
+  const courses = await prisma.course.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    select: { id: true },
+  });
+  const rest = courses.map((c) => c.id).filter((id) => id !== courseId);
+  if (rest.length === courses.length) return; // id 不存在
+  await renumberCourses([courseId, ...rest]);
+}
+
+/** 拖曳排序：前端傳完整新順序；id 集合必須與現有課程一致才寫入 */
+export async function reorderCoursesAction(orderedIds: string[]) {
+  await requireAdmin();
+  const courses = await prisma.course.findMany({ select: { id: true } });
+  const valid =
+    courses.length === orderedIds.length &&
+    new Set(orderedIds).size === orderedIds.length &&
+    courses.every((c) => orderedIds.includes(c.id));
+  if (!valid) return; // 名單不一致（可能有人同時新增/刪除課程）→ 放棄這次排序
+  await renumberCourses(orderedIds);
+}
+
+/** 複製課程：連同章節/講義/分類；新課程未上架、slug 加 -copy、課程編號留空 */
+export async function duplicateCourse(courseId: string) {
+  await requireAdmin();
+  const src = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: {
+      lessons: true,
+      materials: true,
+      categories: { select: { id: true } },
+    },
+  });
+  if (!src) return;
+
+  // slug 唯一：basename-copy、basename-copy-2…
+  let slug = `${src.slug}-copy`;
+  for (
+    let n = 2;
+    await prisma.course.findUnique({ where: { slug }, select: { id: true } });
+    n++
+  ) {
+    slug = `${src.slug}-copy-${n}`;
+  }
+
+  const copy = await prisma.course.create({
+    data: {
+      slug,
+      title: `${src.title}（複製）`,
+      description: src.description,
+      coverImage: src.coverImage,
+      introImages: src.introImages,
+      listPrice: src.listPrice,
+      price: src.price,
+      isPublished: false,
+      courseCode: null,
+      categories: { connect: src.categories },
+      lessons: {
+        create: src.lessons.map((l) => ({
+          title: l.title,
+          youtubeId: l.youtubeId,
+          slideUrl: l.slideUrl,
+          order: l.order,
+          durationSec: l.durationSec,
+        })),
+      },
+      materials: {
+        create: src.materials.map((m) => ({ title: m.title, url: m.url })),
+      },
+    },
+  });
+
+  // 複本排在原課程正後方
+  const courses = await prisma.course.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    select: { id: true },
+  });
+  const rest = courses.map((c) => c.id).filter((id) => id !== copy.id);
+  const at = rest.indexOf(courseId);
+  rest.splice(at + 1, 0, copy.id);
+  await renumberCourses(rest);
+
+  // 直接進複本編輯頁，接著改標題/編號/內容
+  redirect(`/admin/courses/${copy.id}`);
+}
+
 export async function deleteCourse(id: string) {
   await requireAdmin();
   await prisma.course.delete({ where: { id } });
