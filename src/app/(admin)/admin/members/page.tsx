@@ -6,7 +6,14 @@ import { updateTier } from "@/actions/admin";
 
 export const metadata = { title: "會員與等級" };
 
-export default async function AdminMembersPage() {
+export default async function AdminMembersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const query = (q ?? "").trim().toLowerCase();
+
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
   const [profiles, statsList, tiers] = await Promise.all([
@@ -17,7 +24,7 @@ export default async function AdminMembersPage() {
 
   const statsByUserId = new Map(statsList.map((s) => [s.userId, s]));
   // MemberStats 是 lazy upsert（首次付款才建立），沒有統計的會員以 0 顯示
-  const members = profiles
+  const all = profiles
     .map((p) => {
       const stats = statsByUserId.get(p.id);
       return {
@@ -27,8 +34,16 @@ export default async function AdminMembersPage() {
         coursesBought: stats?.coursesBought ?? 0,
       };
     })
-    .sort((a, b) => b.totalSpent - a.totalSpent)
-    .slice(0, 100);
+    .sort((a, b) => b.totalSpent - a.totalSpent);
+
+  // 搜尋：姓名或 email 子字串（不分大小寫）。無搜尋時只列前 100 名
+  const members = query
+    ? all.filter(
+        (m) =>
+          (m.display_name ?? "").toLowerCase().includes(query) ||
+          (m.email ?? "").toLowerCase().includes(query),
+      )
+    : all.slice(0, 100);
 
   return (
     <div className="space-y-10">
@@ -79,7 +94,11 @@ export default async function AdminMembersPage() {
       {/* 會員列表 */}
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold">會員列表（前 100 名）</h2>
+          <h2 className="text-2xl font-bold">
+            {query
+              ? `搜尋「${q?.trim()}」：${members.length} 筆`
+              : `會員列表（共 ${all.length} 位，列出消費前 100 名）`}
+          </h2>
           <Link
             href="/admin/members/inactive"
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
@@ -87,6 +106,27 @@ export default async function AdminMembersPage() {
             🔑 未登入會員（批次設密碼）
           </Link>
         </div>
+
+        {/* 搜尋：GET query，免 client JS */}
+        <form action="/admin/members" className="mb-4 flex gap-2">
+          <input
+            name="q"
+            defaultValue={q ?? ""}
+            placeholder="輸入姓名或 email 搜尋"
+            className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+          />
+          <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+            搜尋
+          </button>
+          {query && (
+            <Link
+              href="/admin/members"
+              className="flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
+            >
+              清除
+            </Link>
+          )}
+        </form>
         <div className="overflow-hidden rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-500">
@@ -100,6 +140,13 @@ export default async function AdminMembersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              {members.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
+                    查無符合「{q?.trim()}」的會員
+                  </td>
+                </tr>
+              )}
               {members.map((m) => (
                 <tr key={m.id}>
                   <td className="px-4 py-3">
