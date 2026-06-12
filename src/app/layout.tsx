@@ -4,7 +4,7 @@ import { Navbar } from "@/components/navbar";
 
 export const metadata: Metadata = {
   title: "線上課程學習平台",
-  description: "會員制線上課程學習網站 — 註冊、購課、會員分級、訂單管理",
+  description: "會員制線上課程學習網站 — 註冊、購課、線上觀看、訂單管理",
 };
 
 export default function RootLayout({
