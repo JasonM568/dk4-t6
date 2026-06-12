@@ -7,11 +7,13 @@ import { getAuthUser } from "@/lib/supabase/server";
 import {
   getProfileRole,
   getProfilesByEmails,
+  listProfiles,
   createMember,
   uploadCourseImage,
   uploadCourseMaterial,
 } from "@/lib/supabase/admin";
 import { toSlideEmbedUrl } from "@/lib/embed";
+import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { prisma } from "@/lib/db";
@@ -346,6 +348,83 @@ export async function revokeEnrollment(userId: string, courseId: string) {
   await requireAdmin();
   await prisma.enrollment.deleteMany({ where: { userId, courseId } });
   revalidatePath(`/admin/members/${userId}`);
+}
+
+// ───────────────────────── 群發通知 ─────────────────────────
+
+export type BroadcastState = { error?: string; success?: string } | null;
+
+/** 群發通知：mode=test 只寄給操作的管理員本人；mode=all 寄給全部會員並留紀錄 */
+export async function sendBroadcastAction(
+  _prev: BroadcastState,
+  formData: FormData,
+): Promise<BroadcastState> {
+  await requireAdmin();
+  const admin = await getAuthUser();
+
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const courseId = String(formData.get("courseId") ?? "");
+  const mode = String(formData.get("mode") ?? "test");
+
+  if (!subject) return { error: "請填寫主旨" };
+  if (!body) return { error: "請填寫內文" };
+
+  const course = courseId
+    ? await prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          title: true,
+          slug: true,
+          coverImage: true,
+          price: true,
+          listPrice: true,
+        },
+      })
+    : null;
+
+  const html = buildBroadcastHtml(body, course);
+
+  // 測試模式：只寄給自己
+  if (mode === "test") {
+    if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
+    const r = await sendBroadcast([admin.email], `[測試] ${subject}`, html);
+    return r.failed > 0
+      ? { error: `測試信寄送失敗：${r.error ?? "未知錯誤"}` }
+      : { success: `測試信已寄到 ${admin.email}，請收信確認版面` };
+  }
+
+  // 正式群發：全部有 email 的會員（去重）
+  const profiles = await listProfiles();
+  const recipients = [
+    ...new Set(
+      profiles
+        .map((p) => p.email?.trim().toLowerCase())
+        .filter((e): e is string => !!e && EMAIL_RE.test(e)),
+    ),
+  ];
+  if (recipients.length === 0) return { error: "找不到任何會員 email" };
+
+  const r = await sendBroadcast(recipients, subject, html);
+
+  await prisma.emailBroadcast.create({
+    data: {
+      subject,
+      body,
+      courseId: courseId || null,
+      sentCount: r.sent,
+      failedCount: r.failed,
+      sentBy: admin?.email ?? null,
+    },
+  });
+
+  revalidatePath("/admin/broadcast");
+  if (r.failed > 0) {
+    return {
+      error: `寄送完成但有失敗：成功 ${r.sent}、失敗 ${r.failed}（${r.error ?? ""}）`,
+    };
+  }
+  return { success: `群發完成！已寄給 ${r.sent} 位會員` };
 }
 
 // ───────────────────────── 課程分類 ─────────────────────────

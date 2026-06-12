@@ -52,6 +52,12 @@ export default async function AdminLayout({
           >
             批次開通
           </Link>
+          <Link
+            href="/admin/broadcast"
+            className="text-gray-600 hover:text-black"
+          >
+            群發通知
+          </Link>
         </nav>
       </div>
       {children}

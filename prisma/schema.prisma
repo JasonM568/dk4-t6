@@ -53,6 +53,19 @@ model MembershipTier {
   members MemberStats[]
 }
 
+// 群發通知紀錄（課程上架通知等）
+model EmailBroadcast {
+  id          String  @id @default(cuid())
+  subject     String
+  body        String  @db.Text
+  courseId    String? // 關聯課程（選填，信中帶課程連結）
+  sentCount   Int     @default(0)
+  failedCount Int     @default(0)
+  sentBy      String? // 操作的管理員 email
+
+  createdAt DateTime @default(now())
+}
+
 // 課程分類（後台自行維護選項，課程可勾選多個分類）
 model Category {
   id        String   @id @default(cuid())
