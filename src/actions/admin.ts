@@ -181,6 +181,27 @@ export async function addLesson(courseId: string, formData: FormData) {
   revalidatePath(`/admin/courses/${courseId}`);
 }
 
+export async function updateLesson(
+  lessonId: string,
+  courseId: string,
+  formData: FormData,
+) {
+  await requireAdmin();
+  const title = String(formData.get("title") ?? "").trim();
+  // 與 addLesson 相同容錯：網址/嵌入碼/純 ID 皆可
+  const youtubeId = extractYoutubeId(String(formData.get("youtubeId") ?? ""));
+  const order = Number(formData.get("order") ?? 0);
+  const durationSec = formData.get("durationSec")
+    ? Number(formData.get("durationSec"))
+    : null;
+  if (!title || !youtubeId) return;
+  await prisma.lesson.update({
+    where: { id: lessonId },
+    data: { title, youtubeId, order, durationSec },
+  });
+  revalidatePath(`/admin/courses/${courseId}`);
+}
+
 export async function deleteLesson(lessonId: string, courseId: string) {
   await requireAdmin();
   await prisma.lesson.delete({ where: { id: lessonId } });

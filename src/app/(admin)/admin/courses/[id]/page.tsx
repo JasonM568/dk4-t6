@@ -5,9 +5,11 @@ import {
   updateCourse,
   deleteCourse,
   addLesson,
+  updateLesson,
   deleteLesson,
 } from "@/actions/admin";
 import { CourseForm } from "@/components/course-form";
+import { LessonRow } from "./lesson-row";
 
 export default async function EditCoursePage({
   params,
@@ -45,19 +47,12 @@ export default async function EditCoursePage({
             <li className="px-4 py-3 text-sm text-gray-400">尚無章節</li>
           )}
           {course.lessons.map((l) => (
-            <li
+            <LessonRow
               key={l.id}
-              className="flex items-center gap-3 px-4 py-3 text-sm"
-            >
-              <span className="font-mono text-gray-400">{l.order}</span>
-              <span className="flex-1">{l.title}</span>
-              <span className="font-mono text-xs text-gray-400">
-                {l.youtubeId}
-              </span>
-              <form action={deleteLesson.bind(null, l.id, course.id)}>
-                <button className="text-red-600 hover:underline">刪除</button>
-              </form>
-            </li>
+              lesson={l}
+              updateAction={updateLesson.bind(null, l.id, course.id)}
+              deleteAction={deleteLesson.bind(null, l.id, course.id)}
+            />
           ))}
         </ul>
 
