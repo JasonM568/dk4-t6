@@ -624,6 +624,7 @@ const MAX_BATCH_ROWS = 500;
 
 export type BatchRowResult = {
   email: string;
+  name?: string; // 名單解析出的姓名（查無會員轉批次新增時帶入）
   status:
     | "created" // 匯入成功
     | "exists" // 會員已存在
@@ -640,6 +641,8 @@ export type BatchState = {
   summary?: string;
   results?: BatchRowResult[];
   error?: string;
+  courseId?: string; // 批次開通的課程（查無會員轉批次新增時帶入）
+  courseTitle?: string;
 } | null;
 
 // 把貼上的名單拆成列（逗號/全形逗號/Tab 分隔），欄位順序不限，自動辨識：
@@ -739,7 +742,11 @@ export async function importMembersAction(
     seen.add(row.email);
 
     if (existing.has(row.email)) {
-      results.push({ email: row.email, status: "exists", detail: "可直接批次開通權限" });
+      results.push({
+        email: row.email,
+        status: "exists",
+        detail: "已完成註冊，自動跳過（帳號與密碼未變動）",
+      });
       continue;
     }
 
@@ -762,7 +769,11 @@ export async function importMembersAction(
     if (created.ok) {
       results.push({ email: row.email, status: "created" });
     } else if (created.reason === "exists") {
-      results.push({ email: row.email, status: "exists", detail: "可直接批次開通權限" });
+      results.push({
+        email: row.email,
+        status: "exists",
+        detail: "已完成註冊，自動跳過（帳號與密碼未變動）",
+      });
     } else {
       results.push({ email: row.email, status: "error", detail: created.message });
     }
@@ -824,7 +835,12 @@ export async function batchEnrollAction(
 
     const profile = profileMap.get(row.email);
     if (!profile) {
-      results.push({ email: row.email, status: "notfound", detail: "查無會員，請先批次匯入" });
+      results.push({
+        email: row.email,
+        name: row.name || undefined,
+        status: "notfound",
+        detail: "查無會員，可在下方一鍵批次新增並開通",
+      });
       continue;
     }
     if (enrolled.has(profile.id)) {
@@ -853,6 +869,99 @@ export async function batchEnrollAction(
   return {
     done: true,
     summary: `「${course.title}」開通完成：成功 ${c("enrolled")}、已有權限 ${c("already")}、查無會員 ${c("notfound")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}`,
+    results,
+    courseId,
+    courseTitle: course.title,
+  };
+}
+
+/** 查無會員轉一鍵處理：缺帳號的先建立（用預設密碼），已存在的直接開通，全部接著開通課程權限 */
+export async function createMissingAndEnrollAction(
+  _prev: BatchState,
+  formData: FormData,
+): Promise<BatchState> {
+  await requireAdmin();
+
+  const courseId = String(formData.get("courseId") ?? "");
+  const raw = String(formData.get("list") ?? "");
+  const defaultPassword = String(formData.get("defaultPassword") ?? "").trim();
+  const rows = parseRows(raw);
+
+  const course = await prisma.course.findUnique({ where: { id: courseId } });
+  if (!course) return { done: true, error: "找不到課程，請重新執行批次開通" };
+  if (rows.length === 0) return { done: true, error: "名單是空的" };
+  if (defaultPassword.length < 6)
+    return { done: true, error: "預設密碼至少 6 字元" };
+  if (rows.length > MAX_BATCH_ROWS)
+    return { done: true, error: `一次最多 ${MAX_BATCH_ROWS} 筆，請分批` };
+
+  const results: BatchRowResult[] = [];
+  const seen = new Set<string>();
+  const validEmails = [...new Set(rows.map((r) => r.email).filter((e) => EMAIL_RE.test(e)))];
+  // 重新查一次會員（避免上一步之後名單已有變化），已註冊的不會動到帳號
+  const profileMap = await getProfilesByEmails(validEmails);
+
+  for (const row of rows) {
+    if (!EMAIL_RE.test(row.email)) {
+      results.push({ email: row.email || "(空白)", status: "invalid", detail: "email 格式錯誤" });
+      continue;
+    }
+    if (seen.has(row.email)) {
+      results.push({ email: row.email, status: "invalid", detail: "名單內重複，已略過" });
+      continue;
+    }
+    seen.add(row.email);
+
+    let userId = profileMap.get(row.email)?.id;
+    let createdNew = false;
+
+    if (!userId) {
+      const created = await createMember({
+        email: row.email,
+        password: row.password || defaultPassword,
+        displayName: row.name || row.email.split("@")[0],
+      });
+      if (created.ok) {
+        userId = created.userId;
+        createdNew = true;
+      } else {
+        results.push({
+          email: row.email,
+          status: "error",
+          detail:
+            created.reason === "exists"
+              ? "帳號已存在但會員資料尚未同步，請稍後用批次開通重試"
+              : created.message,
+        });
+        continue;
+      }
+    }
+
+    try {
+      await prisma.enrollment.upsert({
+        where: { userId_courseId: { userId, courseId } },
+        update: {},
+        create: { userId, courseId },
+      });
+      results.push({
+        email: row.email,
+        status: createdNew ? "created" : "enrolled",
+        detail: createdNew ? "已建立會員並開通權限" : "會員已存在，直接開通權限",
+      });
+    } catch (e) {
+      results.push({
+        email: row.email,
+        status: "error",
+        detail: e instanceof Error ? e.message : "未知錯誤",
+      });
+    }
+  }
+
+  const c = (s: BatchRowResult["status"]) => results.filter((r) => r.status === s).length;
+  revalidatePath("/admin/members");
+  return {
+    done: true,
+    summary: `「${course.title}」處理完成：新增會員並開通 ${c("created")}、僅開通 ${c("enrolled")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}`,
     results,
   };
 }
