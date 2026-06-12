@@ -75,12 +75,12 @@ export default async function EditCoursePage({
           </div>
           <div>
             <label className="mb-1 block text-xs text-gray-500">
-              YouTube ID
+              YouTube 網址或影片 ID
             </label>
             <input
               name="youtubeId"
               required
-              placeholder="dQw4w9WgXcQ"
+              placeholder="可直接貼影片網址或嵌入碼"
               className="rounded border border-gray-300 px-2 py-1.5 text-sm"
             />
           </div>

@@ -11,6 +11,7 @@ import {
   uploadCourseImage,
 } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
+import { extractYoutubeId } from "@/lib/youtube";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門：先驗登入，再查 profiles.role 確認 admin
@@ -167,7 +168,8 @@ export async function deleteCourse(id: string) {
 export async function addLesson(courseId: string, formData: FormData) {
   await requireAdmin();
   const title = String(formData.get("title") ?? "");
-  const youtubeId = String(formData.get("youtubeId") ?? "");
+  // 容錯：貼完整網址或 iframe 嵌入碼也能自動抽出 11 碼影片 ID
+  const youtubeId = extractYoutubeId(String(formData.get("youtubeId") ?? ""));
   const order = Number(formData.get("order") ?? 0);
   const durationSec = formData.get("durationSec")
     ? Number(formData.get("durationSec"))

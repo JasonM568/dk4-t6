@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
+import { extractYoutubeId } from "@/lib/youtube";
 import { prisma } from "@/lib/db";
 
 export default async function LearnPage({
@@ -51,14 +52,21 @@ export default async function LearnPage({
         {/* 播放器 */}
         <div className="lg:col-span-2">
           <div className="aspect-video overflow-hidden rounded-xl bg-black">
-            <iframe
-              key={current.id}
-              className="h-full w-full"
-              src={`https://www.youtube.com/embed/${current.youtubeId}?rel=0`}
-              title={current.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+            {/* 容錯：舊資料若存成完整網址/嵌入碼，播放時自動抽出 ID */}
+            {(() => {
+              const videoId =
+                extractYoutubeId(current.youtubeId) ?? current.youtubeId;
+              return (
+                <iframe
+                  key={current.id}
+                  className="h-full w-full"
+                  src={`https://www.youtube.com/embed/${videoId}?rel=0`}
+                  title={current.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              );
+            })()}
           </div>
           <h2 className="mt-4 text-xl font-bold">{current.title}</h2>
         </div>
