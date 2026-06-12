@@ -44,7 +44,7 @@ export default async function AdminLayout({
             href="/admin/members/import"
             className="text-gray-600 hover:text-black"
           >
-            會員匯入
+            會員新增
           </Link>
           <Link
             href="/admin/enrollments"

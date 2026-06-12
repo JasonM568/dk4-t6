@@ -482,20 +482,67 @@ export type BatchState = {
   error?: string;
 } | null;
 
-// 把貼上的名單拆成列：支援「email,姓名,密碼」（逗號/全形逗號/Tab 分隔），
-// 姓名與密碼可省略；空行與 # 開頭的註解行略過
+// 把貼上的名單拆成列（逗號/全形逗號/Tab 分隔），欄位順序不限，自動辨識：
+// - 符合 email 格式的欄位 → email
+// - 含中文的欄位 → 姓名
+// - 其餘欄位 → 密碼（單一非中文欄位時：≥6 碼且含數字當密碼，否則當英文姓名）
+// 空行與 # 開頭的註解行略過
 function parseRows(raw: string): { email: string; name: string; password: string }[] {
+  const CJK = /[一-鿿]/;
   return raw
     .replace(/^﻿/, "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"))
     .map((line) => {
-      const [email = "", name = "", password = ""] = line
+      const parts = line
         .split(/[,\t，]/)
-        .map((s) => s.trim());
-      return { email: email.toLowerCase(), name, password };
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const email = (parts.find((p) => EMAIL_RE.test(p)) ?? "").toLowerCase();
+      const rest = parts.filter((p) => !EMAIL_RE.test(p));
+
+      let name = "";
+      let password = "";
+      const cjkField = rest.find((p) => CJK.test(p));
+      if (cjkField) {
+        name = cjkField;
+        password = rest.find((p) => p !== cjkField) ?? "";
+      } else if (rest.length >= 2) {
+        [name, password] = rest;
+      } else if (rest.length === 1) {
+        if (rest[0].length >= 6 && /\d/.test(rest[0])) password = rest[0];
+        else name = rest[0];
+      }
+      return { email, name, password };
     });
+}
+
+/** 單筆手動新增會員 */
+export async function addMemberAction(
+  _prev: EnrollmentEditState,
+  formData: FormData,
+): Promise<EnrollmentEditState> {
+  await requireAdmin();
+
+  const name = String(formData.get("name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "").trim();
+
+  if (!name) return { error: "請填寫姓名" };
+  if (!EMAIL_RE.test(email)) return { error: "Email 格式錯誤" };
+  if (password.length < 6) return { error: "密碼至少 6 字元" };
+
+  const created = await createMember({ email, password, displayName: name });
+  if (!created.ok) {
+    return created.reason === "exists"
+      ? { error: `${email} 已是會員，不需重複建立` }
+      : { error: `建立失敗：${created.message ?? "未知錯誤"}` };
+  }
+
+  revalidatePath("/admin/members");
+  return { success: `已建立會員 ${name}（${email}）` };
 }
 
 /** 會員批次匯入：建立 Supabase Auth 帳號（profiles 由 QBC trigger 自動建立） */

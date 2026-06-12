@@ -1,7 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { importMembersAction, type BatchState } from "@/actions/admin";
+import {
+  importMembersAction,
+  addMemberAction,
+  type BatchState,
+  type EnrollmentEditState,
+} from "@/actions/admin";
 import { BatchResultTable } from "@/components/admin/batch-result-table";
 
 export default function ImportMembersPage() {
@@ -9,16 +14,71 @@ export default function ImportMembersPage() {
     importMembersAction,
     null,
   );
+  const [singleState, singleAction, singlePending] = useActionState<
+    EnrollmentEditState,
+    FormData
+  >(addMemberAction, null);
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold">會員批次匯入</h1>
+      <h1 className="text-2xl font-bold">會員新增</h1>
       <p className="mt-2 text-sm text-gray-500">
-        為尚未註冊的學員批次建立帳號。建立後學員即可用 email + 密碼登入本站與
+        為尚未註冊的學員建立帳號。建立後學員即可用 email + 密碼登入本站與
         hope 站（同一組帳號）。已存在的會員會自動略過，不會被改密碼。
       </p>
 
-      <form action={formAction} className="mt-6 space-y-4">
+      {/* 單筆新增 */}
+      <section className="mt-6 rounded-xl border border-gray-200 p-4">
+        <h2 className="mb-3 font-bold">單筆新增</h2>
+        <form action={singleAction} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-32 flex-1">
+            <label className="mb-1 block text-xs text-gray-500">姓名</label>
+            <input
+              name="name"
+              required
+              placeholder="王小明"
+              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="min-w-48 flex-1">
+            <label className="mb-1 block text-xs text-gray-500">Email</label>
+            <input
+              name="email"
+              type="email"
+              required
+              placeholder="student@example.com"
+              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="min-w-36 flex-1">
+            <label className="mb-1 block text-xs text-gray-500">
+              密碼（至少 6 字元）
+            </label>
+            <input
+              name="password"
+              required
+              placeholder="hope2026"
+              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={singlePending}
+            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {singlePending ? "建立中…" : "建立會員"}
+          </button>
+          {singleState?.success && (
+            <p className="w-full text-sm text-green-600">✓ {singleState.success}</p>
+          )}
+          {singleState?.error && (
+            <p className="w-full text-sm text-red-600">{singleState.error}</p>
+          )}
+        </form>
+      </section>
+
+      <h2 className="mt-8 font-bold">批次匯入</h2>
+      <form action={formAction} className="mt-3 space-y-4">
         <div>
           <label className="mb-1 block text-sm font-medium">
             學員名單（一行一位）
@@ -28,15 +88,16 @@ export default function ImportMembersPage() {
             rows={10}
             required
             placeholder={
-              "格式：email,姓名,密碼（姓名與密碼可省略，用逗號或 Tab 分隔）\n" +
-              "student1@example.com,王小明\n" +
+              "每行一位，欄位順序不限，系統會自動辨識姓名與 email：\n" +
+              "王小明,student1@example.com\n" +
               "student2@example.com,李小華,abc12345\n" +
               "student3@example.com"
             }
             className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
           />
           <p className="mt-1 text-xs text-gray-400">
-            可直接從 Excel 複製貼上（Tab 分隔也支援）；# 開頭的行會略過
+            可直接從 Excel 複製貼上（逗號或 Tab 分隔皆可）；「姓名」和「email」前後順序不拘，
+            自動辨識；密碼可省略（套用下方預設密碼）；# 開頭的行會略過
           </p>
         </div>
 
