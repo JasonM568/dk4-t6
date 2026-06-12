@@ -3,8 +3,8 @@ import "./globals.css";
 import { Navbar } from "@/components/navbar";
 
 export const metadata: Metadata = {
-  title: "線上課程學習平台",
-  description: "會員制線上課程學習網站 — 註冊、購課、線上觀看、訂單管理",
+  title: "希望學院學習平台",
+  description: "希望學院學習平台 — 註冊、購課、線上觀看、訂單管理",
 };
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
         <Navbar />
         <main className="flex-1">{children}</main>
         <footer className="border-t border-gray-200 py-6 text-center text-xs text-gray-400">
-          © 2026 線上課程學習平台 · Demo
+          © 2026 希望學院學習平台 HOPE Academy
         </footer>
       </body>
     </html>

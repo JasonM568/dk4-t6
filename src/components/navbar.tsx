@@ -13,8 +13,14 @@ export async function Navbar() {
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
       <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-lg font-bold">
-            🎓 學習平台
+          <Link href="/" className="flex items-center gap-2 text-lg font-bold">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/hope-academy-logo-email.jpg"
+              alt="希望學院"
+              className="h-8 w-8 rounded-full"
+            />
+            希望學院學習平台
           </Link>
           <Link
             href="/courses"
