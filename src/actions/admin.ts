@@ -42,6 +42,10 @@ const courseSchema = z.object({
     .string()
     .url("封面圖片要填完整網址（https:// 開頭），沒有圖片請留空")
     .or(z.literal("")),
+  courseCode: z
+    .string()
+    .transform((v) => v.trim() || null)
+    .nullable(),
   listPrice: z
     .union([
       z.literal("").transform(() => null),
@@ -67,6 +71,7 @@ function courseInput(formData: FormData) {
     title: String(formData.get("title") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim(),
     coverImage: String(formData.get("coverImage") ?? "").trim(),
+    courseCode: String(formData.get("courseCode") ?? ""),
     listPrice: String(formData.get("listPrice") ?? "").trim(),
     price: formData.get("price"),
     isPublished: formData.get("isPublished") === "on",
@@ -123,16 +128,21 @@ export async function createCourse(
   if (!images.ok) return { error: images.error };
 
   try {
+    const categoryIds = formData.getAll("categoryIds").map(String);
     await prisma.course.create({
       data: {
         ...parsed.data,
         coverImage: images.coverImage,
         introImages: images.introImages,
+        categories: { connect: categoryIds.map((cid) => ({ id: cid })) },
       },
     });
   } catch (e) {
     // slug 是 @unique，撞名給友善訊息
     if (e instanceof Error && e.message.includes("Unique constraint")) {
+      if (e.message.includes("courseCode")) {
+        return { error: `課程編號「${parsed.data.courseCode}」已被其他課程使用，請換一個` };
+      }
       return { error: `slug「${parsed.data.slug}」已被其他課程使用，請換一個` };
     }
     throw e;
@@ -154,16 +164,21 @@ export async function updateCourse(
   if (!images.ok) return { error: images.error };
 
   try {
+    const categoryIds = formData.getAll("categoryIds").map(String);
     await prisma.course.update({
       where: { id },
       data: {
         ...parsed.data,
         coverImage: images.coverImage,
         introImages: images.introImages,
+        categories: { set: categoryIds.map((cid) => ({ id: cid })) },
       },
     });
   } catch (e) {
     if (e instanceof Error && e.message.includes("Unique constraint")) {
+      if (e.message.includes("courseCode")) {
+        return { error: `課程編號「${parsed.data.courseCode}」已被其他課程使用，請換一個` };
+      }
       return { error: `slug「${parsed.data.slug}」已被其他課程使用，請換一個` };
     }
     throw e;
@@ -304,35 +319,63 @@ export async function deleteMaterial(materialId: string, courseId: string) {
 
 export type EnrollmentEditState = { error?: string; success?: string } | null;
 
-/** 依勾選結果同步單一會員的課程觀看權限：勾了就開通、取消就移除 */
-export async function setMemberEnrollmentsAction(
+/** 手動開通單一課程權限（orderId 留空 = 標示「手動開通」） */
+export async function grantEnrollmentAction(
   userId: string,
   _prev: EnrollmentEditState,
   formData: FormData,
 ): Promise<EnrollmentEditState> {
   await requireAdmin();
 
-  const selected = new Set(formData.getAll("courseIds").map(String));
-  const existing = await prisma.enrollment.findMany({ where: { userId } });
-  const existingByCourse = new Map(existing.map((e) => [e.courseId, e]));
+  const courseId = String(formData.get("courseId") ?? "");
+  const course = await prisma.course.findUnique({ where: { id: courseId } });
+  if (!course) return { error: "請選擇課程" };
 
-  const toAdd = [...selected].filter((c) => !existingByCourse.has(c));
-  const toRemove = existing.filter((e) => !selected.has(e.courseId));
-
-  if (toAdd.length === 0 && toRemove.length === 0) {
-    return { success: "權限沒有變動" };
-  }
-
-  await prisma.$transaction([
-    // 手動開通：orderId 留空，詳情頁會標示「手動開通」
-    ...toAdd.map((courseId) =>
-      prisma.enrollment.create({ data: { userId, courseId } }),
-    ),
-    ...toRemove.map((e) => prisma.enrollment.delete({ where: { id: e.id } })),
-  ]);
+  await prisma.enrollment.upsert({
+    where: { userId_courseId: { userId, courseId } },
+    update: {},
+    create: { userId, courseId },
+  });
 
   revalidatePath(`/admin/members/${userId}`);
-  return { success: `已更新：開通 ${toAdd.length} 門、移除 ${toRemove.length} 門` };
+  return { success: `已開通「${course.title}」` };
+}
+
+/** 移除單一課程權限（客戶端先 confirm） */
+export async function revokeEnrollment(userId: string, courseId: string) {
+  await requireAdmin();
+  await prisma.enrollment.deleteMany({ where: { userId, courseId } });
+  revalidatePath(`/admin/members/${userId}`);
+}
+
+// ───────────────────────── 課程分類 ─────────────────────────
+
+export async function addCategory(formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  // 名稱唯一，重複就略過（不炸頁）
+  await prisma.category
+    .create({ data: { name } })
+    .catch(() => undefined);
+  revalidatePath("/admin/categories");
+}
+
+export async function updateCategory(id: string, formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  await prisma.category
+    .update({ where: { id }, data: { name } })
+    .catch(() => undefined);
+  revalidatePath("/admin/categories");
+}
+
+export async function deleteCategory(id: string) {
+  await requireAdmin();
+  // 多對多關聯只會解除課程的分類標記，不會動到課程本身
+  await prisma.category.delete({ where: { id } }).catch(() => undefined);
+  revalidatePath("/admin/categories");
 }
 
 // ───────────────────────── 批次功能 ─────────────────────────

@@ -28,6 +28,12 @@ export default async function AdminLayout({
           <Link href="/admin/courses" className="text-gray-600 hover:text-black">
             課程管理
           </Link>
+          <Link
+            href="/admin/categories"
+            className="text-gray-600 hover:text-black"
+          >
+            課程分類
+          </Link>
           <Link href="/admin/orders" className="text-gray-600 hover:text-black">
             訂單查詢
           </Link>

@@ -53,9 +53,20 @@ model MembershipTier {
   members MemberStats[]
 }
 
+// 課程分類（後台自行維護選項，課程可勾選多個分類）
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  courses   Course[]
+
+  createdAt DateTime @default(now())
+}
+
 model Course {
   id          String   @id @default(cuid())
   slug        String   @unique
+  courseCode  String?  @unique // 課程編號（如 HA-001，選填）
   title       String
   description String   @db.Text
   coverImage  String?
@@ -67,6 +78,7 @@ model Course {
 
   lessons     Lesson[]
   materials   CourseMaterial[]
+  categories  Category[]
   orderItems  OrderItem[]
   enrollments Enrollment[]
 

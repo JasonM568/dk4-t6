@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getProfile } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
-import { setMemberEnrollmentsAction } from "@/actions/admin";
+import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
 import { EnrollmentEditor } from "./enrollment-editor";
 
 export const metadata = { title: "會員詳情 — 管理後台" };
@@ -46,18 +46,15 @@ export default async function MemberDetailPage({
   ]);
   if (!profile) notFound();
 
-  // 全部課程 + 此會員的開通狀態，給勾選編輯器用
-  const enrollmentByCourse = new Map(enrollments.map((e) => [e.courseId, e]));
-  const courseRows = allCourses.map((c) => {
-    const e = enrollmentByCourse.get(c.id);
-    return {
-      id: c.id,
-      title: c.title,
-      isPublished: c.isPublished,
-      enrolledAt: e ? e.createdAt.toISOString() : null,
-      fromOrder: !!e?.orderId,
-    };
-  });
+  // 方案 A：已開通清單 + 尚未開通的課程（給下拉選單）
+  const enrolledRows = enrollments.map((e) => ({
+    courseId: e.courseId,
+    title: e.course.title,
+    enrolledAt: e.createdAt.toISOString(),
+    fromOrder: !!e.orderId,
+  }));
+  const enrolledIds = new Set(enrollments.map((e) => e.courseId));
+  const availableCourses = allCourses.filter((c) => !enrolledIds.has(c.id));
 
   return (
     <div className="max-w-4xl">
@@ -97,11 +94,18 @@ export default async function MemberDetailPage({
           課程觀看權限（已開通 {enrollments.length} 門）
         </h2>
         <p className="mb-3 text-sm text-gray-500">
-          勾選要開放給這位會員的課程，按「儲存權限變更」生效。
+          下方選單選擇課程後按「開通」即生效；移除權限會先跳確認。
         </p>
         <EnrollmentEditor
-          courses={courseRows}
-          saveAction={setMemberEnrollmentsAction.bind(null, id)}
+          enrolled={enrolledRows}
+          available={availableCourses}
+          grantAction={grantEnrollmentAction.bind(null, id)}
+          revokeActions={Object.fromEntries(
+            enrolledRows.map((e) => [
+              e.courseId,
+              revokeEnrollment.bind(null, id, e.courseId),
+            ]),
+          )}
         />
       </section>
 

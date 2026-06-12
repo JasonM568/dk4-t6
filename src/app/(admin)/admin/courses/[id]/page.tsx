@@ -25,9 +25,15 @@ export default async function EditCoursePage({
     include: {
       lessons: { orderBy: { order: "asc" } },
       materials: { orderBy: { createdAt: "asc" } },
+      categories: { select: { id: true } },
     },
   });
   if (!course) notFound();
+
+  const allCategories = await prisma.category.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true },
+  });
 
   return (
     <div>
@@ -41,7 +47,11 @@ export default async function EditCoursePage({
 
       <CourseForm
         action={updateCourse.bind(null, course.id)}
-        defaultValues={course}
+        defaultValues={{
+          ...course,
+          categoryIds: course.categories.map((c) => c.id),
+        }}
+        allCategories={allCategories}
         submitLabel="儲存變更"
       />
 

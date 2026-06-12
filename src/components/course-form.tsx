@@ -7,6 +7,7 @@ type CourseFormProps = {
   action: (prev: CourseFormState, formData: FormData) => Promise<CourseFormState>;
   defaultValues?: {
     slug?: string;
+    courseCode?: string | null;
     title?: string;
     description?: string;
     coverImage?: string | null;
@@ -14,13 +15,16 @@ type CourseFormProps = {
     listPrice?: number | null;
     price?: number;
     isPublished?: boolean;
+    categoryIds?: string[];
   };
+  allCategories?: { id: string; name: string }[];
   submitLabel: string;
 };
 
 export function CourseForm({
   action,
   defaultValues = {},
+  allCategories = [],
   submitLabel,
 }: CourseFormProps) {
   const [state, formAction, pending] = useActionState<CourseFormState, FormData>(
@@ -38,15 +42,43 @@ export function CourseForm({
           className="input"
         />
       </Field>
-      <Field label="Slug（網址代稱，小寫英數與 -）">
-        <input
-          name="slug"
-          required
-          defaultValue={defaultValues.slug}
-          placeholder="nextjs-fullstack"
-          className="input"
-        />
-      </Field>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Slug（網址代稱，小寫英數與 -）">
+          <input
+            name="slug"
+            required
+            defaultValue={defaultValues.slug}
+            placeholder="nextjs-fullstack"
+            className="input"
+          />
+        </Field>
+        <Field label="課程編號（選填，不可重複）">
+          <input
+            name="courseCode"
+            defaultValue={defaultValues.courseCode ?? ""}
+            placeholder="例：HA-001"
+            className="input"
+          />
+        </Field>
+      </div>
+
+      {allCategories.length > 0 && (
+        <Field label="課程分類（可複選；選項到「課程分類」頁維護）">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-lg border border-gray-200 p-3">
+            {allCategories.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="categoryIds"
+                  value={c.id}
+                  defaultChecked={defaultValues.categoryIds?.includes(c.id)}
+                />
+                {c.name}
+              </label>
+            ))}
+          </div>
+        </Field>
+      )}
       <Field label="課程描述">
         <textarea
           name="description"
