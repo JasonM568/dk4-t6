@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-06-12（已上線 production，會員系統已接希望學院 Supabase Auth）**
+> 最後更新：**2026-06-12 晚（已上線 + 後台功能大擴充 + SMTP 通了，剩 Confirm email 開關與正式金流）**
 
 ## 目前狀態：已部署上線 ✅
 
@@ -43,34 +43,47 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 
 ## ✅ 已完成
 
-- [x] MVP 全功能（商店/下單/播放/後台/ECPay 金流/自動化測試）— 2026-06-06
-- [x] 會員系統改接 Supabase Auth（移除 next-auth/bcrypt，學員與 QBC 同帳密）— 2026-06-12
-- [x] course schema 隔離 + 重生 init migration
-- [x] 忘記密碼/重置流程 + 60 秒重寄鎖鈕 + 防帳號枚舉（跨裝置可用）
-- [x] 希望學院品牌重置信模板（`docs/email-templates/recovery.html`，LOGO 在 `public/brand/`）
-- [x] 會員分級前台隱藏（TIER_SYSTEM_ENABLED 開關）
-- [x] Vercel production 環境變數 + 部署上線；正式庫 course schema 已建立（已驗證 public/auth 零接觸）
-- [x] 人工 smoke test：真帳號登入/登出 OK
+**2026-06-06**
+- [x] MVP 全功能（商店/下單/播放/後台/ECPay 金流/自動化測試）
+
+**2026-06-12（上線日）**
+- [x] 會員系統改接 Supabase Auth（移除 next-auth/bcrypt，學員與 QBC 同帳密）
+- [x] course schema 隔離 + Vercel 部署上線 + 綁定 course.huangxi.info
+- [x] 自訂 SMTP（Resend + huibang.com.tw）+ 品牌重置信——**忘記密碼全流程實測成功**
+- [x] 全站品牌「希望學院學習平台」（站名/LOGO/favicon）
+- [x] 會員分級前台隱藏（`TIER_SYSTEM_ENABLED` 開關，結帳一律原價）
+
+**2026-06-12 後台功能大擴充**
+- [x] 會員新增：單筆表單 + 批次匯入（欄位順序不限，自動辨識姓名/email/密碼）
+- [x] 批次開通觀看權限（選課程 + email 名單，冪等）
+- [x] 會員詳情頁：基本資料/權限清單（下拉新增+逐筆移除）/訂單紀錄
+- [x] 未登入會員清單 + 批次重設密碼（`/admin/members/inactive`）
+- [x] 課程：分類管理（複選）、課程編號、排序（上移/下移）、雙價格（建議售價劃線+優惠價）
+- [x] 課程內容：封面/介紹圖上傳、章節行內編輯、線上簡報嵌入（Google Slides/Canva）、講義上傳下載
+- [x] YouTube 容錯（網址/嵌入碼/純 ID 皆可）；課程表單驗證錯誤友善顯示
+- [x] 群發通知（`/admin/broadcast`：品牌信+課程卡片，先測試後群發，Resend batch API，寄送紀錄）
+- [x] 註冊確認信「程式端」備妥（emailRedirectTo + confirm-signup.html 模板）——**Dashboard 開關未開**
+- 會員數：135（原 QBC 87 + 本日匯入）；Storage：course-assets bucket（圖片 5MB/文件 20MB）
 
 ## 📌 待辦（依優先序）
 
-1. **Supabase Dashboard 設定（使用者操作，指南：`docs/email-templates/SETUP.md`）**：
-   自訂 SMTP（建議 Resend）+ 寄件人「希望學院」+ Redirect URLs 白名單 + 貼品牌模板。
-   ⚠️ 內建 SMTP 只寄團隊成員、每小時 2 封（Pro 方案也一樣）——這是 hope 站寄不出重置信的根因，設好兩站一起修好
-2. **與 QBC 站協調**：信件模板改 `{{ .RedirectTo }}` 格式後，hope 站 reset 頁相容性回歸測試（上線重置功能前必須）
-3. ~~綁網域~~ ✅ 已完成（`NEXT_PUBLIC_BASE_URL` 已改 course.huangxi.info；Supabase Redirect URLs 待辦 #1 一併設定）
-4. **課程資訊調整**：目前是 seed 示範課程，正式課程內容由後台 `/admin` 建立（或提供資料批次匯入）
-5. **正式金流**：ECPay 正式商店參數（目前是官方 sandbox）+ ReturnURL 設定 + 真實付款測試
-6. hope 站加「課程專區」按鈕連到 course 站
-7. 跨子網域 SSO（cookie domain `.huangxi.info`，登入一次兩站通行）— 第二階段優化
+1. **開啟註冊確認信**（使用者操作）：Dashboard → Auth → Sign In/Up → Confirm email 開啟 + 貼 `docs/email-templates/confirm-signup.html` 模板（步驟在 SETUP.md）。⚠️ 開啟後立即測 hope 站註冊，hope 端若沒處理確認連結要關回
+2. **與 QBC 站協調**：Recovery 模板已改 `{{ .RedirectTo }}` 格式，hope 站 reset 頁相容性回歸測試
+3. **正式金流**：ECPay 正式商店參數（目前是官方 sandbox）+ 真實付款測試
+4. **正式課程內容**：後台建立真實課程（分類選項也要先建）
+5. hope 站加「課程專區」按鈕連到 course 站
+6. Resend API key 曾貼在對話中，建議 rotate（rotate 後更新本機 .env 與 Vercel 的 RESEND_API_KEY）
+7. 跨子網域 SSO（cookie domain `.huangxi.info`）— 第二階段優化
 8. 課程進度追蹤、訂單逾期 cron、購物車 — 原 MVP 待辦
-9. Google OAuth — 本次改版已移除，要做需在 Supabase 開 provider（影響 QBC，需獨立評估）
+9. Google OAuth — 需在 Supabase 開 provider（影響 QBC，需獨立評估）
 
 ---
 
 ## ⚠️ 已知事項與決策
 
 - **Prisma 鎖 6.x**；`package.json#prisma` seed 設定 Prisma 7 將棄用（屆時遷 `prisma.config.ts`）
+- ⛔ **`prisma migrate diff --from-url` 產出的 SQL 不可信**（曾產出砍整個 course schema 的指令）——需要手寫 migration 時照 `20260612*_categories_course_code` 的做法：手寫 SQL → 本機 `migrate deploy` 驗證 → grep 確認無 `public./auth.` 字樣
+- **群發信額度**：Resend 免費方案 100 封/天、3,000 封/月（含 Auth 信），群發 135 人接近日上限，當天避免同時大量寄驗證信
 - **Next 16**：middleware 慣例更名 `src/proxy.ts`；params/searchParams 是 Promise 要 await
 - **金流抽換**：換藍新只需加 `src/lib/payment/newebpay.ts` + factory case + 改 `PAYMENT_PROVIDER`
 - **git**：專案有 `[slug]`/`(auth)` 括號目錄，務必 `git add -A`，勿用括號路徑（zsh glob 危險）
