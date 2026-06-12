@@ -5,7 +5,7 @@
 
 ## 目前狀態：已部署上線 ✅
 
-- **Production**：<https://course-platform-teal-rho.vercel.app>（待綁 `course.huangxi.info`）
+- **Production**：<https://course.huangxi.info>（2026-06-12 已綁定，vercel.app 網址仍可用）
 - GitHub repo：<https://github.com/JasonM568/dk4-t6.git>（push `main` 即自動部署 production）
 - Vercel 專案：`tjs-projects-435187fd/course-platform`
 - dev server：`pnpm dev` → http://localhost:3000
@@ -58,7 +58,7 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
    自訂 SMTP（建議 Resend）+ 寄件人「希望學院」+ Redirect URLs 白名單 + 貼品牌模板。
    ⚠️ 內建 SMTP 只寄團隊成員、每小時 2 封（Pro 方案也一樣）——這是 hope 站寄不出重置信的根因，設好兩站一起修好
 2. **與 QBC 站協調**：信件模板改 `{{ .RedirectTo }}` 格式後，hope 站 reset 頁相容性回歸測試（上線重置功能前必須）
-3. **綁網域 `course.huangxi.info`**：Vercel 加 domain + DNS CNAME；完成後改 `NEXT_PUBLIC_BASE_URL` 與 Supabase Redirect URLs
+3. ~~綁網域~~ ✅ 已完成（`NEXT_PUBLIC_BASE_URL` 已改 course.huangxi.info；Supabase Redirect URLs 待辦 #1 一併設定）
 4. **課程資訊調整**：目前是 seed 示範課程，正式課程內容由後台 `/admin` 建立（或提供資料批次匯入）
 5. **正式金流**：ECPay 正式商店參數（目前是官方 sandbox）+ ReturnURL 設定 + 真實付款測試
 6. hope 站加「課程專區」按鈕連到 course 站
