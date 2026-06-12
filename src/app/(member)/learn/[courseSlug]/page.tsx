@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
+import { getProfileRole } from "@/lib/supabase/admin";
+import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { toSlideEmbedUrl } from "@/lib/embed";
 import { prisma } from "@/lib/db";
@@ -29,10 +31,13 @@ export default async function LearnPage({
   if (!course) notFound();
 
   // ── 權限閘門：以 Enrollment 為唯一真實來源，未購買者一律導回詳情頁 ──
+  // 例外：管理員免購買可看全部課程（含未上架，方便上架前預覽）
   const enrollment = await prisma.enrollment.findUnique({
     where: { userId_courseId: { userId, courseId: course.id } },
   });
-  if (!enrollment) redirect(`/courses/${courseSlug}`);
+  if (!enrollment && !isAdminRole(await getProfileRole(userId))) {
+    redirect(`/courses/${courseSlug}`);
+  }
 
   if (course.lessons.length === 0) {
     return (

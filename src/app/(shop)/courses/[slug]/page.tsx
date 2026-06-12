@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/server";
+import { getProfileRole } from "@/lib/supabase/admin";
+import { isAdminRole } from "@/lib/auth/role";
 import { formatNT } from "@/lib/format";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { BuyButton } from "@/components/buy-button";
@@ -41,6 +43,11 @@ export default async function CourseDetailPage({
     isEnrolled = !!enrollment;
     discountPercent = stats?.currentTier?.discountPercent ?? 0;
     tierName = stats?.currentTier?.name ?? null;
+
+    // 管理員免購買視同已開通（按鈕顯示「前往上課」，觀看頁閘門同步放行）
+    if (!isEnrolled) {
+      isEnrolled = isAdminRole(await getProfileRole(userId));
+    }
   }
 
   const discount = computeDiscount(course.price, discountPercent);
