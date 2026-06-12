@@ -34,6 +34,18 @@ export default async function AdminLayout({
           <Link href="/admin/members" className="text-gray-600 hover:text-black">
             會員與等級
           </Link>
+          <Link
+            href="/admin/members/import"
+            className="text-gray-600 hover:text-black"
+          >
+            會員匯入
+          </Link>
+          <Link
+            href="/admin/enrollments"
+            className="text-gray-600 hover:text-black"
+          >
+            批次開通
+          </Link>
         </nav>
       </div>
       {children}

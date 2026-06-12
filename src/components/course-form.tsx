@@ -1,5 +1,10 @@
+"use client";
+
+import { useActionState } from "react";
+import type { CourseFormState } from "@/actions/admin";
+
 type CourseFormProps = {
-  action: (formData: FormData) => void;
+  action: (prev: CourseFormState, formData: FormData) => Promise<CourseFormState>;
   defaultValues?: {
     slug?: string;
     title?: string;
@@ -16,8 +21,13 @@ export function CourseForm({
   defaultValues = {},
   submitLabel,
 }: CourseFormProps) {
+  const [state, formAction, pending] = useActionState<CourseFormState, FormData>(
+    action,
+    null,
+  );
+
   return (
-    <form action={action} className="max-w-2xl space-y-4">
+    <form action={formAction} className="max-w-2xl space-y-4">
       <Field label="標題">
         <input
           name="title"
@@ -44,7 +54,7 @@ export function CourseForm({
           className="input"
         />
       </Field>
-      <Field label="封面圖片網址">
+      <Field label="封面圖片網址（選填）">
         <input
           name="coverImage"
           type="url"
@@ -72,11 +82,18 @@ export function CourseForm({
         立即上架
       </label>
 
+      {state?.error && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {state.error}
+        </div>
+      )}
+
       <button
         type="submit"
-        className="rounded-lg bg-black px-5 py-2.5 font-medium text-white"
+        disabled={pending}
+        className="rounded-lg bg-black px-5 py-2.5 font-medium text-white disabled:opacity-50"
       >
-        {submitLabel}
+        {pending ? "儲存中…" : submitLabel}
       </button>
 
       <style>{`
