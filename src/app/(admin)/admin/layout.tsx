@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
+import { AdminSubNav } from "./admin-subnav";
 
 export default async function AdminLayout({
   children,
@@ -28,29 +29,11 @@ export default async function AdminLayout({
           <Link href="/admin/courses" className="text-gray-600 hover:text-black">
             課程管理
           </Link>
-          <Link
-            href="/admin/categories"
-            className="text-gray-600 hover:text-black"
-          >
-            課程分類
-          </Link>
-          <Link href="/admin/orders" className="text-gray-600 hover:text-black">
-            訂單查詢
-          </Link>
           <Link href="/admin/members" className="text-gray-600 hover:text-black">
             會員管理
           </Link>
-          <Link
-            href="/admin/members/import"
-            className="text-gray-600 hover:text-black"
-          >
-            會員新增
-          </Link>
-          <Link
-            href="/admin/enrollments"
-            className="text-gray-600 hover:text-black"
-          >
-            批次開通
+          <Link href="/admin/orders" className="text-gray-600 hover:text-black">
+            訂單查詢
           </Link>
           <Link
             href="/admin/broadcast"
@@ -66,6 +49,7 @@ export default async function AdminLayout({
           </Link>
         </nav>
       </div>
+      <AdminSubNav />
       {children}
     </div>
   );

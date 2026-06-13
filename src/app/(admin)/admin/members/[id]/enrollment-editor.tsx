@@ -2,12 +2,15 @@
 
 import { useActionState, useTransition } from "react";
 import type { EnrollmentEditState } from "@/actions/admin";
+import { enrollmentSource } from "@/lib/format";
 
 type EnrolledRow = {
   courseId: string;
   title: string;
   enrolledAt: string;
   fromOrder: boolean;
+  source: string | null;
+  orderId: string | null;
 };
 
 type AvailableCourse = {
@@ -67,15 +70,16 @@ export function EnrollmentEditor({
                   {new Date(e.enrolledAt).toLocaleString("zh-TW")}
                 </td>
                 <td className="px-4 py-3">
-                  {e.fromOrder ? (
-                    <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700">
-                      購買
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                      手動開通
-                    </span>
-                  )}
+                  {(() => {
+                    const s = enrollmentSource(e.source, e.orderId);
+                    return (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${s.className}`}
+                      >
+                        {s.text}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button

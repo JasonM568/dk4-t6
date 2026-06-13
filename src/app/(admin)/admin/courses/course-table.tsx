@@ -128,7 +128,15 @@ export function CourseTable({ courses }: { courses: CourseRow[] }) {
               </td>
               <td className="px-4 py-3">{formatNT(c.price)}</td>
               <td className="px-4 py-3">{c.lessons}</td>
-              <td className="px-4 py-3">{c.enrollments}</td>
+              <td className="px-4 py-3">
+                <Link
+                  href={`/admin/courses/${c.id}/members`}
+                  className="text-indigo-600 hover:underline"
+                  title="查看觀看權限名單"
+                >
+                  {c.enrollments} 人
+                </Link>
+              </td>
               <td className="px-4 py-3">
                 {c.isPublished ? (
                   <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">

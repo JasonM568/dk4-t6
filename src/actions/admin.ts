@@ -440,7 +440,7 @@ export async function grantEnrollmentAction(
   await prisma.enrollment.upsert({
     where: { userId_courseId: { userId, courseId } },
     update: {},
-    create: { userId, courseId },
+    create: { userId, courseId, source: "MANUAL" },
   });
 
   revalidatePath(`/admin/members/${userId}`);
@@ -1070,7 +1070,7 @@ export async function batchEnrollAction(
       await prisma.enrollment.upsert({
         where: { userId_courseId: { userId: profile.id, courseId } },
         update: {},
-        create: { userId: profile.id, courseId },
+        create: { userId: profile.id, courseId, source: "BATCH" },
       });
       results.push({ email: row.email, status: "enrolled" });
     } catch (e) {
@@ -1161,7 +1161,7 @@ export async function createMissingAndEnrollAction(
       await prisma.enrollment.upsert({
         where: { userId_courseId: { userId, courseId } },
         update: {},
-        create: { userId, courseId },
+        create: { userId, courseId, source: createdNew ? "IMPORT" : "BATCH" },
       });
       results.push({
         email: row.email,

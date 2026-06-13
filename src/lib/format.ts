@@ -14,6 +14,24 @@ export function formatDate(date: Date | string): string {
   });
 }
 
+/** 開通來源標籤：購買(有訂單) / 批次 / 匯入 / 手動；null 視為手動（歷史資料無法細分） */
+export function enrollmentSource(
+  source: string | null | undefined,
+  orderId: string | null | undefined,
+): { text: string; className: string } {
+  if (orderId || source === "PURCHASE")
+    return { text: "購買", className: "bg-green-50 text-green-700" };
+  switch (source) {
+    case "BATCH":
+      return { text: "批次開通", className: "bg-amber-50 text-amber-700" };
+    case "IMPORT":
+      return { text: "匯入開通", className: "bg-purple-50 text-purple-700" };
+    case "MANUAL":
+    default:
+      return { text: "手動開通", className: "bg-blue-50 text-blue-700" };
+  }
+}
+
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   PENDING: "待付款",
   PAID: "已付款",

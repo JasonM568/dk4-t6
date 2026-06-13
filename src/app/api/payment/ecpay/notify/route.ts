@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
               userId: order.userId,
               courseId: item.courseId,
               orderId: order.id,
+              source: "PURCHASE",
             },
           });
         }

@@ -52,6 +52,8 @@ export default async function MemberDetailPage({
     title: e.course.title,
     enrolledAt: e.createdAt.toISOString(),
     fromOrder: !!e.orderId,
+    source: e.source,
+    orderId: e.orderId,
   }));
   const enrolledIds = new Set(enrollments.map((e) => e.courseId));
   const availableCourses = allCourses.filter((c) => !enrolledIds.has(c.id));

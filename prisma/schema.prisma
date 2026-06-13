@@ -228,6 +228,7 @@ model Enrollment {
   courseId String
   course   Course  @relation(fields: [courseId], references: [id])
   orderId  String? // 來源訂單
+  source   String? // 開通來源：PURCHASE/MANUAL/BATCH/IMPORT（null=歷史資料，顯示時依 orderId 推斷）
 
   createdAt DateTime @default(now())
 
