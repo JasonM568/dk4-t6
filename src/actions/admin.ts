@@ -485,7 +485,12 @@ export async function bulkSetPasswordAction(
 
 // ───────────────────────── 群發通知 ─────────────────────────
 
-export type BroadcastState = { error?: string; success?: string } | null;
+export type BroadcastState = {
+  error?: string;
+  success?: string;
+  broadcastId?: string; // 本次群發/排程的紀錄 id（手動名單存群組用）
+  manualCount?: number; // 手動名單筆數（>0 時前端提醒「是否建立群組」）
+} | null;
 
 /** 群發通知：mode=test 只寄給操作的管理員本人；mode=all 寄給全部會員並留紀錄。
  *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
@@ -501,6 +506,9 @@ export async function sendBroadcastAction(
   const courseId = String(formData.get("courseId") ?? "");
   const mode = String(formData.get("mode") ?? "test");
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
+  const audience = String(formData.get("audience") ?? "all"); // all | group | manual
+  const groupId = String(formData.get("groupId") ?? "");
+  const manualRaw = String(formData.get("manualList") ?? "");
 
   if (!subject) return { error: "請填寫主旨" };
   if (!body) return { error: "請填寫內文" };
@@ -518,7 +526,7 @@ export async function sendBroadcastAction(
       })
     : null;
 
-  // 測試模式：只寄給自己（排程時間不影響測試信，立即寄）
+  // 測試模式：只寄給自己（發送對象與排程時間不影響測試信）
   if (mode === "test") {
     if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
     const html = buildBroadcastHtml(body, course);
@@ -528,6 +536,42 @@ export async function sendBroadcastAction(
       : { success: `測試信已寄到 ${admin.email}，請收信確認版面` };
   }
 
+  // ── 解析發送對象 ──
+  let audienceType = "ALL";
+  let audienceLabel = "全部會員";
+  let audienceGroupId: string | null = null;
+  let manualRows: { email: string; name?: string }[] | undefined;
+
+  if (audience === "group") {
+    const group = await prisma.mailGroup.findUnique({
+      where: { id: groupId },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!group) return { error: "請選擇名單群組" };
+    if (group._count.members === 0)
+      return { error: `群組「${group.name}」沒有成員，請先到名單群組加入名單` };
+    audienceType = "GROUP";
+    audienceGroupId = group.id;
+    audienceLabel = `群組：${group.name}`;
+  } else if (audience === "manual") {
+    const seen = new Set<string>();
+    manualRows = parseRows(manualRaw)
+      .filter((r) => EMAIL_RE.test(r.email))
+      .filter((r) => !seen.has(r.email) && seen.add(r.email))
+      .map((r) => (r.name ? { email: r.email, name: r.name } : { email: r.email }));
+    if (manualRows.length === 0)
+      return { error: "手動名單沒有任何合法的 email" };
+    audienceLabel = `手動名單 ${manualRows.length} 筆`;
+    audienceType = "MANUAL";
+  }
+
+  const audienceData = {
+    audienceType,
+    groupId: audienceGroupId,
+    audienceLabel,
+    manualRows: manualRows ?? undefined,
+  };
+
   // 排程模式：datetime-local 值無時區，固定以台灣時間解讀
   if (scheduledAtRaw) {
     const scheduledAt = new Date(`${scheduledAtRaw}:00+08:00`);
@@ -535,7 +579,7 @@ export async function sendBroadcastAction(
     if (scheduledAt.getTime() < Date.now() + 60_000) {
       return { error: "發送時間需晚於現在（要立即寄出請清空發送時間）" };
     }
-    await prisma.emailBroadcast.create({
+    const record = await prisma.emailBroadcast.create({
       data: {
         subject,
         body,
@@ -543,6 +587,7 @@ export async function sendBroadcastAction(
         status: "SCHEDULED",
         scheduledAt,
         sentBy: admin?.email ?? null,
+        ...audienceData,
       },
     });
     revalidatePath("/admin/broadcast");
@@ -551,7 +596,9 @@ export async function sendBroadcastAction(
       hour12: false,
     });
     return {
-      success: `已排程：${shown} 寄出（實際寄出時間最多晚 5 分鐘；寄送名單以當下會員為準）`,
+      success: `已排程：${shown} 寄給「${audienceLabel}」（實際寄出最多晚 5 分鐘；全部會員/群組名單以寄出當下為準）`,
+      broadcastId: record.id,
+      manualCount: manualRows?.length,
     };
   }
 
@@ -563,6 +610,7 @@ export async function sendBroadcastAction(
       courseId: courseId || null,
       status: "SENDING",
       sentBy: admin?.email ?? null,
+      ...audienceData,
     },
   });
   const r = await executeBroadcast(record.id);
@@ -572,9 +620,15 @@ export async function sendBroadcastAction(
   if (r.failed > 0) {
     return {
       error: `寄送完成但有失敗：成功 ${r.sent}、失敗 ${r.failed}（${r.error ?? ""}）`,
+      broadcastId: record.id,
+      manualCount: manualRows?.length,
     };
   }
-  return { success: `群發完成！已寄給 ${r.sent} 位會員` };
+  return {
+    success: `群發完成！已寄給 ${r.sent} 位收件人（${audienceLabel}）`,
+    broadcastId: record.id,
+    manualCount: manualRows?.length,
+  };
 }
 
 /** 取消排程中的群發（只動 SCHEDULED 狀態，已寄出/處理中不受影響） */
@@ -585,6 +639,117 @@ export async function cancelScheduledBroadcast(id: string) {
     data: { status: "CANCELED" },
   });
   revalidatePath("/admin/broadcast");
+}
+
+// ───────────────────────── 電子報名單群組 ─────────────────────────
+
+/** 把名單列（email+姓名）塞進群組，群組內 email 重複自動略過。回傳實際新增筆數 */
+async function addRowsToGroup(
+  groupId: string,
+  rows: { email: string; name?: string }[],
+): Promise<number> {
+  const seen = new Set<string>();
+  const data = rows
+    .map((r) => ({ email: r.email.trim().toLowerCase(), name: r.name?.trim() || null }))
+    .filter((r) => EMAIL_RE.test(r.email))
+    .filter((r) => !seen.has(r.email) && seen.add(r.email))
+    .map((r) => ({ ...r, groupId }));
+  if (data.length === 0) return 0;
+  const created = await prisma.mailGroupMember.createMany({
+    data,
+    skipDuplicates: true,
+  });
+  return created.count;
+}
+
+/** 建立名單群組（可同時貼名單）。名稱重複改為加入既有群組 */
+export async function createMailGroupAction(formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") ?? "").trim();
+  const raw = String(formData.get("list") ?? "");
+  if (!name) return;
+
+  const group = await prisma.mailGroup.upsert({
+    where: { name },
+    update: {},
+    create: { name },
+  });
+  if (raw.trim()) await addRowsToGroup(group.id, parseRows(raw));
+  revalidatePath("/admin/broadcast/groups");
+  redirect(`/admin/broadcast/groups/${group.id}`);
+}
+
+export async function renameMailGroup(id: string, formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  // 撞名就略過（名稱唯一）
+  await prisma.mailGroup.update({ where: { id }, data: { name } }).catch(() => undefined);
+  revalidatePath("/admin/broadcast/groups");
+  revalidatePath(`/admin/broadcast/groups/${id}`);
+}
+
+/** 刪除群組（成員一併刪除；不影響歷史寄送紀錄） */
+export async function deleteMailGroup(id: string) {
+  await requireAdmin();
+  await prisma.mailGroup.delete({ where: { id } }).catch(() => undefined);
+  revalidatePath("/admin/broadcast/groups");
+  redirect("/admin/broadcast/groups");
+}
+
+/** 貼名單加入群組成員（email 重複自動略過） */
+export async function addGroupMembersAction(groupId: string, formData: FormData) {
+  await requireAdmin();
+  const raw = String(formData.get("list") ?? "");
+  if (raw.trim()) await addRowsToGroup(groupId, parseRows(raw));
+  revalidatePath(`/admin/broadcast/groups/${groupId}`);
+  revalidatePath("/admin/broadcast/groups");
+}
+
+export async function removeGroupMember(memberId: string, groupId: string) {
+  await requireAdmin();
+  await prisma.mailGroupMember.deleteMany({ where: { id: memberId } });
+  revalidatePath(`/admin/broadcast/groups/${groupId}`);
+  revalidatePath("/admin/broadcast/groups");
+}
+
+/** 把某次群發的名單存進群組：
+ *  newName 有填 → 建立（或併入同名）群組；否則加入選擇的既有群組。
+ *  名單來源優先用 manualRows（含姓名），否則用寄出快照 recipients */
+export async function saveBroadcastListToGroupAction(
+  broadcastId: string,
+  formData: FormData,
+) {
+  await requireAdmin();
+  const newName = String(formData.get("newName") ?? "").trim();
+  const groupId = String(formData.get("groupId") ?? "");
+
+  const record = await prisma.emailBroadcast.findUnique({
+    where: { id: broadcastId },
+    select: { manualRows: true, recipients: true },
+  });
+  if (!record) return;
+
+  const rows: { email: string; name?: string }[] =
+    Array.isArray(record.manualRows) && record.manualRows.length > 0
+      ? (record.manualRows as { email: string; name?: string }[])
+      : record.recipients.map((email) => ({ email }));
+  if (rows.length === 0) return;
+
+  let targetId = groupId;
+  if (newName) {
+    const group = await prisma.mailGroup.upsert({
+      where: { name: newName },
+      update: {},
+      create: { name: newName },
+    });
+    targetId = group.id;
+  }
+  if (!targetId) return;
+
+  await addRowsToGroup(targetId, rows);
+  revalidatePath("/admin/broadcast/groups");
+  redirect(`/admin/broadcast/groups/${targetId}`);
 }
 
 // ───────────────────────── 課程分類 ─────────────────────────

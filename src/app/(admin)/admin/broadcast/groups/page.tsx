@@ -1,0 +1,93 @@
+import Link from "next/link";
+import { prisma } from "@/lib/db";
+import { createMailGroupAction } from "@/actions/admin";
+
+export const metadata = { title: "名單群組 — 管理後台" };
+
+export default async function MailGroupsPage() {
+  const groups = await prisma.mailGroup.findMany({
+    include: { _count: { select: { members: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return (
+    <div className="max-w-3xl">
+      <div className="mb-1 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">名單群組</h1>
+        <Link
+          href="/admin/broadcast"
+          className="text-sm text-indigo-600 hover:underline"
+        >
+          ← 回群發通知
+        </Link>
+      </div>
+      <p className="mb-6 text-sm text-gray-500">
+        建立常用的收件名單群組（不限會員），群發 EDM 時可直接選擇群組寄送。
+      </p>
+
+      <ul className="mb-8 divide-y divide-gray-100 rounded-xl border border-gray-200">
+        {groups.length === 0 && (
+          <li className="px-4 py-4 text-sm text-gray-400">
+            尚無群組，先在下方建立
+          </li>
+        )}
+        {groups.map((g) => (
+          <li key={g.id} className="flex items-center gap-3 px-4 py-3">
+            <div className="flex-1">
+              <Link
+                href={`/admin/broadcast/groups/${g.id}`}
+                className="font-medium hover:underline"
+              >
+                {g.name}
+              </Link>
+              <span className="ml-2 text-xs text-gray-400">
+                {g._count.members} 筆名單
+              </span>
+            </div>
+            <span className="text-xs text-gray-400">
+              {g.createdAt.toLocaleDateString("zh-TW", {
+                timeZone: "Asia/Taipei",
+              })}
+            </span>
+            <Link
+              href={`/admin/broadcast/groups/${g.id}`}
+              className="text-sm text-indigo-600 hover:underline"
+            >
+              管理
+            </Link>
+          </li>
+        ))}
+      </ul>
+
+      <form
+        action={createMailGroupAction}
+        className="space-y-3 rounded-xl border border-dashed border-gray-300 p-4"
+      >
+        <div className="font-medium">＋ 建立新群組</div>
+        <div>
+          <label className="mb-1 block text-xs text-gray-500">群組名稱</label>
+          <input
+            name="name"
+            required
+            placeholder="例：2026 台北實體班"
+            className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-gray-500">
+            名單（選填，一行一筆，可「email,姓名」格式；之後也能再加）
+          </label>
+          <textarea
+            name="list"
+            rows={5}
+            placeholder={"student1@example.com,王小明\nstudent2@example.com"}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
+          />
+        </div>
+        <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+          建立群組
+        </button>
+      </form>
+    </div>
+  );
+}

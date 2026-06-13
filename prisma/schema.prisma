@@ -60,21 +60,49 @@ model SiteSetting {
   updatedAt DateTime @updatedAt
 }
 
-// 群發通知（課程上架通知等）：立即寄出的歷史紀錄＋排程待寄
+// 群發通知/電子報：立即寄出的歷史紀錄＋排程待寄
 // status：SCHEDULED（排程待寄）/ SENDING（cron 處理中）/ SENT / CANCELED / FAILED
+// audienceType：ALL（全部會員）/ GROUP（名單群組）/ MANUAL（手動貼名單）
 model EmailBroadcast {
-  id          String    @id @default(cuid())
-  subject     String
-  body        String    @db.Text
-  courseId    String? // 關聯課程（選填，信中帶課程連結）
-  sentCount   Int       @default(0)
-  failedCount Int       @default(0)
-  sentBy      String? // 操作的管理員 email
-  status      String    @default("SENT")
-  scheduledAt DateTime? // 預設發送時間（null = 立即寄出）
-  sentAt      DateTime? // 實際寄出時間
+  id            String    @id @default(cuid())
+  subject       String
+  body          String    @db.Text
+  courseId      String? // 關聯課程（選填，信中帶課程連結）
+  sentCount     Int       @default(0)
+  failedCount   Int       @default(0)
+  sentBy        String? // 操作的管理員 email
+  status        String    @default("SENT")
+  scheduledAt   DateTime? // 預設發送時間（null = 立即寄出）
+  sentAt        DateTime? // 實際寄出時間
+  audienceType  String    @default("ALL")
+  groupId       String? // audienceType=GROUP 時的群組（寄出當下取最新成員）
+  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 手動名單 N 筆
+  manualRows    Json? // audienceType=MANUAL 時的名單 [{email,name}]
+  recipients    String[]  @default([]) // 實際寄出名單快照（供事後存成群組）
 
   createdAt DateTime @default(now())
+}
+
+// 電子報名單群組
+model MailGroup {
+  id      String            @id @default(cuid())
+  name    String            @unique
+  members MailGroupMember[]
+
+  createdAt DateTime @default(now())
+}
+
+model MailGroupMember {
+  id      String    @id @default(cuid())
+  groupId String
+  group   MailGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  email   String
+  name    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([groupId, email]) // 群組內 email 唯一，重複加入自動略過
+  @@index([groupId])
 }
 
 // 課程分類（後台自行維護選項，課程可勾選多個分類）
