@@ -454,6 +454,24 @@ export async function revokeEnrollment(userId: string, courseId: string) {
   revalidatePath(`/admin/members/${userId}`);
 }
 
+export type RevokeState = { error?: string; success?: string } | null;
+
+/** 觀看權限名單頁：批次移除勾選會員的觀看權限 */
+export async function batchRevokeEnrollmentAction(
+  courseId: string,
+  _prev: RevokeState,
+  formData: FormData,
+): Promise<RevokeState> {
+  await requireAdmin();
+  const userIds = formData.getAll("userIds").map(String).filter(Boolean);
+  if (userIds.length === 0) return { error: "請至少勾選一位會員" };
+  const r = await prisma.enrollment.deleteMany({
+    where: { courseId, userId: { in: userIds } },
+  });
+  revalidatePath(`/admin/courses/${courseId}/members`);
+  return { success: `已移除 ${r.count} 位會員的觀看權限` };
+}
+
 // ─────────────────── 未登入會員批次設密碼 ───────────────────
 
 export type BulkPasswordState = { error?: string; success?: string } | null;

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
-import { enrollmentSource, formatDate } from "@/lib/format";
+import { enrollmentSource } from "@/lib/format";
+import { CourseMembersManager } from "./members-manager";
 
 export const metadata = { title: "觀看權限名單 — 管理後台" };
 
@@ -61,53 +62,20 @@ export default async function CourseMembersPage({
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-500">
-            <tr>
-              <th className="px-4 py-3">#</th>
-              <th className="px-4 py-3">會員</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">來源</th>
-              <th className="px-4 py-3">開通時間</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {enrollments.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-                  這堂課還沒有任何會員開通
-                </td>
-              </tr>
-            )}
-            {enrollments.map((e, i) => {
-              const p = profById.get(e.userId);
-              const src = enrollmentSource(e.source, e.orderId);
-              return (
-                <tr key={e.id}>
-                  <td className="px-4 py-2 font-mono text-gray-400">{i + 1}</td>
-                  <td className="px-4 py-2">
-                    {p?.display_name ?? (
-                      <span className="text-gray-300">（查無會員資料）</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-gray-500">{p?.email ?? "—"}</td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${src.className}`}
-                    >
-                      {src.text}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-gray-400">
-                    {formatDate(e.createdAt)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <CourseMembersManager
+        courseId={course.id}
+        members={enrollments.map((e) => {
+          const p = profById.get(e.userId);
+          return {
+            userId: e.userId,
+            name: p?.display_name ?? null,
+            email: p?.email ?? null,
+            source: e.source,
+            orderId: e.orderId,
+            createdAt: e.createdAt.toISOString(),
+          };
+        })}
+      />
     </div>
   );
 }
