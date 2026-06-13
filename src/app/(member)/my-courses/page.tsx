@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
+
+// 永遠抓最新開通狀態（避免學員登入後才被開通、卻看到舊快取沒有新課程）
+export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 
 export const metadata = { title: "我的課程" };

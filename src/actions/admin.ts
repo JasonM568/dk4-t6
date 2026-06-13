@@ -569,6 +569,42 @@ export async function addMembersToGroupAction(
   };
 }
 
+export type GrantState = { error?: string; success?: string } | null;
+
+/** 會員列表勾選會員 → 直接開通某課程「觀看權限」(Enrollment)，
+ *  這跟「加入 EDM 名單群組」是兩回事：這個才會讓會員能看課程影片。 */
+export async function grantCourseToMembersAction(
+  _prev: GrantState,
+  formData: FormData,
+): Promise<GrantState> {
+  await requireEditor();
+  const userIds = [
+    ...new Set(formData.getAll("userIds").map(String).filter(Boolean)),
+  ];
+  const courseId = String(formData.get("enrollCourseId") ?? "");
+  if (userIds.length === 0) return { error: "請至少勾選一位會員" };
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { title: true },
+  });
+  if (!course) return { error: "請選擇要開通的課程" };
+
+  // createMany + skipDuplicates：已開通的自動略過，count 為實際新增數
+  const created = await prisma.enrollment.createMany({
+    data: userIds.map((userId) => ({ userId, courseId, source: "MANUAL" })),
+    skipDuplicates: true,
+  });
+  revalidatePath("/admin/members");
+  revalidatePath(`/admin/courses/${courseId}/members`);
+  return {
+    success: `已開通「${course.title}」觀看權限：新增 ${created.count} 位${
+      created.count < userIds.length
+        ? `（${userIds.length - created.count} 位原本就有，已略過）`
+        : ""
+    }`,
+  };
+}
+
 // ───────────────────────── 群發通知 ─────────────────────────
 
 export type BroadcastState = {

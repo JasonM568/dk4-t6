@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/server";
+
+// 永遠抓最新開通狀態（剛被開通，課程頁的按鈕立刻變「觀看影片」）
+export const dynamic = "force-dynamic";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
 import { formatNT } from "@/lib/format";

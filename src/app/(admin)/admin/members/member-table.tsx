@@ -5,8 +5,10 @@ import { useActionState } from "react";
 import Link from "next/link";
 import {
   addMembersToGroupAction,
+  grantCourseToMembersAction,
   resetMemberPasswordAction,
   type AddToGroupState,
+  type GrantState,
 } from "@/actions/admin";
 import { formatNT, formatDate } from "@/lib/format";
 
@@ -25,17 +27,23 @@ export type MemberRow = {
 export function MemberTable({
   members,
   groups,
+  courses,
   canEdit = true,
 }: {
   members: MemberRow[];
   groups: { id: string; name: string }[];
-  canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/加群組/重設密碼
+  courses: { id: string; title: string }[];
+  canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/開通/加群組/重設密碼
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [state, formAction, pending] = useActionState<AddToGroupState, FormData>(
-    addMembersToGroupAction,
-    null,
-  );
+  const [groupState, groupAction, groupPending] = useActionState<
+    AddToGroupState,
+    FormData
+  >(addMembersToGroupAction, null);
+  const [grantState, grantAction, grantPending] = useActionState<
+    GrantState,
+    FormData
+  >(grantCourseToMembersAction, null);
   const [resetting, startReset] = useTransition();
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
@@ -70,47 +78,93 @@ export function MemberTable({
     startReset(() => resetMemberPasswordAction(m.id, fd));
   }
 
+  const hidden = () =>
+    [...selected].map((id) => (
+      <input key={id} type="hidden" name="userIds" value={id} />
+    ));
+
   return (
-    <form action={formAction}>
-      {/* 勾選操作列：加入名單群組（總教練唯讀時隱藏） */}
+    <div>
+      {/* 勾選後的兩種操作（總教練唯讀時隱藏）：開通課程觀看權限 / 加入電子報名單群組 */}
       {canEdit && (
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm">
-        <span className="font-medium">已勾選 {selected.size} 位</span>
-        {[...selected].map((id) => (
-          <input key={id} type="hidden" name="userIds" value={id} />
-        ))}
-        <span className="text-gray-400">→ 加入名單群組：</span>
-        <input
-          name="newName"
-          placeholder="新群組名稱"
-          className="w-36 rounded border border-gray-300 px-2 py-1"
-        />
-        {groups.length > 0 && (
-          <select
-            name="groupId"
-            defaultValue=""
-            className="rounded border border-gray-300 px-2 py-1"
-          >
-            <option value="">或選既有群組</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
+        <div className="mb-3 space-y-2 rounded-xl bg-gray-50 p-3 text-sm">
+          <div className="font-medium">已勾選 {selected.size} 位會員</div>
+
+          {/* ① 開通課程觀看權限（Enrollment）—— 讓會員能看課程影片 */}
+          <form action={grantAction} className="flex flex-wrap items-center gap-2">
+            {hidden()}
+            <span className="w-40 text-gray-500">▶ 開通課程觀看權限：</span>
+            <select
+              name="enrollCourseId"
+              required
+              defaultValue=""
+              className="rounded border border-gray-300 px-2 py-1"
+            >
+              <option value="" disabled>
+                選擇課程
               </option>
-            ))}
-          </select>
-        )}
-        <button
-          type="submit"
-          disabled={pending || selected.size === 0}
-          className="rounded-lg bg-black px-3 py-1.5 font-medium text-white transition hover:bg-gray-800 disabled:opacity-40"
-        >
-          {pending ? "加入中…" : "加入群組"}
-        </button>
-        {state?.success && (
-          <span className="text-green-700">✓ {state.success}</span>
-        )}
-        {state?.error && <span className="text-red-600">{state.error}</span>}
-      </div>
+              {courses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={grantPending || selected.size === 0}
+              className="rounded-lg bg-green-600 px-3 py-1.5 font-medium text-white transition hover:bg-green-700 disabled:opacity-40"
+            >
+              {grantPending ? "開通中…" : "開通課程"}
+            </button>
+            {grantState?.success && (
+              <span className="text-green-700">✓ {grantState.success}</span>
+            )}
+            {grantState?.error && (
+              <span className="text-red-600">{grantState.error}</span>
+            )}
+          </form>
+
+          {/* ② 加入電子報名單群組（MailGroup）—— 只是寄信名單，不影響課程觀看 */}
+          <form action={groupAction} className="flex flex-wrap items-center gap-2">
+            {hidden()}
+            <span className="w-40 text-gray-500">✉ 加入電子報名單群組：</span>
+            <input
+              name="newName"
+              placeholder="新群組名稱"
+              className="w-36 rounded border border-gray-300 px-2 py-1"
+            />
+            {groups.length > 0 && (
+              <select
+                name="groupId"
+                defaultValue=""
+                className="rounded border border-gray-300 px-2 py-1"
+              >
+                <option value="">或選既有群組</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="submit"
+              disabled={groupPending || selected.size === 0}
+              className="rounded-lg bg-black px-3 py-1.5 font-medium text-white transition hover:bg-gray-800 disabled:opacity-40"
+            >
+              {groupPending ? "加入中…" : "加入名單群組"}
+            </button>
+            {groupState?.success && (
+              <span className="text-green-700">✓ {groupState.success}</span>
+            )}
+            {groupState?.error && (
+              <span className="text-red-600">{groupState.error}</span>
+            )}
+          </form>
+          <p className="text-xs text-gray-400">
+            「開通課程」才會讓會員能看影片；「名單群組」只是寄電子報用的名單，兩者獨立。
+          </p>
+        </div>
       )}
 
       <div className="overflow-hidden rounded-xl border border-gray-200">
@@ -222,6 +276,6 @@ export function MemberTable({
           </tbody>
         </table>
       </div>
-    </form>
+    </div>
   );
 }

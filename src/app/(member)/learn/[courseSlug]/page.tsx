@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
+
+// 永遠抓最新開通狀態（剛被開通就能立刻觀看，不被頁面快取擋住）
+export const dynamic = "force-dynamic";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";

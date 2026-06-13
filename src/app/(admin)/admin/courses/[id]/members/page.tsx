@@ -22,13 +22,17 @@ export default async function CourseMembersPage({
   });
   if (!course) notFound();
 
-  const [enrollments, profiles, canEditNow] = await Promise.all([
+  const [enrollments, profiles, canEditNow, mailGroups] = await Promise.all([
     prisma.enrollment.findMany({
       where: { courseId: id },
       orderBy: { createdAt: "desc" },
     }),
     listProfiles(),
     currentCanEdit(),
+    prisma.mailGroup.findMany({
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true },
+    }),
   ]);
   const profById = new Map(profiles.map((p) => [p.id, p]));
 
@@ -54,28 +58,57 @@ export default async function CourseMembersPage({
         <span className="font-bold text-black">{enrollments.length}</span> 位會員可觀看
       </p>
 
-      {/* 整批匯出成名單群組（總教練唯讀時隱藏） */}
+      {/* 同步到電子報名單群組（總教練唯讀時隱藏）。
+          名單群組是「寄電子報的名單」，跟課程觀看權限是兩回事；
+          這裡把目前全部學員同步進寄信群組（已在的略過），供 EDM 群發。 */}
       {enrollments.length > 0 && canEditNow && (
         <form
           action={createGroupFromCourseAction.bind(null, id)}
-          className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3"
+          className="mb-4 space-y-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3"
         >
-          <div>
-            <label className="mb-1 block text-xs text-indigo-800">
-              整批匯出成名單群組（供電子報群發）
-            </label>
-            <input
-              name="newName"
-              placeholder={`預設：${course.title} 觀看名單`}
-              className="w-64 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
-            />
+          <div className="text-xs font-medium text-indigo-800">
+            同步到電子報名單群組（把目前 {enrollments.length} 位學員加入寄信名單，供群發 EDM；已在的會略過）
           </div>
-          <SubmitButton
-            pendingText="匯出中…"
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
-          >
-            匯出 {enrollments.length} 位成名單群組
-          </SubmitButton>
+          <div className="flex flex-wrap items-end gap-2">
+            {mailGroups.length > 0 && (
+              <div>
+                <label className="mb-1 block text-xs text-indigo-700">
+                  同步到既有群組
+                </label>
+                <select
+                  name="groupId"
+                  defaultValue=""
+                  className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                >
+                  <option value="">— 選既有群組 —</option>
+                  {mailGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="mb-1 block text-xs text-indigo-700">
+                或建立新群組
+              </label>
+              <input
+                name="newName"
+                placeholder={`預設：${course.title} 觀看名單`}
+                className="w-56 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+              />
+            </div>
+            <SubmitButton
+              pendingText="同步中…"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+            >
+              同步學員到名單群組
+            </SubmitButton>
+          </div>
+          <p className="text-xs text-indigo-600/70">
+            選了既有群組就同步進該群組；否則用名稱建新／併入同名群組。
+          </p>
         </form>
       )}
 

@@ -324,6 +324,7 @@ export default async function AdminMembersPage({
 
         <MemberTable
           canEdit={canEditNow}
+          courses={allCourses}
           members={members.map((m) => ({
             id: m.id,
             displayName: m.display_name,
