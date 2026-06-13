@@ -41,6 +41,15 @@ model MemberStats {
   updatedAt DateTime @updatedAt
 }
 
+// 管理員設定的會員初始密碼備查（僅後台顯示）。
+// 注意：這不是 Auth 的真實密碼（Auth 只存雜湊不可逆）；學員自行改密碼後此表不會同步
+model MemberPassword {
+  userId    String   @id @db.Uuid
+  password  String
+  updatedBy String? // 設定的管理員 email
+  updatedAt DateTime @updatedAt
+}
+
 // 等級門檻設定表（後台可調）
 model MembershipTier {
   id               String @id @default(cuid())

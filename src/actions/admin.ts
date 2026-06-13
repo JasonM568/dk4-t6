@@ -472,11 +472,14 @@ export async function bulkSetPasswordAction(
   if (password.length < 6) return { error: "密碼至少 6 字元" };
   if (userIds.length > 300) return { error: "一次最多 300 位，請分批" };
 
+  const adminUser = await getAuthUser();
   let ok = 0;
   let fail = 0;
   for (const id of userIds) {
-    if (await setUserPassword(id, password)) ok++;
-    else fail++;
+    if (await setUserPassword(id, password)) {
+      ok++;
+      await recordMemberPassword(id, password, adminUser?.email ?? null);
+    } else fail++;
   }
 
   revalidatePath("/admin/members/inactive");
@@ -881,6 +884,17 @@ function parseRows(raw: string): { email: string; name: string; password: string
     });
 }
 
+/** 記錄管理員設定的初始密碼（後台備查；學員自行改密碼不會同步） */
+async function recordMemberPassword(userId: string, password: string, by: string | null) {
+  await prisma.memberPassword
+    .upsert({
+      where: { userId },
+      update: { password, updatedBy: by },
+      create: { userId, password, updatedBy: by },
+    })
+    .catch(() => undefined); // 備查紀錄失敗不影響主流程
+}
+
 /** 單筆手動新增會員 */
 export async function addMemberAction(
   _prev: EnrollmentEditState,
@@ -902,6 +916,8 @@ export async function addMemberAction(
       ? { error: `${email} 已是會員，不需重複建立` }
       : { error: `建立失敗：${created.message ?? "未知錯誤"}` };
   }
+  const admin = await getAuthUser();
+  await recordMemberPassword(created.userId, password, admin?.email ?? null);
 
   revalidatePath("/admin/members");
   return { success: `已建立會員 ${name}（${email}）` };
@@ -913,6 +929,7 @@ export async function importMembersAction(
   formData: FormData,
 ): Promise<BatchState> {
   await requireAdmin();
+  const adminUser = await getAuthUser();
 
   const raw = String(formData.get("list") ?? "");
   const defaultPassword = String(formData.get("defaultPassword") ?? "").trim();
@@ -966,6 +983,7 @@ export async function importMembersAction(
     });
 
     if (created.ok) {
+      await recordMemberPassword(created.userId, password, adminUser?.email ?? null);
       results.push({ email: row.email, status: "created" });
     } else if (created.reason === "exists") {
       results.push({
@@ -1080,6 +1098,7 @@ export async function createMissingAndEnrollAction(
   formData: FormData,
 ): Promise<BatchState> {
   await requireAdmin();
+  const admin = await getAuthUser();
 
   const courseId = String(formData.get("courseId") ?? "");
   const raw = String(formData.get("list") ?? "");
@@ -1115,14 +1134,16 @@ export async function createMissingAndEnrollAction(
     let createdNew = false;
 
     if (!userId) {
+      const usedPassword = row.password || defaultPassword;
       const created = await createMember({
         email: row.email,
-        password: row.password || defaultPassword,
+        password: usedPassword,
         displayName: row.name || row.email.split("@")[0],
       });
       if (created.ok) {
         userId = created.userId;
         createdNew = true;
+        await recordMemberPassword(created.userId, usedPassword, admin?.email ?? null);
       } else {
         results.push({
           email: row.email,

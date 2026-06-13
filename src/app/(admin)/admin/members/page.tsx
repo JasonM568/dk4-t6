@@ -4,25 +4,46 @@ import { listProfiles } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
 import { updateTier } from "@/actions/admin";
 
-export const metadata = { title: "會員與等級" };
+export const metadata = { title: "會員管理" };
 
 export default async function AdminMembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; group?: string | string[] }>;
 }) {
-  const { q } = await searchParams;
+  const { q, group } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
+  const selectedGroupIds = (Array.isArray(group) ? group : group ? [group] : []).filter(Boolean);
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
-  const [profiles, statsList, tiers] = await Promise.all([
+  const [profiles, statsList, tiers, mailGroups, passwords] = await Promise.all([
     listProfiles(),
     prisma.memberStats.findMany({ include: { currentTier: true } }),
     prisma.membershipTier.findMany({ orderBy: { level: "asc" } }),
+    prisma.mailGroup.findMany({
+      include: { _count: { select: { members: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.memberPassword.findMany(),
   ]);
 
+  // 勾選名單群組 → 取出群組內 email 集合過濾會員
+  const groupEmails =
+    selectedGroupIds.length > 0
+      ? new Set(
+          (
+            await prisma.mailGroupMember.findMany({
+              where: { groupId: { in: selectedGroupIds } },
+              select: { email: true },
+            })
+          ).map((m) => m.email.toLowerCase()),
+        )
+      : null;
+
   const statsByUserId = new Map(statsList.map((s) => [s.userId, s]));
+  const passwordByUserId = new Map(passwords.map((p) => [p.userId, p.password]));
+
   // MemberStats 是 lazy upsert（首次付款才建立），沒有統計的會員以 0 顯示
   const all = profiles
     .map((p) => {
@@ -32,17 +53,25 @@ export default async function AdminMembersPage({
         currentTier: stats?.currentTier ?? null,
         totalSpent: stats?.totalSpent ?? 0,
         coursesBought: stats?.coursesBought ?? 0,
+        initialPassword: passwordByUserId.get(p.id) ?? null,
       };
     })
     .sort((a, b) => b.totalSpent - a.totalSpent);
 
-  // 搜尋：姓名或 email 子字串（不分大小寫）。無搜尋時只列前 100 名
-  const members = query
-    ? all.filter(
-        (m) =>
-          (m.display_name ?? "").toLowerCase().includes(query) ||
-          (m.email ?? "").toLowerCase().includes(query),
-      )
+  const hasFilter = !!query || !!groupEmails;
+  // 搜尋（姓名/email 子字串）與群組過濾可並用；無條件時只列前 100 名
+  const members = hasFilter
+    ? all.filter((m) => {
+        const email = (m.email ?? "").toLowerCase();
+        if (groupEmails && !groupEmails.has(email)) return false;
+        if (
+          query &&
+          !(m.display_name ?? "").toLowerCase().includes(query) &&
+          !email.includes(query)
+        )
+          return false;
+        return true;
+      })
     : all.slice(0, 100);
 
   return (
@@ -95,8 +124,8 @@ export default async function AdminMembersPage({
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold">
-            {query
-              ? `搜尋「${q?.trim()}」：${members.length} 筆`
+            {hasFilter
+              ? `篩選結果：${members.length} 筆`
               : `會員列表（共 ${all.length} 位，列出消費前 100 名）`}
           </h2>
           <Link
@@ -107,26 +136,58 @@ export default async function AdminMembersPage({
           </Link>
         </div>
 
-        {/* 搜尋：GET query，免 client JS */}
-        <form action="/admin/members" className="mb-4 flex gap-2">
-          <input
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="輸入姓名或 email 搜尋"
-            className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-          />
-          <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
-            搜尋
-          </button>
-          {query && (
-            <Link
-              href="/admin/members"
-              className="flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
-            >
-              清除
-            </Link>
+        {/* 搜尋 + 名單群組篩選：GET query，免 client JS */}
+        <form
+          action="/admin/members"
+          className="mb-4 space-y-3 rounded-xl border border-gray-200 p-4"
+        >
+          <div className="flex gap-2">
+            <input
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="輸入姓名或 email 搜尋"
+              className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+            />
+            <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+              套用
+            </button>
+            {hasFilter && (
+              <Link
+                href="/admin/members"
+                className="flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
+              >
+                清除
+              </Link>
+            )}
+          </div>
+          {mailGroups.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-xs text-gray-500">
+                名單群組篩選（可複選，只顯示群組名單內的會員）：
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {mailGroups.map((g) => (
+                  <label
+                    key={g.id}
+                    className="flex items-center gap-1.5 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      name="group"
+                      value={g.id}
+                      defaultChecked={selectedGroupIds.includes(g.id)}
+                    />
+                    {g.name}
+                    <span className="text-xs text-gray-400">
+                      （{g._count.members}）
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
           )}
         </form>
+
         <div className="overflow-hidden rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-500">
@@ -135,6 +196,7 @@ export default async function AdminMembersPage({
                 <th className="px-4 py-3">等級</th>
                 <th className="px-4 py-3">累積消費</th>
                 <th className="px-4 py-3">購課數</th>
+                <th className="px-4 py-3">初始密碼</th>
                 <th className="px-4 py-3">角色</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -142,8 +204,8 @@ export default async function AdminMembersPage({
             <tbody className="divide-y divide-gray-100">
               {members.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
-                    查無符合「{q?.trim()}」的會員
+                  <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
+                    查無符合條件的會員
                   </td>
                 </tr>
               )}
@@ -156,6 +218,13 @@ export default async function AdminMembersPage({
                   <td className="px-4 py-3">{m.currentTier?.name ?? "—"}</td>
                   <td className="px-4 py-3">{formatNT(m.totalSpent)}</td>
                   <td className="px-4 py-3">{m.coursesBought}</td>
+                  <td className="px-4 py-3">
+                    {m.initialPassword ? (
+                      <span className="font-mono text-xs">{m.initialPassword}</span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {m.role === "admin" ? (
                       <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
@@ -178,6 +247,9 @@ export default async function AdminMembersPage({
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-xs text-gray-400">
+          「初始密碼」為管理員建帳號／批次重設時設定的密碼備查；學員若自行修改過密碼，此欄不會更新。自行註冊的會員無此紀錄。
+        </p>
       </section>
     </div>
   );

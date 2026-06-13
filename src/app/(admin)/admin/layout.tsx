@@ -38,7 +38,7 @@ export default async function AdminLayout({
             訂單查詢
           </Link>
           <Link href="/admin/members" className="text-gray-600 hover:text-black">
-            會員與等級
+            會員管理
           </Link>
           <Link
             href="/admin/members/import"
