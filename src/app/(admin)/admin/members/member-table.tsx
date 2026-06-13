@@ -35,6 +35,14 @@ export function MemberTable({
     null,
   );
   const [resetting, startReset] = useTransition();
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+
+  const toggleReveal = (id: string) =>
+    setRevealed((cur) => {
+      const next = new Set(cur);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const allSelected = members.length > 0 && selected.size === members.length;
   const toggle = (id: string) =>
@@ -157,7 +165,19 @@ export function MemberTable({
                 <td className="px-4 py-3">{m.coursesBought}</td>
                 <td className="px-4 py-3">
                   {m.initialPassword ? (
-                    <span className="font-mono text-xs">{m.initialPassword}</span>
+                    <span className="inline-flex items-center gap-2">
+                      <span className="font-mono text-xs">
+                        {revealed.has(m.id) ? m.initialPassword : "••••••"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(m.id)}
+                        className="text-xs text-gray-500 hover:underline"
+                        aria-label={revealed.has(m.id) ? "隱藏密碼" : "顯示密碼"}
+                      >
+                        {revealed.has(m.id) ? "隱藏" : "顯示"}
+                      </button>
+                    </span>
                   ) : (
                     <span className="text-gray-300">—</span>
                   )}

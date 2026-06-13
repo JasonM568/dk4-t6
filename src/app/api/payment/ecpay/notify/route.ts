@@ -18,12 +18,22 @@ export async function POST(req: NextRequest) {
   });
 
   const provider = getPaymentProvider();
-  const result = provider.verifyCallback(payload);
+  const result = provider.verifyCallback(payload) as ReturnType<
+    typeof provider.verifyCallback
+  > & { amount: number; merchantId: string };
 
   // 防線 1：驗章失敗直接拒絕
   if (!result.valid) {
     return new Response("0|CheckMacValue error");
   }
+
+  // 設定的商店代號（與 provider 使用同一組 env）
+  const configuredMerchantId =
+    process.env.ECPAY_MERCHANT_ID ??
+    (process.env.VERCEL_ENV === "production" ||
+    process.env.NODE_ENV === "production"
+      ? undefined
+      : "2000132");
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -37,6 +47,21 @@ export async function POST(req: NextRequest) {
       if (order.status === "PAID") return;
 
       if (result.success) {
+        // 防線 4：比對回呼金額與商店代號，防止偽造/竄改的成功回呼開通課程。
+        // 不符時記錄異常、不標 PAID、不開通；但仍須回傳成功字串以停止 ECPay 重送。
+        const amountMatches = result.amount === order.total;
+        const merchantMatches = result.merchantId === configuredMerchantId;
+        if (!amountMatches || !merchantMatches) {
+          console.error("[ecpay notify] callback verification mismatch", {
+            orderNo: result.orderNo,
+            expectedAmount: order.total,
+            receivedAmount: result.amount,
+            expectedMerchantId: configuredMerchantId,
+            receivedMerchantId: result.merchantId,
+          });
+          return;
+        }
+
         await tx.order.update({
           where: { id: order.id },
           data: { status: "PAID", paidAt: new Date() },

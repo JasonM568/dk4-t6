@@ -85,7 +85,9 @@ export class EcpayProvider implements PaymentProvider {
     return { action: this.config.apiUrl, fields };
   }
 
-  verifyCallback(payload: Record<string, string>): VerifyResult {
+  verifyCallback(
+    payload: Record<string, string>,
+  ): VerifyResult & { amount: number; merchantId: string } {
     const expected = ecpayCheckMacValue(
       payload,
       this.config.hashKey,
@@ -101,6 +103,9 @@ export class EcpayProvider implements PaymentProvider {
       success: payload.RtnCode === "1",
       tradeNo: payload.TradeNo,
       paymentType: payload.PaymentType,
+      // 供 notify 端比對：實付金額與商店代號（避免偽造回呼竄改金額）
+      amount: Number(payload.TotalAmount),
+      merchantId: payload.MerchantID,
       raw: payload,
     };
   }

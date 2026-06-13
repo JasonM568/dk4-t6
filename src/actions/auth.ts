@@ -112,7 +112,7 @@ export async function registerAction(
       },
       // 專案開啟 Confirm email 時，確認連結導回本站 /auth/confirm
       //（token_hash/type/next 由信件模板附上，這裡不能帶 query string）
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL}/auth/confirm`,
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info"}/auth/confirm`,
     },
   });
 
@@ -162,7 +162,7 @@ export async function forgotPasswordAction(
     parsed.data.email,
     {
       // 信件模板的 {{ .RedirectTo }} 會帶到這裡；token_hash 由模板自己拼上
-      redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL}/auth/confirm`,
+      redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info"}/auth/confirm`,
     },
   );
 

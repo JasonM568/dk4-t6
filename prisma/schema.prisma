@@ -88,6 +88,7 @@ model EmailBroadcast {
   audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 手動名單 N 筆
   manualRows    Json? // audienceType=MANUAL 時的名單 [{email,name}]
   recipients    String[]  @default([]) // 實際寄出名單快照（供事後存成群組）
+  claimedAt     DateTime? // 進入 SENDING（cron 認領）的時間；用於回收逾時卡死的寄送
 
   createdAt DateTime @default(now())
 }

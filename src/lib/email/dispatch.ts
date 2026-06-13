@@ -97,8 +97,27 @@ export async function executeBroadcast(broadcastId: string) {
   return r;
 }
 
-/** cron 進入點：撈出到期的排程，逐筆認領（防重複寄）後寄出 */
+// 卡死回收門檻：認領後超過這時間仍停在 SENDING，視為寄送中途失敗（serverless 逾時/實例回收）
+const STALE_SENDING_MS = 15 * 60 * 1000;
+
+/** cron 進入點：先回收卡死的 SENDING，再撈到期排程逐筆認領後寄出 */
 export async function processDueBroadcasts() {
+  // B8：回收逾時卡在 SENDING 的寄送——標 FAILED（不自動重寄，避免對已收到者重複寄；
+  // 由管理員看到 FAILED 後自行決定是否重發），杜絕永久卡「寄送中」。
+  const staleBefore = new Date(Date.now() - STALE_SENDING_MS);
+  const recovered = await prisma.emailBroadcast.updateMany({
+    where: { status: "SENDING", claimedAt: { lt: staleBefore } },
+    data: { status: "FAILED" },
+  });
+  if (recovered.count > 0) {
+    console.error(`[broadcast cron] 回收 ${recovered.count} 筆卡死的 SENDING → FAILED`);
+  }
+  // 認領時間遺失的舊資料（claimedAt 為 null 卻卡 SENDING）也一併標 FAILED
+  await prisma.emailBroadcast.updateMany({
+    where: { status: "SENDING", claimedAt: null },
+    data: { status: "FAILED" },
+  });
+
   const due = await prisma.emailBroadcast.findMany({
     where: { status: "SCHEDULED", scheduledAt: { lte: new Date() } },
     orderBy: { scheduledAt: "asc" },
@@ -107,10 +126,10 @@ export async function processDueBroadcasts() {
 
   const results: { id: string; subject: string; sent: number; failed: number }[] = [];
   for (const b of due) {
-    // 原子認領：兩個 cron 重疊執行時，只有一邊搶得到
+    // 原子認領：兩個 cron 重疊執行時，只有一邊搶得到；同時記認領時間供回收判斷
     const claimed = await prisma.emailBroadcast.updateMany({
       where: { id: b.id, status: "SCHEDULED" },
-      data: { status: "SENDING" },
+      data: { status: "SENDING", claimedAt: new Date() },
     });
     if (claimed.count === 0) continue;
 

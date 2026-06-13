@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { listProfiles, listAuthMeta } from "@/lib/supabase/admin";
+import { listProfiles, listAuthMeta, countProfiles } from "@/lib/supabase/admin";
 import { updateTier } from "@/actions/admin";
 import { MemberTable } from "./member-table";
 
@@ -17,7 +17,7 @@ export default async function AdminMembersPage({
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
-  const [profiles, statsList, tiers, mailGroups, passwords, authMeta] =
+  const [profiles, statsList, tiers, mailGroups, passwords, authMeta, totalCount] =
     await Promise.all([
       listProfiles(),
       prisma.memberStats.findMany({ include: { currentTier: true } }),
@@ -28,6 +28,8 @@ export default async function AdminMembersPage({
       }),
       prisma.memberPassword.findMany(),
       listAuthMeta(),
+      // B5：「共 N 位」用真實總數（head:true 只取 count），不受列表筆數影響
+      countProfiles(),
     ]);
 
   // 勾選名單群組 → 取出群組內 email 集合過濾會員
@@ -129,7 +131,7 @@ export default async function AdminMembersPage({
           <h2 className="text-2xl font-bold">
             {hasFilter
               ? `篩選結果：${members.length} 筆`
-              : `會員列表（共 ${all.length} 位，列出消費前 100 名）`}
+              : `會員列表（共 ${totalCount} 位，列出消費前 100 名）`}
           </h2>
           <Link
             href="/admin/members/inactive"

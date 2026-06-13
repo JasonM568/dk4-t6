@@ -7,6 +7,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 import {
   getProfileRole,
   getProfilesByEmails,
+  findAuthUserIdByEmail,
   listProfiles,
   createMember,
   setUserPassword,
@@ -1134,8 +1135,16 @@ export async function batchEnrollAction(
     }
     seen.add(row.email);
 
-    const profile = profileMap.get(row.email);
-    if (!profile) {
+    let userId = profileMap.get(row.email)?.id;
+
+    // B7：profiles 查不到時，可能只是 profiles 同步延遲、帳號其實已存在。
+    // 「只反查、不建立」既有 auth user id（不呼叫 createMember，避免把真的不存在的
+    // email 建成隨機密碼帳號）；反查到就開通杜絕漏開，反查不到才視為查無會員。
+    if (!userId) {
+      userId = (await findAuthUserIdByEmail(row.email)) ?? undefined;
+    }
+
+    if (!userId) {
       results.push({
         email: row.email,
         name: row.name || undefined,
@@ -1144,7 +1153,7 @@ export async function batchEnrollAction(
       });
       continue;
     }
-    if (enrolled.has(profile.id)) {
+    if (enrolled.has(userId)) {
       results.push({ email: row.email, status: "already", detail: "本來就有觀看權限" });
       continue;
     }
@@ -1152,9 +1161,9 @@ export async function batchEnrollAction(
     try {
       // upsert + @@unique(userId, courseId) 雙重保險，重跑不會出錯
       await prisma.enrollment.upsert({
-        where: { userId_courseId: { userId: profile.id, courseId } },
+        where: { userId_courseId: { userId, courseId } },
         update: {},
-        create: { userId: profile.id, courseId, source: "BATCH" },
+        create: { userId, courseId, source: "BATCH" },
       });
       results.push({ email: row.email, status: "enrolled" });
     } catch (e) {
@@ -1228,6 +1237,10 @@ export async function createMissingAndEnrollAction(
         userId = created.userId;
         createdNew = true;
         await recordMemberPassword(created.userId, usedPassword, admin?.email ?? null);
+      } else if (created.reason === "exists" && created.userId) {
+        // B7：profiles 尚未同步但帳號其實已存在，反查到 auth user id 就直接開通。
+        // Enrollment.userId = auth.users.id，本就不依賴 profiles，徹底解決漏開。
+        userId = created.userId;
       } else {
         results.push({
           email: row.email,

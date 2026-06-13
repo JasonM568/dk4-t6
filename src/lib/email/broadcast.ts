@@ -136,14 +136,54 @@ export async function sendBroadcast(
       ),
     });
 
-    if (res.ok) {
-      sent += chunk.length;
-    } else {
+    if (!res.ok) {
+      // HTTP 4xx / 429 / 5xx：整批計為失敗
       failed += chunk.length;
       if (!firstError) {
         const text = await res.text().catch(() => "");
         firstError = `Resend ${res.status}：${text.slice(0, 200)}`;
         console.error("[email/broadcast] 批次寄送失敗：", firstError);
+      }
+      continue;
+    }
+
+    // HTTP 2xx：解析 batch 回傳 body，逐筆判定真實成功/失敗。
+    // 成功時格式為 { data: [{ id }, ...] }；個別退信的元素會帶 error。
+    const payload = (await res.json().catch(() => null)) as {
+      data?: Array<{ id?: string; error?: unknown } | null>;
+    } | null;
+    const items = payload?.data;
+
+    if (!Array.isArray(items)) {
+      // 回傳格式非預期：保守起見整批計為失敗
+      failed += chunk.length;
+      if (!firstError) {
+        firstError = `Resend ${res.status}：回傳格式非預期`;
+        console.error("[email/broadcast] 批次回傳格式非預期：", payload);
+      }
+      continue;
+    }
+
+    for (let j = 0; j < chunk.length; j++) {
+      const item = items[j];
+      if (item && item.id && !item.error) {
+        sent += 1;
+      } else {
+        failed += 1;
+        if (!firstError) {
+          const errText =
+            item && item.error
+              ? typeof item.error === "string"
+                ? item.error
+                : JSON.stringify(item.error)
+              : "未取得寄送結果";
+          firstError = `Resend 退信：${errText.slice(0, 200)}`;
+          console.error(
+            "[email/broadcast] 單筆寄送失敗：",
+            chunk[j],
+            firstError,
+          );
+        }
       }
     }
   }

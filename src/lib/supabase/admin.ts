@@ -85,13 +85,21 @@ export async function getProfilesByEmails(
   const supabase = createAdminClient();
   const map = new Map<string, Profile>();
 
-  // .in() 一次塞太多會撞 URL 長度限制，分批每 200 筆查一次
-  for (let i = 0; i < emails.length; i += 200) {
-    const chunk = emails.slice(i, i + 200);
+  // 一次塞太多會撞 URL 長度限制，分批每 200 筆查一次。
+  // B13：profiles.email 可能含大寫，.in() 是大小寫敏感比對會漏判，
+  // 改用 ilike 的 or() 做大小寫不敏感比對（email 先 lower 去重再查）。
+  const normalized = [...new Set(emails.map((e) => e.toLowerCase()))];
+  for (let i = 0; i < normalized.length; i += 200) {
+    const chunk = normalized.slice(i, i + 200);
+    // 將 chunk 內每個 email 組成 email.ilike.<email> 的 or 條件；
+    // ilike 無萬用字元時等同大小寫不敏感的相等比對。
+    const orFilter = chunk
+      .map((e) => `email.ilike.${e.replace(/[,()]/g, "")}`)
+      .join(",");
     const { data, error } = await supabase
       .from("profiles")
       .select("id, email, display_name, nickname, role")
-      .in("email", chunk);
+      .or(orFilter);
 
     if (error) {
       console.error("[supabase/admin] 批次查詢 profiles 失敗：", error.message);
@@ -106,7 +114,36 @@ export async function getProfilesByEmails(
 
 export type CreateMemberResult =
   | { ok: true; userId: string }
-  | { ok: false; reason: "exists" | "error"; message?: string };
+  // B7：email 已存在時，盡量帶上既有 auth user id，
+  // 讓上層可直接用此 id 做 enrollment 開通（不依賴 profiles 同步）。
+  | { ok: false; reason: "exists"; userId?: string }
+  | { ok: false; reason: "error"; message?: string };
+
+// B7：以 email 反查既有 auth user id（GoTrue Admin API 無 getUserByEmail，
+// 改走 listUsers 分頁，lowercase 比對 email）。查不到回 null。
+export async function findAuthUserIdByEmail(
+  email: string,
+): Promise<string | null> {
+  const supabase = createAdminClient();
+  const target = email.toLowerCase();
+  const perPage = 1000;
+  let page = 1;
+  while (true) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (error) {
+      console.error("[supabase/admin] 反查 auth user 失敗：", error.message);
+      return null;
+    }
+    const hit = data.users.find((u) => (u.email ?? "").toLowerCase() === target);
+    if (hit) return hit.id;
+    if (data.users.length < perPage) break;
+    page++;
+  }
+  return null;
+}
 
 // 批次匯入用：建立 Supabase Auth 會員。
 // metadata 對齊 hope 站註冊（display_name/nickname/role:student），
@@ -131,7 +168,11 @@ export async function createMember(input: {
   if (error) {
     const msg = error.message ?? "";
     if (/already|registered|exists/i.test(msg)) {
-      return { ok: false, reason: "exists" };
+      // B7：反查既有 user id 一併回傳，讓上層能直接開通課程權限
+      const userId = await findAuthUserIdByEmail(input.email);
+      return userId
+        ? { ok: false, reason: "exists", userId }
+        : { ok: false, reason: "exists" };
     }
     console.error("[supabase/admin] 建立會員失敗：", input.email, msg);
     return { ok: false, reason: "error", message: msg };
@@ -226,15 +267,17 @@ export type NeverSignedInUser = {
 };
 
 // 撈出「從未登入」的會員（last_sign_in_at 為空）。
-// 走 GoTrue Admin API（分頁最多 1000/頁，足夠目前規模）。
+// 走 GoTrue Admin API，B6：以 while 迴圈分頁直到撈到不足一頁為止（不硬性限 10 頁）。
 export async function listNeverSignedInUsers(): Promise<NeverSignedInUser[]> {
   const supabase = createAdminClient();
   const result: NeverSignedInUser[] = [];
+  const perPage = 1000;
+  let page = 1;
 
-  for (let page = 1; page <= 10; page++) {
+  while (true) {
     const { data, error } = await supabase.auth.admin.listUsers({
       page,
-      perPage: 1000,
+      perPage,
     });
     if (error) {
       console.error("[supabase/admin] listUsers 失敗：", error.message);
@@ -249,7 +292,8 @@ export async function listNeverSignedInUsers(): Promise<NeverSignedInUser[]> {
         });
       }
     }
-    if (data.users.length < 1000) break;
+    if (data.users.length < perPage) break;
+    page++;
   }
   return result;
 }
@@ -260,10 +304,13 @@ export async function listAuthMeta(): Promise<
 > {
   const supabase = createAdminClient();
   const map = new Map<string, { lastSignInAt: string | null; createdAt: string }>();
-  for (let page = 1; page <= 10; page++) {
+  const perPage = 1000;
+  let page = 1;
+  // B6：以 while 迴圈分頁直到撈到不足一頁為止（不硬性限 10 頁）。
+  while (true) {
     const { data, error } = await supabase.auth.admin.listUsers({
       page,
-      perPage: 1000,
+      perPage,
     });
     if (error) {
       console.error("[supabase/admin] listAuthMeta 失敗：", error.message);
@@ -275,7 +322,8 @@ export async function listAuthMeta(): Promise<
         createdAt: u.created_at,
       });
     }
-    if (data.users.length < 1000) break;
+    if (data.users.length < perPage) break;
+    page++;
   }
   return map;
 }
@@ -296,17 +344,30 @@ export async function setUserPassword(
   return true;
 }
 
-// 後台會員列表用：唯讀撈出全部 profiles
+// 後台會員列表用：唯讀撈出全部 profiles。
+// B4：PostgREST 預設單次上限 1000 筆，改用 .range(from,to) 每頁 1000 迴圈撈，
+// 直到回傳不足一頁為止，避免超過 1000 名會員時被截斷。
 export async function listProfiles(): Promise<Profile[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, email, display_name, nickname, role")
-    .order("created_at", { ascending: false });
+  const pageSize = 1000;
+  const result: Profile[] = [];
+  let from = 0;
 
-  if (error) {
-    console.error("[supabase/admin] 查詢 profiles 列表失敗：", error.message);
-    return [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, email, display_name, nickname, role")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.error("[supabase/admin] 查詢 profiles 列表失敗：", error.message);
+      break;
+    }
+    const rows = (data ?? []) as Profile[];
+    result.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
   }
-  return (data ?? []) as Profile[];
+  return result;
 }
