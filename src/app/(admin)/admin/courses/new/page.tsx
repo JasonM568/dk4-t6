@@ -5,7 +5,9 @@ import { CourseForm } from "@/components/course-form";
 
 export const metadata = { title: "新增課程" };
 
+import { pageGuardEditor } from "@/lib/auth/staff";
 export default async function NewCoursePage() {
+  await pageGuardEditor();
   const categories = await prisma.category.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     select: { id: true, name: true },

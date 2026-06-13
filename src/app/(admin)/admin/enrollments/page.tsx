@@ -3,7 +3,9 @@ import { EnrollForm } from "./enroll-form";
 
 export const metadata = { title: "批次開通 — 管理後台" };
 
+import { pageGuardEditor } from "@/lib/auth/staff";
 export default async function EnrollmentsPage() {
+  await pageGuardEditor();
   const courses = await prisma.course.findMany({
     orderBy: { createdAt: "desc" },
     select: { id: true, title: true },

@@ -23,9 +23,11 @@ export type CourseMemberRow = {
 export function CourseMembersManager({
   courseId,
   members,
+  canEdit = true,
 }: {
   courseId: string;
   members: CourseMemberRow[];
+  canEdit?: boolean; // 總教練(唯讀)為 false：只看名單，隱藏新增/移除/勾選
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addState, addAction, adding] = useActionState<BatchState, FormData>(
@@ -49,7 +51,8 @@ export function CourseMembersManager({
 
   return (
     <>
-      {/* 新增觀看名單 */}
+      {/* 新增觀看名單（總教練唯讀時隱藏） */}
+      {canEdit && (
       <form
         action={addAction}
         className="mb-6 space-y-2 rounded-xl border border-dashed border-gray-300 p-4"
@@ -89,9 +92,11 @@ export function CourseMembersManager({
           </div>
         )}
       </form>
+      )}
 
       {/* 名單 + 勾選移除 */}
       <form action={revokeAction}>
+        {canEdit && (
         <div className="mb-2 flex items-center gap-3">
           <span className="text-sm text-gray-500">已勾選 {selected.size} 位</span>
           <button
@@ -116,19 +121,22 @@ export function CourseMembersManager({
             <span className="text-sm text-red-600">{revokeState.error}</span>
           )}
         </div>
+        )}
 
         <div className="overflow-hidden rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-500">
               <tr>
-                <th className="px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
-                    aria-label="全選"
-                  />
-                </th>
+                {canEdit && (
+                  <th className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="全選"
+                    />
+                  </th>
+                )}
                 <th className="px-4 py-3">#</th>
                 <th className="px-4 py-3">會員</th>
                 <th className="px-4 py-3">Email</th>
@@ -139,7 +147,7 @@ export function CourseMembersManager({
             <tbody className="divide-y divide-gray-100">
               {members.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
+                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-6 text-center text-gray-400">
                     這堂課還沒有任何會員開通
                   </td>
                 </tr>
@@ -151,16 +159,18 @@ export function CourseMembersManager({
                     key={m.userId}
                     className={selected.has(m.userId) ? "bg-indigo-50" : ""}
                   >
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        name="userIds"
-                        value={m.userId}
-                        checked={selected.has(m.userId)}
-                        onChange={() => toggle(m.userId)}
-                        aria-label={`選擇 ${m.email}`}
-                      />
-                    </td>
+                    {canEdit && (
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          name="userIds"
+                          value={m.userId}
+                          checked={selected.has(m.userId)}
+                          onChange={() => toggle(m.userId)}
+                          aria-label={`選擇 ${m.email}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-2 font-mono text-gray-400">{i + 1}</td>
                     <td className="px-4 py-2">
                       {m.name ?? (

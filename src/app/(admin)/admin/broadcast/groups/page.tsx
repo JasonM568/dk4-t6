@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { createMailGroupAction } from "@/actions/admin";
 import { SubmitButton } from "@/components/admin/submit-button";
@@ -6,6 +7,7 @@ import { SubmitButton } from "@/components/admin/submit-button";
 export const metadata = { title: "名單群組 — 管理後台" };
 
 export default async function MailGroupsPage() {
+  await pageGuardEditor();
   const groups = await prisma.mailGroup.findMany({
     include: { _count: { select: { members: true } } },
     orderBy: { createdAt: "desc" },

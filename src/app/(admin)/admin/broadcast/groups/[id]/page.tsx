@@ -10,6 +10,7 @@ import {
 import { DeleteGroupButton } from "./delete-group-button";
 import { AddMembersForm } from "./add-members-form";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { pageGuardEditor } from "@/lib/auth/staff";
 
 export const metadata = { title: "名單群組 — 管理後台" };
 
@@ -18,6 +19,7 @@ export default async function MailGroupDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await pageGuardEditor();
   const { id } = await params;
   const group = await prisma.mailGroup.findUnique({
     where: { id },

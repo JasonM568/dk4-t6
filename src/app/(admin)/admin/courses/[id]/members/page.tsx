@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
 import { enrollmentSource } from "@/lib/format";
 import { createGroupFromCourseAction } from "@/actions/admin";
+import { currentCanEdit } from "@/lib/auth/staff";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { CourseMembersManager } from "./members-manager";
 
@@ -21,12 +22,13 @@ export default async function CourseMembersPage({
   });
   if (!course) notFound();
 
-  const [enrollments, profiles] = await Promise.all([
+  const [enrollments, profiles, canEditNow] = await Promise.all([
     prisma.enrollment.findMany({
       where: { courseId: id },
       orderBy: { createdAt: "desc" },
     }),
     listProfiles(),
+    currentCanEdit(),
   ]);
   const profById = new Map(profiles.map((p) => [p.id, p]));
 
@@ -52,8 +54,8 @@ export default async function CourseMembersPage({
         <span className="font-bold text-black">{enrollments.length}</span> 位會員可觀看
       </p>
 
-      {/* 整批匯出成名單群組 */}
-      {enrollments.length > 0 && (
+      {/* 整批匯出成名單群組（總教練唯讀時隱藏） */}
+      {enrollments.length > 0 && canEditNow && (
         <form
           action={createGroupFromCourseAction.bind(null, id)}
           className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3"
@@ -91,6 +93,7 @@ export default async function CourseMembersPage({
 
       <CourseMembersManager
         courseId={course.id}
+        canEdit={canEditNow}
         members={enrollments.map((e) => {
           const p = profById.get(e.userId);
           return {

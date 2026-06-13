@@ -22,7 +22,13 @@ export type CourseRow = {
 
 // 拖曳排序用原生 HTML5 drag & drop（桌機）；觸控裝置用 ↑↓/置頂 按鈕備援。
 // 拖曳過程先改本地 state 即時預覽，放開才呼叫 server action 寫入。
-export function CourseTable({ courses }: { courses: CourseRow[] }) {
+export function CourseTable({
+  courses,
+  canEdit = true,
+}: {
+  courses: CourseRow[];
+  canEdit?: boolean; // 總教練(唯讀)為 false：隱藏排序/複製/編輯
+}) {
   const [items, setItems] = useState(courses);
   const [dragId, setDragId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -57,7 +63,7 @@ export function CourseTable({ courses }: { courses: CourseRow[] }) {
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-left text-gray-500">
           <tr>
-            <th className="px-4 py-3">順序</th>
+            {canEdit && <th className="px-4 py-3">順序</th>}
             <th className="px-4 py-3">標題</th>
             <th className="px-4 py-3">售價</th>
             <th className="px-4 py-3">章節</th>
@@ -72,10 +78,11 @@ export function CourseTable({ courses }: { courses: CourseRow[] }) {
           {items.map((c, i) => (
             <tr
               key={c.id}
-              onDragEnter={() => handleDragEnter(c.id)}
+              onDragEnter={() => canEdit && handleDragEnter(c.id)}
               onDragOver={(e) => e.preventDefault()}
               className={dragId === c.id ? "bg-indigo-50" : ""}
             >
+              {canEdit && (
               <td className="px-4 py-3">
                 <div className="flex items-center gap-1">
                   <span
@@ -122,6 +129,7 @@ export function CourseTable({ courses }: { courses: CourseRow[] }) {
                   </button>
                 </div>
               </td>
+              )}
               <td className="px-4 py-3">
                 <div className="font-medium">{c.title}</div>
                 <div className="font-mono text-xs text-gray-400">{c.slug}</div>
@@ -150,25 +158,31 @@ export function CourseTable({ courses }: { courses: CourseRow[] }) {
               </td>
               <td className="px-4 py-3 text-right">
                 <div className="flex items-center justify-end gap-3">
-                  <button
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `要複製「${c.title}」嗎？\n章節、講義、分類會一併複製，複本為未上架狀態。`,
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `要複製「${c.title}」嗎？\n章節、講義、分類會一併複製，複本為未上架狀態。`,
+                          )
                         )
-                      )
-                        startTransition(() => duplicateCourse(c.id));
-                    }}
-                    disabled={isPending}
-                    className="text-gray-500 hover:underline disabled:opacity-50"
-                  >
-                    複製
-                  </button>
+                          startTransition(() => duplicateCourse(c.id));
+                      }}
+                      disabled={isPending}
+                      className="text-gray-500 hover:underline disabled:opacity-50"
+                    >
+                      複製
+                    </button>
+                  )}
                   <Link
-                    href={`/admin/courses/${c.id}`}
+                    href={
+                      canEdit
+                        ? `/admin/courses/${c.id}`
+                        : `/admin/courses/${c.id}/members`
+                    }
                     className="text-indigo-600 hover:underline"
                   >
-                    編輯
+                    {canEdit ? "編輯" : "觀看名單"}
                   </Link>
                 </div>
               </td>

@@ -32,6 +32,11 @@ export async function currentStaffRole(): Promise<StaffRole | null> {
   return getStaffRole(user.id);
 }
 
+/** 目前登入者能否編輯（查看頁用來決定是否顯示編輯按鈕）：admin|operator */
+export async function currentCanEdit(): Promise<boolean> {
+  return canEdit(await currentStaffRole());
+}
+
 // ── server action 守門（不符就 throw，擋下越權呼叫）──
 
 /** 進後台/查看：admin|operator|coach */

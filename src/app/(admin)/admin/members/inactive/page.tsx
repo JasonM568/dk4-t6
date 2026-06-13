@@ -5,11 +5,13 @@ import {
   getProfilesByEmails,
 } from "@/lib/supabase/admin";
 import { bulkSetPasswordAction } from "@/actions/admin";
+import { pageGuardEditor } from "@/lib/auth/staff";
 import { PasswordForm } from "./password-form";
 
 export const metadata = { title: "未登入會員 — 管理後台" };
 
 export default async function InactiveMembersPage() {
+  await pageGuardEditor();
   const users = await listNeverSignedInUsers();
 
   // 補姓名（profiles）與課程權限數（course schema）

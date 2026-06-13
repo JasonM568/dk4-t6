@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getProfile } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
 import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
+import { currentCanEdit } from "@/lib/auth/staff";
 import { EnrollmentEditor } from "./enrollment-editor";
 
 export const metadata = { title: "會員詳情 — 管理後台" };
@@ -44,6 +45,7 @@ export default async function MemberDetailPage({
       select: { id: true, title: true, isPublished: true },
     }),
   ]);
+  const canEditNow = await currentCanEdit();
   if (!profile) notFound();
 
   // 方案 A：已開通清單 + 尚未開通的課程（給下拉選單）
@@ -96,9 +98,12 @@ export default async function MemberDetailPage({
           課程觀看權限（已開通 {enrollments.length} 門）
         </h2>
         <p className="mb-3 text-sm text-gray-500">
-          下方選單選擇課程後按「開通」即生效；移除權限會先跳確認。
+          {canEditNow
+            ? "下方選單選擇課程後按「開通」即生效；移除權限會先跳確認。"
+            : "唯讀檢視（總教練）"}
         </p>
         <EnrollmentEditor
+          canEdit={canEditNow}
           enrolled={enrolledRows}
           available={availableCourses}
           grantAction={grantEnrollmentAction.bind(null, id)}

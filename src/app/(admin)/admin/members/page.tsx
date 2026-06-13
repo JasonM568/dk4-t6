@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { listProfiles, listAuthMeta, countProfiles } from "@/lib/supabase/admin";
 import { updateTier, createGroupFromCourseAction } from "@/actions/admin";
 import { enrollmentSource, formatDate } from "@/lib/format";
+import { currentCanEdit } from "@/lib/auth/staff";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { MemberTable } from "./member-table";
 
@@ -44,6 +45,7 @@ export default async function AdminMembersPage({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     select: { id: true, title: true },
   });
+  const canEditNow = await currentCanEdit();
   const selectedCourse = allCourses.find((c) => c.id === selectedCourseId) ?? null;
   const courseEnrollments = selectedCourse
     ? await prisma.enrollment.findMany({
@@ -125,7 +127,8 @@ export default async function AdminMembersPage({
                 name="minTotalSpent"
                 type="number"
                 defaultValue={t.minTotalSpent}
-                className="mb-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                disabled={!canEditNow}
+                className="mb-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50 disabled:text-gray-400"
               />
               <label className="mb-1 block text-xs text-gray-500">
                 折扣 %（0-100）
@@ -136,11 +139,14 @@ export default async function AdminMembersPage({
                 min={0}
                 max={100}
                 defaultValue={t.discountPercent}
-                className="mb-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                disabled={!canEditNow}
+                className="mb-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50 disabled:text-gray-400"
               />
-              <button className="w-full rounded-lg bg-black py-1.5 text-sm font-medium text-white">
-                儲存
-              </button>
+              {canEditNow && (
+                <button className="w-full rounded-lg bg-black py-1.5 text-sm font-medium text-white">
+                  儲存
+                </button>
+              )}
             </form>
           ))}
         </div>
@@ -178,7 +184,7 @@ export default async function AdminMembersPage({
                 <span className="font-bold">{courseEnrollments.length}</span>{" "}
                 位可觀看
               </p>
-              {courseEnrollments.length > 0 && (
+              {courseEnrollments.length > 0 && canEditNow && (
                 <form
                   action={createGroupFromCourseAction.bind(null, selectedCourseId)}
                   className="flex flex-wrap items-end gap-2"
@@ -317,6 +323,7 @@ export default async function AdminMembersPage({
         </form>
 
         <MemberTable
+          canEdit={canEditNow}
           members={members.map((m) => ({
             id: m.id,
             displayName: m.display_name,

@@ -11,6 +11,7 @@ import {
   deleteMaterial,
 } from "@/actions/admin";
 import { CourseForm } from "@/components/course-form";
+import { pageGuardEditor } from "@/lib/auth/staff";
 import { LessonRow } from "./lesson-row";
 import { MaterialsSection } from "./materials-section";
 
@@ -20,6 +21,7 @@ export default async function EditCoursePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  await pageGuardEditor(); // 總教練(唯讀)不可進編輯頁
   const course = await prisma.course.findUnique({
     where: { id },
     include: {

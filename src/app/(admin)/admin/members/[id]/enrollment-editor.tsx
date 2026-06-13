@@ -22,6 +22,7 @@ type AvailableCourse = {
 type EnrollmentEditorProps = {
   enrolled: EnrolledRow[];
   available: AvailableCourse[]; // 尚未開通的課程
+  canEdit?: boolean; // 總教練(唯讀)為 false：只看清單，隱藏開通/移除
   grantAction: (
     prev: EnrollmentEditState,
     formData: FormData,
@@ -33,6 +34,7 @@ type EnrollmentEditorProps = {
 export function EnrollmentEditor({
   enrolled,
   available,
+  canEdit = true,
   grantAction,
   revokeActions,
 }: EnrollmentEditorProps) {
@@ -52,13 +54,13 @@ export function EnrollmentEditor({
               <th className="px-4 py-3">課程</th>
               <th className="px-4 py-3">開通時間</th>
               <th className="px-4 py-3">來源</th>
-              <th className="px-4 py-3"></th>
+              {canEdit && <th className="px-4 py-3"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {enrolled.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-4 text-gray-400">
+                <td colSpan={canEdit ? 4 : 3} className="px-4 py-4 text-gray-400">
                   尚未開通任何課程
                 </td>
               </tr>
@@ -81,30 +83,33 @@ export function EnrollmentEditor({
                     );
                   })()}
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    disabled={revoking}
-                    onClick={() => {
-                      const warn = e.fromOrder
-                        ? `「${e.title}」是學員付費購買的課程，確定要移除觀看權限？`
-                        : `確定移除「${e.title}」的觀看權限？`;
-                      if (confirm(warn)) {
-                        startRevoke(() => revokeActions[e.courseId]());
-                      }
-                    }}
-                    className="text-red-600 hover:underline disabled:opacity-50"
-                  >
-                    移除
-                  </button>
-                </td>
+                {canEdit && (
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      disabled={revoking}
+                      onClick={() => {
+                        const warn = e.fromOrder
+                          ? `「${e.title}」是學員付費購買的課程，確定要移除觀看權限？`
+                          : `確定移除「${e.title}」的觀看權限？`;
+                        if (confirm(warn)) {
+                          startRevoke(() => revokeActions[e.courseId]());
+                        }
+                      }}
+                      className="text-red-600 hover:underline disabled:opacity-50"
+                    >
+                      移除
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* 新增權限 */}
+      {/* 新增權限（總教練唯讀時隱藏） */}
+      {canEdit && (
       <form action={formAction} className="mt-3 flex items-center gap-2">
         <select
           name="courseId"
@@ -137,6 +142,7 @@ export function EnrollmentEditor({
           <span className="text-sm text-red-600">{state.error}</span>
         )}
       </form>
+      )}
     </div>
   );
 }

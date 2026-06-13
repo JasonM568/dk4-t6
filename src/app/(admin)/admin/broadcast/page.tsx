@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { countProfiles } from "@/lib/supabase/admin";
 import {
@@ -22,6 +23,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 };
 
 export default async function BroadcastPage() {
+  await pageGuardEditor();
   const [courses, memberCount, history, groups] = await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],

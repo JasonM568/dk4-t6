@@ -3,7 +3,9 @@ import { addCategory, updateCategory, deleteCategory } from "@/actions/admin";
 
 export const metadata = { title: "課程分類 — 管理後台" };
 
+import { pageGuardEditor } from "@/lib/auth/staff";
 export default async function AdminCategoriesPage() {
+  await pageGuardEditor();
   const categories = await prisma.category.findMany({
     include: { _count: { select: { courses: true } } },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],

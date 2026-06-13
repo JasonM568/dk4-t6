@@ -25,9 +25,11 @@ export type MemberRow = {
 export function MemberTable({
   members,
   groups,
+  canEdit = true,
 }: {
   members: MemberRow[];
   groups: { id: string; name: string }[];
+  canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/加群組/重設密碼
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [state, formAction, pending] = useActionState<AddToGroupState, FormData>(
@@ -70,7 +72,8 @@ export function MemberTable({
 
   return (
     <form action={formAction}>
-      {/* 勾選操作列：加入名單群組 */}
+      {/* 勾選操作列：加入名單群組（總教練唯讀時隱藏） */}
+      {canEdit && (
       <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm">
         <span className="font-medium">已勾選 {selected.size} 位</span>
         {[...selected].map((id) => (
@@ -108,19 +111,22 @@ export function MemberTable({
         )}
         {state?.error && <span className="text-red-600">{state.error}</span>}
       </div>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-gray-500">
             <tr>
-              <th className="px-3 py-3">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  aria-label="全選"
-                />
-              </th>
+              {canEdit && (
+                <th className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="全選"
+                  />
+                </th>
+              )}
               <th className="px-4 py-3">會員</th>
               <th className="px-4 py-3">最後登入</th>
               <th className="px-4 py-3">等級</th>
@@ -134,21 +140,23 @@ export function MemberTable({
           <tbody className={`divide-y divide-gray-100 ${resetting ? "opacity-60" : ""}`}>
             {members.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-6 text-center text-gray-400">
+                <td colSpan={canEdit ? 9 : 8} className="px-4 py-6 text-center text-gray-400">
                   查無符合條件的會員
                 </td>
               </tr>
             )}
             {members.map((m) => (
               <tr key={m.id} className={selected.has(m.id) ? "bg-indigo-50" : ""}>
-                <td className="px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(m.id)}
-                    onChange={() => toggle(m.id)}
-                    aria-label={`選擇 ${m.email}`}
-                  />
-                </td>
+                {canEdit && (
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(m.id)}
+                      onChange={() => toggle(m.id)}
+                      aria-label={`選擇 ${m.email}`}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <div className="font-medium">{m.displayName ?? "—"}</div>
                   <div className="text-xs text-gray-400">{m.email}</div>
@@ -192,14 +200,16 @@ export function MemberTable({
                   )}
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                  <button
-                    type="button"
-                    onClick={() => resetPassword(m)}
-                    disabled={resetting}
-                    className="mr-3 text-gray-500 hover:underline disabled:opacity-50"
-                  >
-                    重設密碼
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => resetPassword(m)}
+                      disabled={resetting}
+                      className="mr-3 text-gray-500 hover:underline disabled:opacity-50"
+                    >
+                      重設密碼
+                    </button>
+                  )}
                   <Link
                     href={`/admin/members/${m.id}`}
                     className="text-indigo-600 hover:underline"
