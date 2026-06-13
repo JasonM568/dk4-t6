@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { listProfiles } from "@/lib/supabase/admin";
-import { formatNT } from "@/lib/format";
+import { listProfiles, listAuthMeta } from "@/lib/supabase/admin";
 import { updateTier } from "@/actions/admin";
+import { MemberTable } from "./member-table";
 
 export const metadata = { title: "會員管理" };
 
@@ -17,16 +17,18 @@ export default async function AdminMembersPage({
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
-  const [profiles, statsList, tiers, mailGroups, passwords] = await Promise.all([
-    listProfiles(),
-    prisma.memberStats.findMany({ include: { currentTier: true } }),
-    prisma.membershipTier.findMany({ orderBy: { level: "asc" } }),
-    prisma.mailGroup.findMany({
-      include: { _count: { select: { members: true } } },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.memberPassword.findMany(),
-  ]);
+  const [profiles, statsList, tiers, mailGroups, passwords, authMeta] =
+    await Promise.all([
+      listProfiles(),
+      prisma.memberStats.findMany({ include: { currentTier: true } }),
+      prisma.membershipTier.findMany({ orderBy: { level: "asc" } }),
+      prisma.mailGroup.findMany({
+        include: { _count: { select: { members: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.memberPassword.findMany(),
+      listAuthMeta(),
+    ]);
 
   // 勾選名單群組 → 取出群組內 email 集合過濾會員
   const groupEmails =
@@ -54,6 +56,7 @@ export default async function AdminMembersPage({
         totalSpent: stats?.totalSpent ?? 0,
         coursesBought: stats?.coursesBought ?? 0,
         initialPassword: passwordByUserId.get(p.id) ?? null,
+        lastSignInAt: authMeta.get(p.id)?.lastSignInAt ?? null,
       };
     })
     .sort((a, b) => b.totalSpent - a.totalSpent);
@@ -188,67 +191,22 @@ export default async function AdminMembersPage({
           )}
         </form>
 
-        <div className="overflow-hidden rounded-xl border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500">
-              <tr>
-                <th className="px-4 py-3">會員</th>
-                <th className="px-4 py-3">等級</th>
-                <th className="px-4 py-3">累積消費</th>
-                <th className="px-4 py-3">購課數</th>
-                <th className="px-4 py-3">初始密碼</th>
-                <th className="px-4 py-3">角色</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {members.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
-                    查無符合條件的會員
-                  </td>
-                </tr>
-              )}
-              {members.map((m) => (
-                <tr key={m.id}>
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{m.display_name ?? "—"}</div>
-                    <div className="text-xs text-gray-400">{m.email}</div>
-                  </td>
-                  <td className="px-4 py-3">{m.currentTier?.name ?? "—"}</td>
-                  <td className="px-4 py-3">{formatNT(m.totalSpent)}</td>
-                  <td className="px-4 py-3">{m.coursesBought}</td>
-                  <td className="px-4 py-3">
-                    {m.initialPassword ? (
-                      <span className="font-mono text-xs">{m.initialPassword}</span>
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {m.role === "admin" ? (
-                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
-                        管理員
-                      </span>
-                    ) : (
-                      (m.role ?? "會員")
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/members/${m.id}`}
-                      className="text-indigo-600 hover:underline"
-                    >
-                      檢視
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MemberTable
+          members={members.map((m) => ({
+            id: m.id,
+            displayName: m.display_name,
+            email: m.email,
+            role: m.role,
+            tierName: m.currentTier?.name ?? null,
+            totalSpent: m.totalSpent,
+            coursesBought: m.coursesBought,
+            initialPassword: m.initialPassword,
+            lastSignInAt: m.lastSignInAt,
+          }))}
+          groups={mailGroups.map((g) => ({ id: g.id, name: g.name }))}
+        />
         <p className="mt-2 text-xs text-gray-400">
-          「初始密碼」為管理員建帳號／批次重設時設定的密碼備查；學員若自行修改過密碼，此欄不會更新。自行註冊的會員無此紀錄。
+          「初始密碼」為管理員建帳號／批次重設時設定的密碼備查；學員若自行修改過密碼，此欄不會更新。自行註冊的會員無此紀錄。勾選會員可加入名單群組；「重設密碼」會覆蓋該會員密碼並記錄為初始密碼。
         </p>
       </section>
     </div>

@@ -487,6 +487,72 @@ export async function bulkSetPasswordAction(
   return { success: `已為 ${ok} 位會員設定新密碼，可用群發通知告知學員` };
 }
 
+/** 單筆重設會員密碼（會員列表用），並記錄初始密碼供後台備查 */
+export async function resetMemberPasswordAction(
+  userId: string,
+  formData: FormData,
+): Promise<void> {
+  await requireAdmin();
+  const password = String(formData.get("password") ?? "").trim();
+  if (password.length < 6) return;
+  const ok = await setUserPassword(userId, password);
+  if (ok) {
+    const adminUser = await getAuthUser();
+    await recordMemberPassword(userId, password, adminUser?.email ?? null);
+  }
+  revalidatePath("/admin/members");
+}
+
+export type AddToGroupState = { error?: string; success?: string } | null;
+
+/** 勾選會員 → 加入名單群組（建新群組或併入既有），用 profiles 的 email/姓名 */
+export async function addMembersToGroupAction(
+  _prev: AddToGroupState,
+  formData: FormData,
+): Promise<AddToGroupState> {
+  await requireAdmin();
+  const userIds = formData.getAll("userIds").map(String).filter(Boolean);
+  const newName = String(formData.get("newName") ?? "").trim();
+  const groupId = String(formData.get("groupId") ?? "");
+  if (userIds.length === 0) return { error: "請至少勾選一位會員" };
+
+  // 用 userId 反查 email/姓名
+  const profiles = await listProfiles();
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  const rows = userIds
+    .map((id) => byId.get(id))
+    .filter((p): p is NonNullable<typeof p> => !!p && !!p.email)
+    .map((p) => ({ email: p.email as string, name: p.display_name ?? undefined }));
+  if (rows.length === 0) return { error: "勾選的會員查無 email" };
+
+  let targetId = groupId;
+  let groupName = "";
+  if (newName) {
+    const group = await prisma.mailGroup.upsert({
+      where: { name: newName },
+      update: {},
+      create: { name: newName },
+    });
+    targetId = group.id;
+    groupName = newName;
+  } else if (groupId) {
+    const g = await prisma.mailGroup.findUnique({ where: { id: groupId } });
+    if (!g) return { error: "找不到選擇的群組" };
+    groupName = g.name;
+  } else {
+    return { error: "請選擇既有群組或填寫新群組名稱" };
+  }
+
+  const added = await addRowsToGroup(targetId, rows);
+  revalidatePath("/admin/broadcast/groups");
+  revalidatePath("/admin/members");
+  return {
+    success: `已將 ${added} 位會員加入名單群組「${groupName}」${
+      added < rows.length ? `（${rows.length - added} 位已在群組內略過）` : ""
+    }`,
+  };
+}
+
 // ───────────────────────── 群發通知 ─────────────────────────
 
 export type BroadcastState = {

@@ -254,6 +254,32 @@ export async function listNeverSignedInUsers(): Promise<NeverSignedInUser[]> {
   return result;
 }
 
+// 後台會員列表用：撈所有帳號的登入時間（last_sign_in_at）+ 註冊時間，回 Map(id → meta)
+export async function listAuthMeta(): Promise<
+  Map<string, { lastSignInAt: string | null; createdAt: string }>
+> {
+  const supabase = createAdminClient();
+  const map = new Map<string, { lastSignInAt: string | null; createdAt: string }>();
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error) {
+      console.error("[supabase/admin] listAuthMeta 失敗：", error.message);
+      break;
+    }
+    for (const u of data.users) {
+      map.set(u.id, {
+        lastSignInAt: u.last_sign_in_at ?? null,
+        createdAt: u.created_at,
+      });
+    }
+    if (data.users.length < 1000) break;
+  }
+  return map;
+}
+
 // 批次重設密碼（管理員操作，覆蓋原密碼）
 export async function setUserPassword(
   userId: string,
