@@ -75,15 +75,33 @@ export default async function MailGroupsPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-gray-500">
-            名單（選填，一行一筆，可「email,姓名」格式；之後也能再加）
-          </label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-xs text-gray-500">
+              名單（選填，一行一筆，可「email,姓名」格式；之後也能再加）
+            </label>
+            <a
+              href="/templates/mail-list-template.csv"
+              download="名單匯入範本.csv"
+              className="text-xs text-indigo-600 hover:underline"
+            >
+              ⬇ 下載 CSV 範本
+            </a>
+          </div>
           <textarea
             name="list"
             rows={5}
             placeholder={"student1@example.com,王小明\nstudent2@example.com"}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
           />
+          <div className="mt-2 flex items-center gap-2 text-sm">
+            <span className="text-gray-500">或上傳 CSV：</span>
+            <input
+              type="file"
+              name="csv"
+              accept=".csv,text/csv"
+              className="text-sm file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-200"
+            />
+          </div>
         </div>
         <SubmitButton
           pendingText="建立中，請勿關閉頁面…"

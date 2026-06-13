@@ -19,6 +19,7 @@ import { executeBroadcast } from "@/lib/email/dispatch";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
+import { decodeCsvBuffer } from "@/lib/csv";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門：先驗登入，再查 profiles.role 確認 admin
@@ -662,19 +663,31 @@ async function addRowsToGroup(
   return created.count;
 }
 
-/** 建立名單群組（可同時貼名單）。名稱重複改為加入既有群組 */
+/** 取出表單中的名單內容：貼上的文字 + 上傳的 CSV（UTF-8/Big5 自動判斷） */
+async function readListInput(formData: FormData): Promise<{ text: string; error?: string }> {
+  const raw = String(formData.get("list") ?? "");
+  const csv = formData.get("csv");
+  let csvText = "";
+  if (csv instanceof File && csv.size > 0) {
+    if (csv.size > 2 * 1024 * 1024) return { text: "", error: "CSV 檔案請小於 2MB" };
+    csvText = decodeCsvBuffer(await csv.arrayBuffer());
+  }
+  return { text: [raw, csvText].filter((s) => s.trim()).join("\n") };
+}
+
+/** 建立名單群組（可貼名單或上傳 CSV）。名稱重複改為加入既有群組 */
 export async function createMailGroupAction(formData: FormData) {
   await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
-  const raw = String(formData.get("list") ?? "");
   if (!name) return;
+  const { text } = await readListInput(formData);
 
   const group = await prisma.mailGroup.upsert({
     where: { name },
     update: {},
     create: { name },
   });
-  if (raw.trim()) await addRowsToGroup(group.id, parseRows(raw));
+  if (text.trim()) await addRowsToGroup(group.id, parseRows(text));
   revalidatePath("/admin/broadcast/groups");
   redirect(`/admin/broadcast/groups/${group.id}`);
 }
@@ -697,13 +710,34 @@ export async function deleteMailGroup(id: string) {
   redirect("/admin/broadcast/groups");
 }
 
-/** 貼名單加入群組成員（email 重複自動略過） */
-export async function addGroupMembersAction(groupId: string, formData: FormData) {
+export type GroupAddState = { error?: string; success?: string } | null;
+
+/** 貼名單或上傳 CSV 加入群組成員（email 重複自動略過），回報結果筆數 */
+export async function addGroupMembersAction(
+  groupId: string,
+  _prev: GroupAddState,
+  formData: FormData,
+): Promise<GroupAddState> {
   await requireAdmin();
-  const raw = String(formData.get("list") ?? "");
-  if (raw.trim()) await addRowsToGroup(groupId, parseRows(raw));
+
+  const { text, error } = await readListInput(formData);
+  if (error) return { error };
+  if (!text.trim()) return { error: "請貼上名單或選擇 CSV 檔案" };
+
+  const rows = parseRows(text);
+  const valid = rows.filter((r) => EMAIL_RE.test(r.email));
+  if (valid.length === 0)
+    return { error: "沒有讀到任何合法 email，請確認內容或 CSV 格式（參考範本）" };
+
+  const added = await addRowsToGroup(groupId, valid);
   revalidatePath(`/admin/broadcast/groups/${groupId}`);
   revalidatePath("/admin/broadcast/groups");
+
+  const skippedDup = valid.length - added;
+  const skippedBad = rows.length - valid.length;
+  return {
+    success: `已加入 ${added} 筆${skippedDup > 0 ? `、${skippedDup} 筆已在群組內略過` : ""}${skippedBad > 0 ? `、${skippedBad} 行無法辨識已忽略` : ""}`,
+  };
 }
 
 export async function removeGroupMember(memberId: string, groupId: string) {

@@ -8,6 +8,7 @@ import {
   removeGroupMember,
 } from "@/actions/admin";
 import { DeleteGroupButton } from "./delete-group-button";
+import { AddMembersForm } from "./add-members-form";
 import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "名單群組 — 管理後台" };
@@ -60,28 +61,8 @@ export default async function MailGroupDetailPage({
         </div>
       </div>
 
-      {/* 加名單 */}
-      <form
-        action={addGroupMembersAction.bind(null, group.id)}
-        className="mb-6 space-y-2 rounded-xl border border-dashed border-gray-300 p-4"
-      >
-        <label className="block text-sm font-medium">
-          加入名單（一行一筆，可「email,姓名」格式；重複的 email 自動略過）
-        </label>
-        <textarea
-          name="list"
-          rows={4}
-          required
-          placeholder={"student1@example.com,王小明\nstudent2@example.com"}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
-        />
-        <SubmitButton
-          pendingText="名單加入中，請勿關閉頁面…"
-          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800"
-        >
-          加入名單
-        </SubmitButton>
-      </form>
+      {/* 加名單（貼上或 CSV 上傳，含結果回報） */}
+      <AddMembersForm addAction={addGroupMembersAction.bind(null, group.id)} />
 
       {/* 名單列表 */}
       <div className="overflow-hidden rounded-xl border border-gray-200">
