@@ -1,5 +1,7 @@
 "use client";
 
+import { SubmitButton } from "@/components/admin/submit-button";
+
 export function DeleteGroupButton({
   groupName,
   memberCount,
@@ -21,9 +23,12 @@ export function DeleteGroupButton({
           e.preventDefault();
       }}
     >
-      <button className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-50">
+      <SubmitButton
+        pendingText="刪除中…"
+        className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-50"
+      >
         刪除群組
-      </button>
+      </SubmitButton>
     </form>
   );
 }

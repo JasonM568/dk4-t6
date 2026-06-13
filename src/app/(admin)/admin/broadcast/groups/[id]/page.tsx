@@ -8,6 +8,7 @@ import {
   removeGroupMember,
 } from "@/actions/admin";
 import { DeleteGroupButton } from "./delete-group-button";
+import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "名單群組 — 管理後台" };
 
@@ -40,9 +41,12 @@ export default async function MailGroupDetailPage({
             defaultValue={group.name}
             className="rounded-lg border border-gray-300 px-3 py-2 text-lg font-bold focus:border-black focus:outline-none"
           />
-          <button className="text-sm text-indigo-600 hover:underline">
+          <SubmitButton
+            pendingText="儲存中…"
+            className="text-sm text-indigo-600 hover:underline"
+          >
             改名
-          </button>
+          </SubmitButton>
         </form>
         <span className="text-sm text-gray-400">
           {group.members.length} 筆名單
@@ -71,9 +75,12 @@ export default async function MailGroupDetailPage({
           placeholder={"student1@example.com,王小明\nstudent2@example.com"}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
         />
-        <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+        <SubmitButton
+          pendingText="名單加入中，請勿關閉頁面…"
+          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800"
+        >
           加入名單
-        </button>
+        </SubmitButton>
       </form>
 
       {/* 名單列表 */}
@@ -108,9 +115,12 @@ export default async function MailGroupDetailPage({
                 </td>
                 <td className="px-4 py-2 text-right">
                   <form action={removeGroupMember.bind(null, m.id, group.id)}>
-                    <button className="text-sm text-red-600 hover:underline">
+                    <SubmitButton
+                      pendingText="移除中…"
+                      className="text-sm text-red-600 hover:underline"
+                    >
                       移除
-                    </button>
+                    </SubmitButton>
                   </form>
                 </td>
               </tr>

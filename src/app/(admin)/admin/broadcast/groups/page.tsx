@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { createMailGroupAction } from "@/actions/admin";
+import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "名單群組 — 管理後台" };
 
@@ -84,9 +85,15 @@ export default async function MailGroupsPage() {
             className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
           />
         </div>
-        <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+        <SubmitButton
+          pendingText="建立中，請勿關閉頁面…"
+          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800"
+        >
           建立群組
-        </button>
+        </SubmitButton>
+        <p className="text-xs text-gray-400">
+          建立完成後會自動跳轉到群組頁面
+        </p>
       </form>
     </div>
   );

@@ -7,6 +7,7 @@ import {
   saveBroadcastListToGroupAction,
 } from "@/actions/admin";
 import { BroadcastForm } from "./broadcast-form";
+import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "群發通知 — 管理後台" };
 
@@ -144,9 +145,12 @@ export default async function BroadcastPage() {
                     <td className="px-4 py-3">
                       {h.status === "SCHEDULED" ? (
                         <form action={cancelScheduledBroadcast.bind(null, h.id)}>
-                          <button className="text-sm text-red-600 hover:underline">
+                          <SubmitButton
+                            pendingText="取消中…"
+                            className="text-sm text-red-600 hover:underline"
+                          >
                             取消排程
-                          </button>
+                          </SubmitButton>
                         </form>
                       ) : listCount > 0 ? (
                         <details>
@@ -179,9 +183,12 @@ export default async function BroadcastPage() {
                                 ))}
                               </select>
                             )}
-                            <button className="block rounded bg-black px-2.5 py-1 text-xs font-medium text-white">
+                            <SubmitButton
+                              pendingText="存入中…"
+                              className="block rounded bg-black px-2.5 py-1 text-xs font-medium text-white"
+                            >
                               存入
-                            </button>
+                            </SubmitButton>
                           </form>
                         </details>
                       ) : (

@@ -7,6 +7,7 @@ import {
   saveBroadcastListToGroupAction,
   type BroadcastState,
 } from "@/actions/admin";
+import { SubmitButton } from "@/components/admin/submit-button";
 
 type GroupOption = { id: string; name: string; memberCount: number };
 
@@ -286,9 +287,12 @@ function SaveListPrompt({
             </select>
           </>
         )}
-        <button className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700">
+        <SubmitButton
+          pendingText="存入中…"
+          className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700"
+        >
           存入群組
-        </button>
+        </SubmitButton>
       </div>
       <p className="text-xs text-amber-700">
         填了新群組名稱以新群組為準；存入後會跳轉到該群組頁面。不需要的話直接忽略即可。
