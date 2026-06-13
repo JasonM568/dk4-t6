@@ -1,7 +1,14 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-06-13 晚（電子報系統全套、課程管理拖曳/複製、會員管理改版，全數已部署）**
+> 最後更新：**2026-06-13 深夜（後台 RBAC 三級權限、P0 修復、課程/會員管理大擴充，全數已部署）**
+>
+> 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
+> 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
+> debug 不必再請使用者跑 SQL。（auth/profiles 一直可查；course 是這天才打通）
+>
+> ⚠️ **概念易混淆（已在 UI 標清楚）**：「名單群組 MailGroup」= EDM 電子報寄信名單；
+> 「課程觀看權限 Enrollment」= 能不能看課程。**兩套獨立、互不影響**。加名單群組不會開通課程。
 
 ## 目前狀態：已部署上線 ✅
 
@@ -84,7 +91,24 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] 會員管理（原會員與等級）：搜尋欄、名單群組複選篩選、初始密碼備查欄（MemberPassword 表，四個設密碼入口都記錄）
 - [x] 後台表單全面補「送出中」狀態（SubmitButton 元件）
 
+**2026-06-13 深夜（RBAC + P0 修復 + 大量 bug 修，全數已部署）**
+- [x] **開通來源細分**（PURCHASE/MANUAL/BATCH/IMPORT，Enrollment.source）+ **每堂課觀看權限名單**（可新增/勾選移除/匯出/同步到名單群組）
+- [x] 課程頁按權限顯示「觀看影片／購買課程」按鈕
+- [x] 會員管理：登入時間欄、密碼遮蔽+點擊顯示+重設、勾選會員→加名單群組、**勾選會員→直接開通課程觀看權限**、依課程查名單+匯出；**會員列表顯示全部**（移除前 100 截斷）
+- [x] **後台 RBAC 三級權限**（StaffRole 表）：管理員(全部)/操作人員(可編輯+匯出+批次+群發)/總教練(只查看訂單/課程/會員)。
+  三層防護：action `requireEditor`/`requireFullAdmin` + 編輯頁 `pageGuardEditor` redirect + 查看頁依角色隱藏編輯鈕。權限管理頁 `/admin/staff`（admin 指派幹部）。守門邏輯在 `src/lib/auth/staff.ts`
+- [x] **P0 修復（workflow 跑出 39 findings 後修的 11 項）**：B7 漏開根因徹底修（createMember 反查 auth id，batchEnroll 只反查不建）、B4/5/6 listProfiles/listAuthMeta 分頁、B9 Resend 逐封結果、B8 cron 回收卡死 SENDING(claimedAt)、B1/B2 金流驗金額+移除沙箱 fallback、B3 密碼遮蔽、B25 auth BASE_URL fallback
+- [x] **學員端 force-dynamic**（my-courses/learn/courses[slug]）：修「QBC 老會員先登入、後被批次開通、看到舊快取沒新課程」
+
+### ⏳ 待驗收（下次開工先確認）
+1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
+2. **會員列表「開通課程」綠色按鈕**：勾會員→開通課程→用 course schema 查 Enrollment 確認寫入
+3. **RBAC**：指派一個測試帳號為總教練/操作人員，登入驗證權限分級
+
 ## 📌 待辦（依優先序）
+
+0. **觀看影片累積時長**（用戶要做、方案已設計）：LessonProgress 表 + 播放頁 YouTube IFrame API 埋點算實看秒數 + 進度回報 API + 後台顯示（約 1.5-2 人日，純 ADD）
+0.5. **P1–P3 其餘 ~25 項**（workflow 報告，完整清單在 /private/tmp 的 wd06dc3dc.output，或重跑）：越權改密碼防護、結帳冪等、免費課 total=0、open redirect、課程排序並發等
 
 1. **hope 站註冊回歸測試**：Confirm email 是專案層級開關（已開啟），hope 站新註冊也會被要求驗證 Email——hope 端若沒處理確認連結要把開關關回（course 站已實測 OK，hope 站尚未測）
 2. **與 QBC 站協調**：Recovery 模板已改 `{{ .RedirectTo }}` 格式，hope 站 reset 頁相容性回歸測試
