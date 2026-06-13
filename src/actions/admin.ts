@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/supabase/server";
 import {
-  getProfileRole,
   getProfilesByEmails,
   findAuthUserIdByEmail,
   listProfiles,
@@ -21,19 +20,13 @@ import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
 import { decodeCsvBuffer } from "@/lib/csv";
+import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 
-// 後台 action 守門：先驗登入，再查 profiles.role 確認 admin
-async function requireAdmin() {
-  const user = await getAuthUser();
-  if (!user) {
-    throw new Error("需要管理員權限");
-  }
-  const role = await getProfileRole(user.id);
-  if (!isAdminRole(role)) {
-    throw new Error("需要管理員權限");
-  }
-}
+// 後台 action 守門分三級（定義見 src/lib/auth/staff.ts）：
+//   requireEditor    編輯/操作/匯出 → admin|operator（總教練唯讀被擋）
+//   requireFullAdmin 分頁管理、權限管理 → 僅 admin
+// 查看頁面的守門在各 page 與 (admin)/layout.tsx
 
 const courseSchema = z.object({
   slug: z
@@ -127,7 +120,7 @@ export async function createCourse(
   _prev: CourseFormState,
   formData: FormData,
 ): Promise<CourseFormState> {
-  await requireAdmin();
+  await requireEditor();
   const parsed = courseSchema.safeParse(courseInput(formData));
   if (!parsed.success) return { error: firstZodError(parsed) };
 
@@ -163,7 +156,7 @@ export async function updateCourse(
   _prev: CourseFormState,
   formData: FormData,
 ): Promise<CourseFormState> {
-  await requireAdmin();
+  await requireEditor();
   const parsed = courseSchema.safeParse(courseInput(formData));
   if (!parsed.success) return { error: firstZodError(parsed) };
 
@@ -197,7 +190,7 @@ export async function updateCourse(
 
 /** 課程上移/下移：以目前顯示順序重新編號後與鄰居交換 */
 export async function moveCourse(courseId: string, direction: "up" | "down") {
-  await requireAdmin();
+  await requireEditor();
 
   const courses = await prisma.course.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -233,7 +226,7 @@ async function renumberCourses(orderedIds: string[]) {
 
 /** 課程置頂：移到最前，其餘順序不變 */
 export async function pinCourseToTop(courseId: string) {
-  await requireAdmin();
+  await requireEditor();
   const courses = await prisma.course.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     select: { id: true },
@@ -245,7 +238,7 @@ export async function pinCourseToTop(courseId: string) {
 
 /** 拖曳排序：前端傳完整新順序；id 集合必須與現有課程一致才寫入 */
 export async function reorderCoursesAction(orderedIds: string[]) {
-  await requireAdmin();
+  await requireEditor();
   const courses = await prisma.course.findMany({ select: { id: true } });
   const valid =
     courses.length === orderedIds.length &&
@@ -257,7 +250,7 @@ export async function reorderCoursesAction(orderedIds: string[]) {
 
 /** 複製課程：連同章節/講義/分類；新課程未上架、slug 加 -copy、課程編號留空 */
 export async function duplicateCourse(courseId: string) {
-  await requireAdmin();
+  await requireEditor();
   const src = await prisma.course.findUnique({
     where: { id: courseId },
     include: {
@@ -320,14 +313,14 @@ export async function duplicateCourse(courseId: string) {
 }
 
 export async function deleteCourse(id: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.course.delete({ where: { id } });
   revalidatePath("/admin/courses");
   redirect("/admin/courses");
 }
 
 export async function addLesson(courseId: string, formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const title = String(formData.get("title") ?? "");
   // 容錯：貼完整網址或 iframe 嵌入碼也能自動抽出 11 碼影片 ID
   const youtubeId = extractYoutubeId(String(formData.get("youtubeId") ?? ""));
@@ -349,7 +342,7 @@ export async function updateLesson(
   courseId: string,
   formData: FormData,
 ) {
-  await requireAdmin();
+  await requireEditor();
   const title = String(formData.get("title") ?? "").trim();
   // 與 addLesson 相同容錯：網址/嵌入碼/純 ID 皆可
   const youtubeId = extractYoutubeId(String(formData.get("youtubeId") ?? ""));
@@ -367,7 +360,7 @@ export async function updateLesson(
 }
 
 export async function deleteLesson(lessonId: string, courseId: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.lesson.delete({ where: { id: lessonId } });
   revalidatePath(`/admin/courses/${courseId}`);
 }
@@ -378,7 +371,7 @@ const tierSchema = z.object({
 });
 
 export async function updateTier(id: string, formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const data = tierSchema.parse({
     minTotalSpent: formData.get("minTotalSpent"),
     discountPercent: formData.get("discountPercent"),
@@ -397,7 +390,7 @@ export async function addMaterialAction(
   _prev: MaterialState,
   formData: FormData,
 ): Promise<MaterialState> {
-  await requireAdmin();
+  await requireEditor();
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return { error: "請填寫講義名稱" };
@@ -417,7 +410,7 @@ export async function addMaterialAction(
 }
 
 export async function deleteMaterial(materialId: string, courseId: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.courseMaterial.delete({ where: { id: materialId } });
   revalidatePath(`/admin/courses/${courseId}`);
 }
@@ -432,7 +425,7 @@ export async function grantEnrollmentAction(
   _prev: EnrollmentEditState,
   formData: FormData,
 ): Promise<EnrollmentEditState> {
-  await requireAdmin();
+  await requireEditor();
 
   const courseId = String(formData.get("courseId") ?? "");
   const course = await prisma.course.findUnique({ where: { id: courseId } });
@@ -450,7 +443,7 @@ export async function grantEnrollmentAction(
 
 /** 移除單一課程權限（客戶端先 confirm） */
 export async function revokeEnrollment(userId: string, courseId: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.enrollment.deleteMany({ where: { userId, courseId } });
   revalidatePath(`/admin/members/${userId}`);
 }
@@ -463,7 +456,7 @@ export async function batchRevokeEnrollmentAction(
   _prev: RevokeState,
   formData: FormData,
 ): Promise<RevokeState> {
-  await requireAdmin();
+  await requireEditor();
   const userIds = formData.getAll("userIds").map(String).filter(Boolean);
   if (userIds.length === 0) return { error: "請至少勾選一位會員" };
   const r = await prisma.enrollment.deleteMany({
@@ -482,7 +475,7 @@ export async function bulkSetPasswordAction(
   _prev: BulkPasswordState,
   formData: FormData,
 ): Promise<BulkPasswordState> {
-  await requireAdmin();
+  await requireEditor();
 
   const userIds = formData.getAll("userIds").map(String).filter(Boolean);
   const password = String(formData.get("password") ?? "").trim();
@@ -511,7 +504,7 @@ export async function resetMemberPasswordAction(
   userId: string,
   formData: FormData,
 ): Promise<void> {
-  await requireAdmin();
+  await requireEditor();
   const password = String(formData.get("password") ?? "").trim();
   if (password.length < 6) return;
   const ok = await setUserPassword(userId, password);
@@ -529,7 +522,7 @@ export async function addMembersToGroupAction(
   _prev: AddToGroupState,
   formData: FormData,
 ): Promise<AddToGroupState> {
-  await requireAdmin();
+  await requireEditor();
   const userIds = formData.getAll("userIds").map(String).filter(Boolean);
   const newName = String(formData.get("newName") ?? "").trim();
   const groupId = String(formData.get("groupId") ?? "");
@@ -587,7 +580,7 @@ export async function sendBroadcastAction(
   _prev: BroadcastState,
   formData: FormData,
 ): Promise<BroadcastState> {
-  await requireAdmin();
+  await requireEditor();
   const admin = await getAuthUser();
 
   const subject = String(formData.get("subject") ?? "").trim();
@@ -722,7 +715,7 @@ export async function sendBroadcastAction(
 
 /** 取消排程中的群發（只動 SCHEDULED 狀態，已寄出/處理中不受影響） */
 export async function cancelScheduledBroadcast(id: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.emailBroadcast.updateMany({
     where: { id, status: "SCHEDULED" },
     data: { status: "CANCELED" },
@@ -765,7 +758,7 @@ async function readListInput(formData: FormData): Promise<{ text: string; error?
 
 /** 建立名單群組（可貼名單或上傳 CSV）。名稱重複改為加入既有群組 */
 export async function createMailGroupAction(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   const { text } = await readListInput(formData);
@@ -781,7 +774,7 @@ export async function createMailGroupAction(formData: FormData) {
 }
 
 export async function renameMailGroup(id: string, formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   // 撞名就略過（名稱唯一）
@@ -792,7 +785,7 @@ export async function renameMailGroup(id: string, formData: FormData) {
 
 /** 刪除群組（成員一併刪除；不影響歷史寄送紀錄） */
 export async function deleteMailGroup(id: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.mailGroup.delete({ where: { id } }).catch(() => undefined);
   revalidatePath("/admin/broadcast/groups");
   redirect("/admin/broadcast/groups");
@@ -806,7 +799,7 @@ export async function addGroupMembersAction(
   _prev: GroupAddState,
   formData: FormData,
 ): Promise<GroupAddState> {
-  await requireAdmin();
+  await requireEditor();
 
   const { text, error } = await readListInput(formData);
   if (error) return { error };
@@ -829,7 +822,7 @@ export async function addGroupMembersAction(
 }
 
 export async function removeGroupMember(memberId: string, groupId: string) {
-  await requireAdmin();
+  await requireEditor();
   await prisma.mailGroupMember.deleteMany({ where: { id: memberId } });
   revalidatePath(`/admin/broadcast/groups/${groupId}`);
   revalidatePath("/admin/broadcast/groups");
@@ -842,7 +835,7 @@ export async function saveBroadcastListToGroupAction(
   broadcastId: string,
   formData: FormData,
 ) {
-  await requireAdmin();
+  await requireEditor();
   const newName = String(formData.get("newName") ?? "").trim();
   const groupId = String(formData.get("groupId") ?? "");
 
@@ -879,7 +872,7 @@ export async function createGroupFromCourseAction(
   courseId: string,
   formData: FormData,
 ) {
-  await requireAdmin();
+  await requireEditor();
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     select: { title: true },
@@ -927,7 +920,7 @@ export async function createGroupFromCourseAction(
 // ───────────────────────── 課程分類 ─────────────────────────
 
 export async function addCategory(formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   // 名稱唯一，重複就略過（不炸頁）
@@ -938,7 +931,7 @@ export async function addCategory(formData: FormData) {
 }
 
 export async function updateCategory(id: string, formData: FormData) {
-  await requireAdmin();
+  await requireEditor();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await prisma.category
@@ -948,7 +941,7 @@ export async function updateCategory(id: string, formData: FormData) {
 }
 
 export async function deleteCategory(id: string) {
-  await requireAdmin();
+  await requireEditor();
   // 多對多關聯只會解除課程的分類標記，不會動到課程本身
   await prisma.category.delete({ where: { id } }).catch(() => undefined);
   revalidatePath("/admin/categories");
@@ -1035,7 +1028,7 @@ export async function addMemberAction(
   _prev: EnrollmentEditState,
   formData: FormData,
 ): Promise<EnrollmentEditState> {
-  await requireAdmin();
+  await requireEditor();
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -1063,7 +1056,7 @@ export async function importMembersAction(
   _prev: BatchState,
   formData: FormData,
 ): Promise<BatchState> {
-  await requireAdmin();
+  await requireEditor();
   const adminUser = await getAuthUser();
 
   const raw = String(formData.get("list") ?? "");
@@ -1145,7 +1138,7 @@ export async function batchEnrollAction(
   _prev: BatchState,
   formData: FormData,
 ): Promise<BatchState> {
-  await requireAdmin();
+  await requireEditor();
 
   const courseId = String(formData.get("courseId") ?? "");
   const raw = String(formData.get("list") ?? "");
@@ -1240,7 +1233,7 @@ export async function createMissingAndEnrollAction(
   _prev: BatchState,
   formData: FormData,
 ): Promise<BatchState> {
-  await requireAdmin();
+  await requireEditor();
   const admin = await getAuthUser();
 
   const courseId = String(formData.get("courseId") ?? "");
@@ -1333,12 +1326,55 @@ export async function createMissingAndEnrollAction(
   };
 }
 
-// ── 分頁管理（前台導覽分頁開關）──
+// ── 分頁管理（前台導覽分頁開關）── 僅管理員
 
 export async function togglePageAction(key: SitePageKey, enabled: boolean) {
-  await requireAdmin();
+  await requireFullAdmin();
   await setPageEnabled(key, enabled);
   // navbar 在 root layout，全站重新驗證
   revalidatePath("/", "layout");
   revalidatePath("/admin/settings");
+}
+
+// ── 權限管理（指派總教練/操作人員）── 僅管理員
+
+export type StaffAssignState = { error?: string; success?: string } | null;
+
+/** 指派會員為 操作人員/總教練（以 email 找會員）。admin 身分由 QBC 管，不在此指派 */
+export async function assignStaffRoleAction(
+  _prev: StaffAssignState,
+  formData: FormData,
+): Promise<StaffAssignState> {
+  await requireFullAdmin();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const role = String(formData.get("role") ?? "");
+  const admin = await getAuthUser();
+
+  if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確" };
+  if (role !== "OPERATOR" && role !== "COACH")
+    return { error: "請選擇角色（操作人員 / 總教練）" };
+
+  // 以 email 找會員（須為平台會員）
+  const profileMap = await getProfilesByEmails([email]);
+  const profile = profileMap.get(email);
+  if (!profile) return { error: `查無會員 ${email}，請先確認此人是平台會員` };
+  if (isAdminRole(profile.role))
+    return { error: "此帳號已是管理員，不需另外指派" };
+
+  await prisma.staffRole.upsert({
+    where: { userId: profile.id },
+    update: { role, email, assignedBy: admin?.email ?? null },
+    create: { userId: profile.id, role, email, assignedBy: admin?.email ?? null },
+  });
+  revalidatePath("/admin/staff");
+  return {
+    success: `已指派 ${profile.display_name ?? email} 為${role === "OPERATOR" ? "操作人員" : "總教練"}`,
+  };
+}
+
+/** 移除幹部角色（降回一般會員） */
+export async function removeStaffRoleAction(userId: string) {
+  await requireFullAdmin();
+  await prisma.staffRole.deleteMany({ where: { userId } });
+  revalidatePath("/admin/staff");
 }

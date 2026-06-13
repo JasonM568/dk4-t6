@@ -1,9 +1,11 @@
 import { getPageStates } from "@/lib/site-pages";
 import { togglePageAction } from "@/actions/admin";
+import { pageGuardFullAdmin } from "@/lib/auth/staff";
 
 export const metadata = { title: "分頁管理 — 管理後台" };
 
 export default async function AdminSettingsPage() {
+  await pageGuardFullAdmin(); // 僅管理員
   const pages = await getPageStates();
 
   return (

@@ -50,6 +50,18 @@ model MemberPassword {
   updatedAt DateTime @updatedAt
 }
 
+// course 平台自管的後台幹部角色（admin 仍沿用 QBC public.profiles.role=admin，不存這裡）。
+// OPERATOR=操作人員（可查看+編輯+匯出+批次/群發）；COACH=總教練（只能查看訂單/課程/會員）。
+// userId = auth.users.id；email 為指派當下快照，純顯示用。
+model StaffRole {
+  userId    String   @id @db.Uuid
+  role      String // OPERATOR | COACH
+  email     String? // 指派當下 email 快照（權限管理頁顯示用）
+  assignedBy String? // 指派的管理員 email
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // 等級門檻設定表（後台可調）
 model MembershipTier {
   id               String @id @default(cuid())
