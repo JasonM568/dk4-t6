@@ -43,7 +43,15 @@ export default async function EditCoursePage({
       >
         ← 課程管理
       </Link>
-      <h1 className="mb-6 mt-2 text-2xl font-bold">編輯課程</h1>
+      <div className="mb-6 mt-2 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">編輯課程</h1>
+        <Link
+          href={`/admin/courses/${course.id}/members`}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+        >
+          👥 觀看權限名單
+        </Link>
+      </div>
 
       <CourseForm
         action={updateCourse.bind(null, course.id)}

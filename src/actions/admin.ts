@@ -874,6 +874,56 @@ export async function saveBroadcastListToGroupAction(
   redirect(`/admin/broadcast/groups/${targetId}`);
 }
 
+/** 把某堂課目前的觀看權限名單整批匯出成名單群組（建新或併入既有），完成後跳到群組頁 */
+export async function createGroupFromCourseAction(
+  courseId: string,
+  formData: FormData,
+) {
+  await requireAdmin();
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { title: true },
+  });
+  if (!course) return;
+
+  const newName =
+    String(formData.get("newName") ?? "").trim() ||
+    `${course.title} 觀看名單`;
+  const groupId = String(formData.get("groupId") ?? "");
+
+  const enrollments = await prisma.enrollment.findMany({
+    where: { courseId },
+    select: { userId: true },
+  });
+  if (enrollments.length === 0) return;
+
+  // userId → email/姓名（listProfiles 已分頁，破千也撈得全）
+  const profiles = await listProfiles();
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  const seen = new Set<string>();
+  const rows = enrollments
+    .map((e) => byId.get(e.userId))
+    .filter((p): p is NonNullable<typeof p> => !!p && !!p.email)
+    .map((p) => ({ email: p.email as string, name: p.display_name ?? undefined }))
+    .filter((r) => !seen.has(r.email) && seen.add(r.email));
+  if (rows.length === 0) return;
+
+  let targetId = groupId;
+  if (newName && !groupId) {
+    const group = await prisma.mailGroup.upsert({
+      where: { name: newName },
+      update: {},
+      create: { name: newName },
+    });
+    targetId = group.id;
+  }
+  if (!targetId) return;
+
+  await addRowsToGroup(targetId, rows);
+  revalidatePath("/admin/broadcast/groups");
+  redirect(`/admin/broadcast/groups/${targetId}`);
+}
+
 // ───────────────────────── 課程分類 ─────────────────────────
 
 export async function addCategory(formData: FormData) {

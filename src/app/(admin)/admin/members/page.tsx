@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { listProfiles, listAuthMeta, countProfiles } from "@/lib/supabase/admin";
-import { updateTier } from "@/actions/admin";
+import { updateTier, createGroupFromCourseAction } from "@/actions/admin";
+import { enrollmentSource, formatDate } from "@/lib/format";
+import { SubmitButton } from "@/components/admin/submit-button";
 import { MemberTable } from "./member-table";
 
 export const metadata = { title: "會員管理" };
@@ -9,10 +11,15 @@ export const metadata = { title: "會員管理" };
 export default async function AdminMembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; group?: string | string[] }>;
+  searchParams: Promise<{
+    q?: string;
+    group?: string | string[];
+    course?: string;
+  }>;
 }) {
-  const { q, group } = await searchParams;
+  const { q, group, course } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
+  const selectedCourseId = (course ?? "").trim();
   const selectedGroupIds = (Array.isArray(group) ? group : group ? [group] : []).filter(Boolean);
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
@@ -31,6 +38,20 @@ export default async function AdminMembersPage({
       // B5：「共 N 位」用真實總數（head:true 只取 count），不受列表筆數影響
       countProfiles(),
     ]);
+
+  // 依課程查觀看名單（選課程才查）
+  const allCourses = await prisma.course.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    select: { id: true, title: true },
+  });
+  const selectedCourse = allCourses.find((c) => c.id === selectedCourseId) ?? null;
+  const courseEnrollments = selectedCourse
+    ? await prisma.enrollment.findMany({
+        where: { courseId: selectedCourseId },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const profByIdForCourse = new Map(profiles.map((p) => [p.id, p]));
 
   // 勾選名單群組 → 取出群組內 email 集合過濾會員
   const groupEmails =
@@ -123,6 +144,108 @@ export default async function AdminMembersPage({
             </form>
           ))}
         </div>
+      </section>
+
+      {/* 依課程查觀看名單 + 匯出名單群組 */}
+      <section>
+        <h2 className="mb-1 text-2xl font-bold">依課程查觀看名單</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          選一堂課，列出有觀看權限的會員，可整批匯出成名單群組（供電子報群發）。
+        </p>
+        <form action="/admin/members" className="mb-4 flex flex-wrap gap-2">
+          <select
+            name="course"
+            defaultValue={selectedCourseId}
+            className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+          >
+            <option value="">選擇課程…</option>
+            {allCourses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </select>
+          <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+            查詢觀看名單
+          </button>
+        </form>
+
+        {selectedCourse && (
+          <>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm">
+                「{selectedCourse.title}」共{" "}
+                <span className="font-bold">{courseEnrollments.length}</span>{" "}
+                位可觀看
+              </p>
+              {courseEnrollments.length > 0 && (
+                <form
+                  action={createGroupFromCourseAction.bind(null, selectedCourseId)}
+                  className="flex flex-wrap items-end gap-2"
+                >
+                  <input
+                    name="newName"
+                    placeholder={`${selectedCourse.title} 觀看名單`}
+                    className="w-56 rounded-lg border border-indigo-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+                  />
+                  <SubmitButton
+                    pendingText="匯出中…"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+                  >
+                    匯出成名單群組
+                  </SubmitButton>
+                </form>
+              )}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-left text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">會員</th>
+                    <th className="px-4 py-3">Email</th>
+                    <th className="px-4 py-3">來源</th>
+                    <th className="px-4 py-3">開通時間</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {courseEnrollments.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                        這堂課還沒有任何會員開通
+                      </td>
+                    </tr>
+                  )}
+                  {courseEnrollments.map((e, i) => {
+                    const p = profByIdForCourse.get(e.userId);
+                    const src = enrollmentSource(e.source, e.orderId);
+                    return (
+                      <tr key={e.id}>
+                        <td className="px-4 py-2 font-mono text-gray-400">{i + 1}</td>
+                        <td className="px-4 py-2">
+                          {p?.display_name ?? (
+                            <span className="text-gray-300">（查無會員資料）</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-gray-500">{p?.email ?? "—"}</td>
+                        <td className="px-4 py-2">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs ${src.className}`}
+                          >
+                            {src.text}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-gray-400">
+                          {formatDate(e.createdAt)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
 
       {/* 會員列表 */}

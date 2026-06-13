@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
 import { enrollmentSource } from "@/lib/format";
+import { createGroupFromCourseAction } from "@/actions/admin";
+import { SubmitButton } from "@/components/admin/submit-button";
 import { CourseMembersManager } from "./members-manager";
 
 export const metadata = { title: "觀看權限名單 — 管理後台" };
@@ -49,6 +51,31 @@ export default async function CourseMembersPage({
         {course.courseCode ? `（${course.courseCode}）` : ""} — 共{" "}
         <span className="font-bold text-black">{enrollments.length}</span> 位會員可觀看
       </p>
+
+      {/* 整批匯出成名單群組 */}
+      {enrollments.length > 0 && (
+        <form
+          action={createGroupFromCourseAction.bind(null, id)}
+          className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3"
+        >
+          <div>
+            <label className="mb-1 block text-xs text-indigo-800">
+              整批匯出成名單群組（供電子報群發）
+            </label>
+            <input
+              name="newName"
+              placeholder={`預設：${course.title} 觀看名單`}
+              className="w-64 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+            />
+          </div>
+          <SubmitButton
+            pendingText="匯出中…"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+          >
+            匯出 {enrollments.length} 位成名單群組
+          </SubmitButton>
+        </form>
+      )}
 
       {/* 來源統計 */}
       <div className="mb-4 flex flex-wrap gap-2">
