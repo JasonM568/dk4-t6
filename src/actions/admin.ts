@@ -537,26 +537,30 @@ export async function addMembersToGroupAction(
     .map((p) => ({ email: p.email as string, name: p.display_name ?? undefined }));
   if (rows.length === 0) return { error: "勾選的會員查無 email" };
 
-  let targetId = groupId;
+  // 修正：選了既有群組就「絕對」用既有（groupId 優先），只有沒選既有時才用名稱建新，
+  // 杜絕「想加既有卻因名稱沒對上而誤建新群組」。
+  let targetId = "";
   let groupName = "";
-  if (newName) {
+  if (groupId) {
+    const g = await prisma.mailGroup.findUnique({ where: { id: groupId } });
+    if (!g) return { error: "找不到選擇的群組" };
+    targetId = g.id;
+    groupName = g.name;
+  } else if (newName) {
     const group = await prisma.mailGroup.upsert({
       where: { name: newName },
       update: {},
       create: { name: newName },
     });
     targetId = group.id;
-    groupName = newName;
-  } else if (groupId) {
-    const g = await prisma.mailGroup.findUnique({ where: { id: groupId } });
-    if (!g) return { error: "找不到選擇的群組" };
-    groupName = g.name;
+    groupName = group.name;
   } else {
     return { error: "請選擇既有群組或填寫新群組名稱" };
   }
 
   const added = await addRowsToGroup(targetId, rows);
   revalidatePath("/admin/broadcast/groups");
+  revalidatePath(`/admin/broadcast/groups/${targetId}`);
   revalidatePath("/admin/members");
   return {
     success: `已將 ${added} 位會員加入名單群組「${groupName}」${

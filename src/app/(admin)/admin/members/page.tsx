@@ -87,7 +87,7 @@ export default async function AdminMembersPage({
     .sort((a, b) => b.totalSpent - a.totalSpent);
 
   const hasFilter = !!query || !!groupEmails;
-  // 搜尋（姓名/email 子字串）與群組過濾可並用；無條件時只列前 100 名
+  // 搜尋（姓名/email 子字串）與群組過濾可並用；無條件時顯示全部會員（不再截斷前 100）
   const members = hasFilter
     ? all.filter((m) => {
         const email = (m.email ?? "").toLowerCase();
@@ -100,7 +100,7 @@ export default async function AdminMembersPage({
           return false;
         return true;
       })
-    : all.slice(0, 100);
+    : all;
 
   return (
     <div className="space-y-10">
@@ -260,7 +260,7 @@ export default async function AdminMembersPage({
           <h2 className="text-2xl font-bold">
             {hasFilter
               ? `篩選結果：${members.length} 筆`
-              : `會員列表（共 ${totalCount} 位，列出消費前 100 名）`}
+              : `會員列表（全部 ${totalCount} 位）`}
           </h2>
           <Link
             href="/admin/members/inactive"
