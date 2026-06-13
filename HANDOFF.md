@@ -1,10 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-06-12 深夜（Confirm email 已開通實測 OK；新增前台三分頁+後台開關）**
->
-> ⚠️ **下次開工第一件事**：確認 commit `8b1605d`（三分頁+姓名開放英文）已 push（`git status -sb` 不該顯示 ahead）。
-> 若還沒推：`git push origin main`（會自動部署 + 在正式庫建 SiteSetting 表），再做下方「待驗收」。
+> 最後更新：**2026-06-13 晚（電子報系統全套、課程管理拖曳/複製、會員管理改版，全數已部署）**
 
 ## 目前狀態：已部署上線 ✅
 
@@ -74,11 +71,21 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] 前台三分頁：`/lecturers` 量子講師群、`/knowledge` 知識專區、`/speaking` 講座邀約（目前為「內容籌備中」版面）
 - [x] 後台「分頁管理」`/admin/settings`：三分頁可逐頁開/關（關閉 = navbar 消失 + 直連 404），預設全開
 - [x] 新增 `SiteSetting` key-value 表（手寫 migration `20260612230000_site_settings`，本機驗證過；正式庫由 Vercel build 的 migrate deploy 自動建立）
-- ⚠️ commit `8b1605d` 收工時尚未 push（權限管控擋下）——見最上方提醒
+**2026-06-13（功能大擴充日，全數已部署上線）**
+- [x] 註冊姓名開放英文 + 前台三分頁驗收完成（首頁 navbar、404 開關都正常）
+- [x] 課程管理：⠿ 拖曳排序、⤒ 置頂、課程複製（連章節/講義/分類，複本未上架 slug-copy）
+- [x] 管理員免購買可看全部課程（含未上架預覽）
+- [x] **群發升級電子報系統**：
+  - 預設發送時間（排程寄送）：Vercel Cron 每 5 分鐘（`/api/cron/broadcast`，CRON_SECRET 已設於 Vercel + 本機 .env）
+  - MailGroup/MailGroupMember 名單群組：管理頁、CSV 匯入（UTF-8/Big5 容錯）、範本下載（public/templates/）
+  - 發送對象三選一：全部會員/名單群組/手動貼名單；手動名單寄後可一鍵存群組
+  - 寄送紀錄：狀態欄、取消排程、名單快照存入群組
+- [x] 批次開通「查無會員」→ 一鍵批次新增會員並開通；匯入明確標示跳過已註冊
+- [x] 會員管理（原會員與等級）：搜尋欄、名單群組複選篩選、初始密碼備查欄（MemberPassword 表，四個設密碼入口都記錄）
+- [x] 後台表單全面補「送出中」狀態（SubmitButton 元件）
 
 ## 📌 待辦（依優先序）
 
-0. **待驗收（push 部署完成後）**：① 註冊頁英文姓名（如 John Smith）可過驗證 ② 首頁頂端出現三個新分頁 ③ 後台分頁管理關閉其一 → navbar 消失 + 直連 404
 1. **hope 站註冊回歸測試**：Confirm email 是專案層級開關（已開啟），hope 站新註冊也會被要求驗證 Email——hope 端若沒處理確認連結要把開關關回（course 站已實測 OK，hope 站尚未測）
 2. **與 QBC 站協調**：Recovery 模板已改 `{{ .RedirectTo }}` 格式，hope 站 reset 頁相容性回歸測試
 2.5. **三分頁正式內容**：量子講師群/知識專區/講座邀約目前是籌備中佔位頁（共用 `src/components/site-page-shell.tsx`），待提供文案/圖片後實作
@@ -96,7 +103,9 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 
 - **Prisma 鎖 6.x**；`package.json#prisma` seed 設定 Prisma 7 將棄用（屆時遷 `prisma.config.ts`）
 - ⛔ **`prisma migrate diff --from-url` 產出的 SQL 不可信**（曾產出砍整個 course schema 的指令）——需要手寫 migration 時照 `20260612*_categories_course_code` 的做法：手寫 SQL → 本機 `migrate deploy` 驗證 → grep 確認無 `public./auth.` 字樣
-- **群發信額度**：Resend 免費方案 100 封/天、3,000 封/月（含 Auth 信），群發 135 人接近日上限，當天避免同時大量寄驗證信
+- **群發信額度**：Resend 免費方案 100 封/天、3,000 封/月（含 Auth 信），會員已 136+ 人，**對全部會員群發一次就超過日上限**（部分會失敗）——常態群發前建議升級 Resend 方案；排程群發的當天避免大量驗證信
+- **電子報排程**：寄出名單以寄出當下為準（ALL/GROUP 動態解析、MANUAL 用存檔名單）；cron 原子認領防重複寄；測試方式見 git log `62ea8db`（空 RESEND_API_KEY 跑本機 dev + curl cron）
+- **初始密碼備查（MemberPassword）**：存管理員設定的明碼，僅後台顯示。是使用者明確要求的取捨——Auth 真實密碼不可逆，學員自改後此表不同步
 - **Next 16**：middleware 慣例更名 `src/proxy.ts`；params/searchParams 是 Promise 要 await
 - **金流抽換**：換藍新只需加 `src/lib/payment/newebpay.ts` + factory case + 改 `PAYMENT_PROVIDER`
 - **git**：專案有 `[slug]`/`(auth)` 括號目錄，務必 `git add -A`，勿用括號路徑（zsh glob 危險）
