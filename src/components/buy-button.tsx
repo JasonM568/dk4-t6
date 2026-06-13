@@ -6,22 +6,29 @@ import { createCheckout } from "@/actions/checkout";
 
 type Props = {
   courseId: string;
+  courseSlug: string;
   isLoggedIn: boolean;
   isEnrolled: boolean;
 };
 
-export function BuyButton({ courseId, isLoggedIn, isEnrolled }: Props) {
+export function BuyButton({
+  courseId,
+  courseSlug,
+  isLoggedIn,
+  isEnrolled,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // 有觀看權限 → 直接進播放頁觀看影片
   if (isEnrolled) {
     return (
       <a
-        href="/my-courses"
+        href={`/learn/${courseSlug}`}
         className="block w-full rounded-lg bg-green-600 py-3 text-center font-medium text-white transition hover:bg-green-700"
       >
-        前往觀看 →
+        觀看影片 →
       </a>
     );
   }
@@ -65,7 +72,7 @@ export function BuyButton({ courseId, isLoggedIn, isEnrolled }: Props) {
         disabled={pending}
         className="w-full rounded-lg bg-black py-3 font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
       >
-        {pending ? "前往付款中…" : isLoggedIn ? "立即購買" : "登入後購買"}
+        {pending ? "前往付款中…" : isLoggedIn ? "購買課程" : "登入後購買課程"}
       </button>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>

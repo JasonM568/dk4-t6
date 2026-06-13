@@ -149,6 +149,7 @@ export default async function CourseDetailPage({
 
             <BuyButton
               courseId={course.id}
+              courseSlug={course.slug}
               isLoggedIn={!!userId}
               isEnrolled={isEnrolled}
             />
