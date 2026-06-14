@@ -3,6 +3,17 @@ export function formatNT(amount: number): string {
   return "NT$" + amount.toLocaleString("zh-TW");
 }
 
+/** 把秒數格式化成「X 小時 Y 分」/「Y 分 Z 秒」/「Z 秒」（觀看時長顯示用） */
+export function formatDuration(totalSec: number): string {
+  const sec = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h} 小時 ${m} 分`;
+  if (m > 0) return `${m} 分 ${s} 秒`;
+  return `${s} 秒`;
+}
+
 export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleString("zh-TW", {
