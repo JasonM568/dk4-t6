@@ -9,7 +9,8 @@ import {
   type Recipient,
 } from "./broadcast";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 要求 TLD 至少 2 個字母，防止 user@localhost. 或單字元 TLD 通過
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 // 以 email 為鍵去重（小寫），保留第一筆姓名
 function dedupeByEmail(rows: Recipient[]): Recipient[] {

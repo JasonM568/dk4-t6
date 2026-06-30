@@ -991,7 +991,8 @@ export async function deleteCategory(id: string) {
 
 // ───────────────────────── 批次功能 ─────────────────────────
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 要求 TLD 至少 2 個字母，防止 user@localhost. 或單字元 TLD 通過
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 const MAX_BATCH_ROWS = 500;
 
 export type BatchRowResult = {
@@ -1128,6 +1129,9 @@ export async function importMembersAction(
     seen.add(row.email);
 
     if (existing.has(row.email)) {
+      // 注意：此處只確認 public.profiles 存在，未交叉驗證 auth.users。
+      // 若 auth 帳號已被刪除但 profiles 殘留，跳過可能導致 Enrollment 孤兒資料。
+      // 發生機率極低（需管理員手動刪除 Supabase 使用者），可接受現狀。
       results.push({
         email: row.email,
         status: "exists",
@@ -1462,6 +1466,16 @@ export async function assignStaffRoleAction(
   if (!profile) return { error: `查無會員 ${email}，請先確認此人是平台會員` };
   if (isAdminRole(profile.role))
     return { error: "此帳號已是管理員，不需另外指派" };
+
+  // 稽核記錄（Vercel function logs）：記錄角色異動前後值
+  const prevRole = await prisma.staffRole.findUnique({ where: { userId: profile.id } });
+  console.log("[staff-role] change", {
+    target: email,
+    oldRole: prevRole?.role ?? null,
+    newRole: role,
+    changedBy: admin?.email ?? null,
+    at: new Date().toISOString(),
+  });
 
   await prisma.staffRole.upsert({
     where: { userId: profile.id },
