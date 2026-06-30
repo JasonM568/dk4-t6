@@ -21,7 +21,7 @@ export default async function MailGroupsPage() {
           href="/admin/broadcast"
           className="text-sm text-indigo-600 hover:underline"
         >
-          ← 回群發通知
+          ← 回 Email群發
         </Link>
       </div>
       <p className="mb-6 text-sm text-gray-500">
@@ -67,6 +67,14 @@ export default async function MailGroupsPage() {
         className="space-y-3 rounded-xl border border-dashed border-gray-300 p-4"
       >
         <div className="font-medium">＋ 建立新群組</div>
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          名單群組只是「寄信用的 email 清單」，<strong>不會建立會員帳號、也不會開通課程</strong>。
+          若你要新增學員並<strong>開通課程觀看權限</strong>，請改用「
+          <Link href="/admin/enrollments" className="font-medium underline">
+            批次開通
+          </Link>
+          」（在那裡也能順便建立／加入這個寄信群組）。
+        </p>
         <div>
           <label className="mb-1 block text-xs text-gray-500">群組名稱</label>
           <input

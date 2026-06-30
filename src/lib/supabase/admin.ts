@@ -184,39 +184,51 @@ export async function createMember(input: {
 
 const COURSE_ASSETS_BUCKET = "course-assets";
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB，與 bucket 設定一致
 
 export type UploadResult =
   | { ok: true; url: string }
   | { ok: false; error: string };
 
-// 上傳課程圖片，回傳公開網址。檔名用隨機字串避免覆蓋與中文檔名問題。
-export async function uploadCourseImage(
-  file: File,
-  prefix: string, // 例如 "cover" / "intro"
-): Promise<UploadResult> {
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return { ok: false, error: `「${file.name}」格式不支援（限 JPG/PNG/WebP/GIF）` };
-  }
-  if (file.size > MAX_IMAGE_BYTES) {
-    return { ok: false, error: `「${file.name}」超過 5MB，請壓縮後再上傳` };
-  }
+export type SignedUploadResult =
+  | { ok: true; bucket: string; path: string; token: string; publicUrl: string }
+  | { ok: false; error: string };
 
-  const ext = file.type.split("/")[1].replace("jpeg", "jpg");
+// 產生「簽名上傳 URL」讓瀏覽器把圖片 bytes 直接傳到 Supabase Storage。
+// 為什麼：Vercel serverless function 的 request body 有 ~4.5MB 平台硬上限，
+// 透過 server action 上傳，封面 5MB／多張介紹圖很容易超過而整批送出失敗
+// （前台只看到「This page couldn't load」）。改成瀏覽器直傳，bytes 不經過
+// server action body，徹底避開上限；server 端只回一個簽名 token（極小封包）。
+export async function createCourseImageSignedUpload(
+  fileType: string,
+  prefix: "cover" | "intro" = "intro",
+): Promise<SignedUploadResult> {
+  if (!ALLOWED_IMAGE_TYPES.includes(fileType)) {
+    return { ok: false, error: "格式不支援（限 JPG/PNG/WebP/GIF）" };
+  }
+  const ext = fileType.split("/")[1].replace("jpeg", "jpg");
   const path = `${prefix}/${crypto.randomUUID()}.${ext}`;
 
   const supabase = createAdminClient();
-  const { error } = await supabase.storage
+  const { data, error } = await supabase.storage
     .from(COURSE_ASSETS_BUCKET)
-    .upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+    .createSignedUploadUrl(path);
 
-  if (error) {
-    console.error("[supabase/admin] 圖片上傳失敗：", file.name, error.message);
-    return { ok: false, error: `「${file.name}」上傳失敗：${error.message}` };
+  if (error || !data) {
+    console.error("[supabase/admin] 產生簽名上傳 URL 失敗：", error?.message);
+    return { ok: false, error: error?.message ?? "無法產生上傳連結，請稍後再試" };
   }
 
-  const { data } = supabase.storage.from(COURSE_ASSETS_BUCKET).getPublicUrl(path);
-  return { ok: true, url: data.publicUrl };
+  const { data: pub } = supabase.storage
+    .from(COURSE_ASSETS_BUCKET)
+    .getPublicUrl(data.path);
+
+  return {
+    ok: true,
+    bucket: COURSE_ASSETS_BUCKET,
+    path: data.path,
+    token: data.token,
+    publicUrl: pub.publicUrl,
+  };
 }
 
 // 講義允許的檔案格式（bucket 的 allowed_mime_types 須同步包含這些）

@@ -9,8 +9,15 @@ import {
 import { BatchResultTable } from "@/components/admin/batch-result-table";
 
 type CourseOption = { id: string; title: string };
+type GroupOption = { id: string; name: string };
 
-export function EnrollForm({ courses }: { courses: CourseOption[] }) {
+export function EnrollForm({
+  courses,
+  mailGroups = [],
+}: {
+  courses: CourseOption[];
+  mailGroups?: GroupOption[];
+}) {
   const [state, formAction, pending] = useActionState<BatchState, FormData>(
     batchEnrollAction,
     null,
@@ -63,7 +70,52 @@ export function EnrollForm({ courses }: { courses: CourseOption[] }) {
             className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
           />
           <p className="mt-1 text-xs text-gray-400">
-            重複開通不會出錯（已有權限會自動略過）；查無會員的可在結果下方一鍵批次新增並開通
+            重複開通不會出錯（已有權限會自動略過）
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4">
+          <label className="mb-1 block text-sm font-medium">
+            查無會員 → 直接建立帳號並開通（選填）
+          </label>
+          <input
+            name="defaultPassword"
+            minLength={6}
+            placeholder="填一組預設密碼（至少 6 字元），例：hope2026"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            有填：名單裡查無的會員，這次就用這組密碼建立帳號並一併開通。
+            留空：只開通既有會員，查無的會列在下方，再決定是否建立。
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4">
+          <label className="mb-1 block text-sm font-medium">
+            同時加入寄信名單群組（選填）
+          </label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              name="groupId"
+              defaultValue=""
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none sm:w-1/2"
+            >
+              <option value="">不加入群組</option>
+              {mailGroups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  選既有：{g.name}
+                </option>
+              ))}
+            </select>
+            <input
+              name="groupName"
+              placeholder="或輸入新群組名稱，例：0625-AI初階"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none sm:w-1/2"
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            會把整份名單加進群組（重複自動略過）。填了新名稱以新名稱為準；
+            名稱與既有群組相同則併入該群組。
           </p>
         </div>
 
@@ -72,7 +124,7 @@ export function EnrollForm({ courses }: { courses: CourseOption[] }) {
           disabled={pending}
           className="rounded-lg bg-black px-5 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
         >
-          {pending ? "開通中，請勿關閉頁面…" : "批次開通"}
+          {pending ? "處理中，請勿關閉頁面…" : "批次開通"}
         </button>
       </form>
 

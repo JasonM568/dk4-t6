@@ -46,7 +46,7 @@ export default async function AdminLayout({
               href="/admin/broadcast"
               className="text-gray-600 hover:text-black"
             >
-              群發通知
+              Email群發
             </Link>
           )}
           {/* 僅管理員 */}

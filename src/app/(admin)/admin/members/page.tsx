@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { listProfiles, listAuthMeta, countProfiles } from "@/lib/supabase/admin";
-import { updateTier, createGroupFromCourseAction } from "@/actions/admin";
+import { createGroupFromCourseAction } from "@/actions/admin";
 import { enrollmentSource, formatDate } from "@/lib/format";
 import { currentCanEdit } from "@/lib/auth/staff";
 import { SubmitButton } from "@/components/admin/submit-button";
@@ -25,11 +25,10 @@ export default async function AdminMembersPage({
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
-  const [profiles, statsList, tiers, mailGroups, passwords, authMeta, totalCount] =
+  const [profiles, statsList, mailGroups, passwords, authMeta, totalCount] =
     await Promise.all([
       listProfiles(),
       prisma.memberStats.findMany({ include: { currentTier: true } }),
-      prisma.membershipTier.findMany({ orderBy: { level: "asc" } }),
       prisma.mailGroup.findMany({
         include: { _count: { select: { members: true } } },
         orderBy: { createdAt: "desc" },
@@ -104,53 +103,12 @@ export default async function AdminMembersPage({
 
   return (
     <div className="space-y-10">
-      {/* 等級規則設定 */}
-      <section>
-        <h1 className="mb-1 text-2xl font-bold">等級規則</h1>
-        <p className="mb-4 text-sm text-gray-500">
-          調整門檻與折扣後，新的付款會依新規則重算等級。
+      <header>
+        <h1 className="text-2xl font-bold">會員管理</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          查詢會員、依名單群組／課程篩選，並開通課程觀看權限。
         </p>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {tiers.map((t) => (
-            <form
-              key={t.id}
-              action={updateTier.bind(null, t.id)}
-              className="rounded-xl border border-gray-200 p-4"
-            >
-              <div className="mb-3 font-bold">
-                {t.name}（Lv.{t.level}）
-              </div>
-              <label className="mb-1 block text-xs text-gray-500">
-                累積消費門檻
-              </label>
-              <input
-                name="minTotalSpent"
-                type="number"
-                defaultValue={t.minTotalSpent}
-                disabled={!canEditNow}
-                className="mb-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50 disabled:text-gray-400"
-              />
-              <label className="mb-1 block text-xs text-gray-500">
-                折扣 %（0-100）
-              </label>
-              <input
-                name="discountPercent"
-                type="number"
-                min={0}
-                max={100}
-                defaultValue={t.discountPercent}
-                disabled={!canEditNow}
-                className="mb-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50 disabled:text-gray-400"
-              />
-              {canEditNow && (
-                <button className="w-full rounded-lg bg-black py-1.5 text-sm font-medium text-white">
-                  儲存
-                </button>
-              )}
-            </form>
-          ))}
-        </div>
-      </section>
+      </header>
 
       {/* 依課程查觀看名單 + 匯出名單群組 */}
       <section>

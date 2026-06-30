@@ -1,7 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef, useState } from "react";
 import type { CourseFormState } from "@/actions/admin";
+import { requestCourseImageUploadUrl } from "@/actions/admin";
+import { createClient } from "@/lib/supabase/client";
+
+// 圖片限制（與 Supabase bucket 設定一致；client 端先驗證只為即時提示）
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 
 type CourseFormProps = {
   action: (prev: CourseFormState, formData: FormData) => Promise<CourseFormState>;
@@ -21,6 +27,29 @@ type CourseFormProps = {
   submitLabel: string;
 };
 
+// 把單一檔案直傳 Supabase Storage（用 server 產生的簽名 URL，bytes 不經過 server action body）
+async function uploadOne(
+  file: File,
+  prefix: "cover" | "intro",
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    return { ok: false, error: `「${file.name}」格式不支援（限 JPG/PNG/WebP/GIF）` };
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    return { ok: false, error: `「${file.name}」超過 5MB，請壓縮後再上傳` };
+  }
+  const signed = await requestCourseImageUploadUrl(file.type, prefix);
+  if (!signed.ok) return { ok: false, error: `「${file.name}」${signed.error}` };
+
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from(signed.bucket)
+    .uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type });
+  if (error) return { ok: false, error: `「${file.name}」上傳失敗：${error.message}` };
+
+  return { ok: true, url: signed.publicUrl };
+}
+
 export function CourseForm({
   action,
   defaultValues = {},
@@ -31,6 +60,65 @@ export function CourseForm({
     action,
     null,
   );
+
+  const [coverImage, setCoverImage] = useState(defaultValues.coverImage ?? "");
+  const [introImages, setIntroImages] = useState<string[]>(
+    defaultValues.introImages ?? [],
+  );
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [introUploading, setIntroUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const introInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const busy = pending || coverUploading || introUploading;
+
+  async function onCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setCoverUploading(true);
+    const res = await uploadOne(file, "cover");
+    setCoverUploading(false);
+    if (coverInputRef.current) coverInputRef.current.value = "";
+    if (!res.ok) {
+      setUploadError(res.error);
+      return;
+    }
+    setCoverImage(res.url);
+  }
+
+  async function onIntroChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setUploadError(null);
+    setIntroUploading(true);
+    // 依選取順序逐張上傳，成功的接在既有清單之後
+    for (const file of files) {
+      const res = await uploadOne(file, "intro");
+      if (!res.ok) {
+        setUploadError(res.error);
+        continue;
+      }
+      setIntroImages((prev) => [...prev, res.url]);
+    }
+    setIntroUploading(false);
+    if (introInputRef.current) introInputRef.current.value = "";
+  }
+
+  function moveIntro(index: number, dir: -1 | 1) {
+    setIntroImages((prev) => {
+      const next = [...prev];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function removeIntro(index: number) {
+    setIntroImages((prev) => prev.filter((_, i) => i !== index));
+  }
 
   return (
     <form action={formAction} className="max-w-2xl space-y-4">
@@ -88,73 +176,110 @@ export function CourseForm({
           className="input"
         />
       </Field>
+
       <Field label="封面圖片（建議 16:9，5MB 內）">
-        {defaultValues.coverImage && (
+        {coverImage && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={defaultValues.coverImage}
+            src={coverImage}
             alt="目前封面"
             className="mb-2 h-28 rounded-lg border border-gray-200 object-cover"
           />
         )}
+        {/* 直傳 Supabase；表單只送出網址，不夾帶檔案 bytes */}
+        <input type="hidden" name="coverImage" value={coverImage} />
         <input
-          name="coverImageFile"
+          ref={coverInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp,image/gif"
-          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-200"
+          onChange={onCoverChange}
+          disabled={busy}
+          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-200 disabled:opacity-50"
         />
         <p className="mt-1 text-xs text-gray-400">
-          {defaultValues.coverImage
-            ? "選擇新檔案會取代目前封面；不選則維持原圖"
-            : "也可以直接貼外部圖片網址："}
+          {coverUploading
+            ? "封面上傳中…"
+            : coverImage
+              ? "選擇新檔案會取代目前封面"
+              : "選擇檔案後會立即上傳；也可貼外部圖片網址："}
         </p>
         <input
-          name="coverImage"
           type="url"
-          defaultValue={defaultValues.coverImage ?? ""}
-          placeholder="https://…（選填，有上傳檔案時以檔案為準）"
+          value={coverImage}
+          onChange={(e) => setCoverImage(e.target.value)}
+          placeholder="https://…（選填，可直接貼圖片網址）"
           className="input mt-1"
         />
       </Field>
 
-      <Field label="課程介紹圖片（可多張，顯示在課程描述下方）">
-        {(defaultValues.introImages ?? []).length > 0 && (
-          <div className="mb-2 space-y-2">
-            {(defaultValues.introImages ?? []).map((url) => (
-              <label
+      <Field label="課程介紹圖片（可多張，顯示在課程描述下方；可調整順序）">
+        {introImages.length > 0 && (
+          <ol className="mb-2 space-y-2">
+            {introImages.map((url, i) => (
+              <li
                 key={url}
                 className="flex items-center gap-3 rounded-lg border border-gray-200 p-2"
               >
+                <span className="w-5 text-center text-xs text-gray-400">
+                  {i + 1}
+                </span>
+                {/* hidden input 依目前陣列順序送出 → 決定前台顯示順序 */}
+                <input type="hidden" name="introImages" value={url} />
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={url}
-                  alt="介紹圖"
+                  alt={`介紹圖 ${i + 1}`}
                   className="h-16 w-28 rounded object-cover"
                 />
-                <span className="flex items-center gap-2 text-sm text-gray-600">
-                  <input
-                    type="checkbox"
-                    name="keepIntroImages"
-                    value={url}
-                    defaultChecked
-                  />
-                  保留這張（取消勾選＝儲存時移除）
-                </span>
-              </label>
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => moveIntro(i, -1)}
+                    disabled={i === 0 || busy}
+                    aria-label="上移"
+                    className="rounded border border-gray-300 px-2 py-1 text-sm leading-none disabled:opacity-30"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveIntro(i, 1)}
+                    disabled={i === introImages.length - 1 || busy}
+                    aria-label="下移"
+                    className="rounded border border-gray-300 px-2 py-1 text-sm leading-none disabled:opacity-30"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeIntro(i)}
+                    disabled={busy}
+                    aria-label="移除"
+                    className="rounded border border-red-200 px-2 py-1 text-sm leading-none text-red-600 hover:bg-red-50 disabled:opacity-30"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </li>
             ))}
-          </div>
+          </ol>
         )}
         <input
-          name="introImageFiles"
+          ref={introInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp,image/gif"
           multiple
-          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-200"
+          onChange={onIntroChange}
+          disabled={busy}
+          className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-gray-200 disabled:opacity-50"
         />
         <p className="mt-1 text-xs text-gray-400">
-          可一次選多張，新圖會接在既有圖之後；單張 5MB 內
+          {introUploading
+            ? "圖片上傳中…請稍候"
+            : "可一次選多張，會立即上傳並接在既有圖之後；用 ↑ ↓ 調整順序，單張 5MB 內"}
         </p>
       </Field>
+
       <div className="grid grid-cols-2 gap-4">
         <Field label="建議售價（選填，前台顯示劃線價）">
           <input
@@ -186,6 +311,11 @@ export function CourseForm({
         立即上架
       </label>
 
+      {uploadError && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {uploadError}
+        </div>
+      )}
       {state?.error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}
@@ -194,10 +324,14 @@ export function CourseForm({
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={busy}
         className="rounded-lg bg-black px-5 py-2.5 font-medium text-white disabled:opacity-50"
       >
-        {pending ? "儲存中…" : submitLabel}
+        {pending
+          ? "儲存中…"
+          : coverUploading || introUploading
+            ? "圖片上傳中…"
+            : submitLabel}
       </button>
 
       <style>{`

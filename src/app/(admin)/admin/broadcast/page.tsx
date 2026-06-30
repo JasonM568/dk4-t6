@@ -10,7 +10,7 @@ import {
 import { BroadcastForm } from "./broadcast-form";
 import { SubmitButton } from "@/components/admin/submit-button";
 
-export const metadata = { title: "群發通知 — 管理後台" };
+export const metadata = { title: "Email群發 — 管理後台" };
 
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 
@@ -49,7 +49,7 @@ export default async function BroadcastPage() {
   return (
     <div className="max-w-3xl">
       <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">群發通知（電子報）</h1>
+        <h1 className="text-2xl font-bold">Email群發（電子報）</h1>
         <Link
           href="/admin/broadcast/groups"
           className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
@@ -116,7 +116,13 @@ export default async function BroadcastPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-medium">
-                      {h.subject}
+                      <Link
+                        href={`/admin/broadcast/${h.id}`}
+                        className="text-indigo-600 hover:underline"
+                        title="查看寄出內容"
+                      >
+                        {h.subject}
+                      </Link>
                       <span className="block text-xs font-normal text-gray-400">
                         {h.sentBy ?? ""}
                       </span>

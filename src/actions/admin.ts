@@ -10,7 +10,7 @@ import {
   listProfiles,
   createMember,
   setUserPassword,
-  uploadCourseImage,
+  createCourseImageSignedUpload,
   uploadCourseMaterial,
 } from "@/lib/supabase/admin";
 import { toSlideEmbedUrl } from "@/lib/embed";
@@ -82,38 +82,22 @@ function firstZodError(parsed: { error: z.ZodError }): string {
   return parsed.error.issues[0]?.message ?? "輸入內容有誤，請檢查後再試";
 }
 
-// 處理表單裡的圖片：上傳封面與介紹圖，回傳要存進 DB 的網址。
-// - 封面：有選新檔案就上傳並取代；否則沿用網址欄位的值
-// - 介紹圖：保留的既有圖（keepIntroImages）+ 新上傳的檔案，依序合併
-async function resolveCourseImages(
-  formData: FormData,
-  coverUrlFromText: string,
-): Promise<
-  { ok: true; coverImage: string; introImages: string[] } | { ok: false; error: string }
-> {
-  let coverImage = coverUrlFromText;
+// 圖片改由瀏覽器直傳 Supabase Storage（見 createCourseImageSignedUpload）。
+// 表單送出時，封面與介紹圖都已是公開網址字串，這裡只負責讀取與排序：
+// - coverImage：courseSchema 已驗證（網址或空字串）
+// - introImages：依使用者在表單上排好的順序，逐筆 hidden input 送來
+function introImagesFromForm(formData: FormData): string[] {
+  return formData.getAll("introImages").map(String).filter(Boolean);
+}
 
-  const coverFile = formData.get("coverImageFile");
-  if (coverFile instanceof File && coverFile.size > 0) {
-    const up = await uploadCourseImage(coverFile, "cover");
-    if (!up.ok) return { ok: false, error: up.error };
-    coverImage = up.url;
-  }
-
-  const introImages = formData
-    .getAll("keepIntroImages")
-    .map(String)
-    .filter(Boolean);
-
-  for (const f of formData.getAll("introImageFiles")) {
-    if (f instanceof File && f.size > 0) {
-      const up = await uploadCourseImage(f, "intro");
-      if (!up.ok) return { ok: false, error: up.error };
-      introImages.push(up.url);
-    }
-  }
-
-  return { ok: true, coverImage, introImages };
+// 給課程表單呼叫：要求一個簽名上傳 URL（瀏覽器拿到後直傳圖片到 Storage）。
+// 守門 requireEditor，避免被未授權者拿來產生上傳憑證。
+export async function requestCourseImageUploadUrl(
+  fileType: string,
+  prefix: "cover" | "intro" = "intro",
+) {
+  await requireEditor();
+  return createCourseImageSignedUpload(fileType, prefix);
 }
 
 export async function createCourse(
@@ -124,16 +108,14 @@ export async function createCourse(
   const parsed = courseSchema.safeParse(courseInput(formData));
   if (!parsed.success) return { error: firstZodError(parsed) };
 
-  const images = await resolveCourseImages(formData, parsed.data.coverImage);
-  if (!images.ok) return { error: images.error };
+  const introImages = introImagesFromForm(formData);
 
   try {
     const categoryIds = formData.getAll("categoryIds").map(String);
     await prisma.course.create({
       data: {
         ...parsed.data,
-        coverImage: images.coverImage,
-        introImages: images.introImages,
+        introImages,
         categories: { connect: categoryIds.map((cid) => ({ id: cid })) },
       },
     });
@@ -160,8 +142,7 @@ export async function updateCourse(
   const parsed = courseSchema.safeParse(courseInput(formData));
   if (!parsed.success) return { error: firstZodError(parsed) };
 
-  const images = await resolveCourseImages(formData, parsed.data.coverImage);
-  if (!images.ok) return { error: images.error };
+  const introImages = introImagesFromForm(formData);
 
   try {
     const categoryIds = formData.getAll("categoryIds").map(String);
@@ -169,8 +150,7 @@ export async function updateCourse(
       where: { id },
       data: {
         ...parsed.data,
-        coverImage: images.coverImage,
-        introImages: images.introImages,
+        introImages,
         categories: { set: categoryIds.map((cid) => ({ id: cid })) },
       },
     });
@@ -363,21 +343,6 @@ export async function deleteLesson(lessonId: string, courseId: string) {
   await requireEditor();
   await prisma.lesson.delete({ where: { id: lessonId } });
   revalidatePath(`/admin/courses/${courseId}`);
-}
-
-const tierSchema = z.object({
-  minTotalSpent: z.coerce.number().int().min(0),
-  discountPercent: z.coerce.number().int().min(0).max(100),
-});
-
-export async function updateTier(id: string, formData: FormData) {
-  await requireEditor();
-  const data = tierSchema.parse({
-    minTotalSpent: formData.get("minTotalSpent"),
-    discountPercent: formData.get("discountPercent"),
-  });
-  await prisma.membershipTier.update({ where: { id }, data });
-  revalidatePath("/admin/members");
 }
 
 // ───────────────────────── 課程講義 ─────────────────────────
@@ -784,6 +749,29 @@ async function addRowsToGroup(
   return created.count;
 }
 
+/** 解析表單指定的目標寄信群組：有 groupName 就新建或併入既有，否則用既有 groupId；都沒有回 null */
+async function resolveTargetGroup(
+  formData: FormData,
+): Promise<{ id: string; name: string } | null> {
+  const groupName = String(formData.get("groupName") ?? "").trim();
+  const groupId = String(formData.get("groupId") ?? "").trim();
+  if (groupName) {
+    const g = await prisma.mailGroup.upsert({
+      where: { name: groupName },
+      update: {},
+      create: { name: groupName },
+    });
+    return { id: g.id, name: g.name };
+  }
+  if (groupId) {
+    return prisma.mailGroup.findUnique({
+      where: { id: groupId },
+      select: { id: true, name: true },
+    });
+  }
+  return null;
+}
+
 /** 取出表單中的名單內容：貼上的文字 + 上傳的 CSV（UTF-8/Big5 自動判斷） */
 async function readListInput(formData: FormData): Promise<{ text: string; error?: string }> {
   const raw = String(formData.get("list") ?? "");
@@ -1183,12 +1171,19 @@ export async function batchEnrollAction(
   const courseId = String(formData.get("courseId") ?? "");
   const raw = String(formData.get("list") ?? "");
   const rows = parseRows(raw);
+  // 選填：有填預設密碼 → 查無會員這次就直接建帳號＋開通（一次送出）；留空 → 走二段式
+  const defaultPassword = String(formData.get("defaultPassword") ?? "").trim();
 
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   if (!course) return { done: true, error: "請選擇課程" };
   if (rows.length === 0) return { done: true, error: "名單是空的，請先貼上資料" };
+  if (defaultPassword && defaultPassword.length < 6)
+    return { done: true, error: "預設密碼至少 6 字元（不需要建帳號可留空）" };
   if (rows.length > MAX_BATCH_ROWS)
     return { done: true, error: `一次最多 ${MAX_BATCH_ROWS} 筆（目前 ${rows.length} 筆），請分批開通` };
+
+  // 只有要建帳號時才需要管理員身分（記錄初始密碼備查）
+  const admin = defaultPassword ? await getAuthUser() : null;
 
   const results: BatchRowResult[] = [];
   const seen = new Set<string>();
@@ -1228,13 +1223,55 @@ export async function batchEnrollAction(
     }
 
     if (!userId) {
-      results.push({
+      // 留空密碼：標查無，交給下方二段式面板處理
+      if (!defaultPassword) {
+        results.push({
+          email: row.email,
+          name: row.name || undefined,
+          status: "notfound",
+          detail: "查無會員，可在下方一鍵批次新增並開通",
+        });
+        continue;
+      }
+      // 有填密碼：直接建立帳號 → 記錄初始密碼 → 開通（source IMPORT）
+      const usedPassword = row.password || defaultPassword;
+      const created = await createMember({
         email: row.email,
-        name: row.name || undefined,
-        status: "notfound",
-        detail: "查無會員，可在下方一鍵批次新增並開通",
+        password: usedPassword,
+        displayName: row.name || row.email.split("@")[0],
       });
-      continue;
+      if (created.ok) {
+        await recordMemberPassword(created.userId, usedPassword, admin?.email ?? null);
+        try {
+          await prisma.enrollment.upsert({
+            where: { userId_courseId: { userId: created.userId, courseId } },
+            update: {},
+            create: { userId: created.userId, courseId, source: "IMPORT" },
+          });
+          results.push({ email: row.email, status: "created", detail: "已建立會員並開通權限" });
+        } catch (e) {
+          results.push({
+            email: row.email,
+            status: "error",
+            detail: e instanceof Error ? e.message : "未知錯誤",
+          });
+        }
+        continue;
+      }
+      // 帳號其實已存在（profiles 同步延遲）：反查到 userId 就往下開通
+      if (created.reason === "exists" && created.userId) {
+        userId = created.userId;
+      } else {
+        results.push({
+          email: row.email,
+          status: "error",
+          detail:
+            created.reason === "exists"
+              ? "帳號已存在但會員資料尚未同步，請稍後重試"
+              : created.message,
+        });
+        continue;
+      }
     }
     if (enrolled.has(userId)) {
       results.push({ email: row.email, status: "already", detail: "本來就有觀看權限" });
@@ -1258,10 +1295,21 @@ export async function batchEnrollAction(
     }
   }
 
+  // 選配：把整份名單一併加入寄信名單群組（新建或既有）
+  const group = await resolveTargetGroup(formData);
+  let groupMsg = "";
+  if (group) {
+    const added = await addRowsToGroup(group.id, rows);
+    groupMsg = `；已加入名單群組「${group.name}」新增 ${added} 筆`;
+    revalidatePath("/admin/broadcast/groups");
+    revalidatePath(`/admin/broadcast/groups/${group.id}`);
+  }
+  if (defaultPassword) revalidatePath("/admin/members");
+
   const c = (s: BatchRowResult["status"]) => results.filter((r) => r.status === s).length;
   return {
     done: true,
-    summary: `「${course.title}」開通完成：成功 ${c("enrolled")}、已有權限 ${c("already")}、查無會員 ${c("notfound")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}`,
+    summary: `「${course.title}」開通完成：新增帳號並開通 ${c("created")}、開通成功 ${c("enrolled")}、已有權限 ${c("already")}、查無會員 ${c("notfound")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}${groupMsg}`,
     results,
     courseId,
     courseTitle: course.title,
