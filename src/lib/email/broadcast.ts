@@ -16,6 +16,14 @@ export type BroadcastCourse = {
   listPrice: number | null;
 };
 
+export type Recipient = { email: string; name?: string };
+
+// 合併變數：在「原文」階段替換，之後 buildBroadcastHtml 內的 esc() 會轉義 → 不會注入。
+// 支援 {email}＝收件人 email、{name}＝姓名（無姓名者留空）。
+export function applyMergeTags(text: string, r: Recipient): string {
+  return text.replaceAll("{email}", r.email).replaceAll("{name}", r.name ?? "");
+}
+
 function esc(s: string): string {
   return s
     .replaceAll("&", "&amp;")
@@ -103,11 +111,11 @@ export function buildBroadcastHtml(
 
 export type SendResult = { sent: number; failed: number; error?: string };
 
-/** 以 Resend batch API 寄送（每批 100 封） */
+/** 以 Resend batch API 寄送（每批 100 封）；html 逐封產生，支援每位收件人不同內容 */
 export async function sendBroadcast(
-  recipients: string[],
+  recipients: Recipient[],
   subject: string,
-  html: string,
+  renderHtml: (r: Recipient) => string,
 ): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
@@ -132,7 +140,7 @@ export async function sendBroadcast(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(
-        chunk.map((to) => ({ from, to: [to], subject, html })),
+        chunk.map((r) => ({ from, to: [r.email], subject, html: renderHtml(r) })),
       ),
     });
 
@@ -180,7 +188,7 @@ export async function sendBroadcast(
           firstError = `Resend 退信：${errText.slice(0, 200)}`;
           console.error(
             "[email/broadcast] 單筆寄送失敗：",
-            chunk[j],
+            chunk[j].email,
             firstError,
           );
         }

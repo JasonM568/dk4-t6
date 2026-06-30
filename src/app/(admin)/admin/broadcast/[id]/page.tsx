@@ -94,6 +94,12 @@ export default async function BroadcastDetailPage({
 
       {/* 實際寄出的 email 樣式 */}
       <h2 className="mb-2 text-lg font-bold">寄出內容</h2>
+      <p className="mb-2 text-xs text-gray-400">
+        以下為樣板；內文中的{" "}
+        <span className="font-mono">{"{email}"}</span>／
+        <span className="font-mono">{"{name}"}</span>{" "}
+        在實際寄出時會替換成各收件人的值。
+      </p>
       <iframe
         title="email 預覽"
         srcDoc={html}

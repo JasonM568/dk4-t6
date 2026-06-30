@@ -2,58 +2,68 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
-import { buildBroadcastHtml, sendBroadcast } from "./broadcast";
+import {
+  buildBroadcastHtml,
+  sendBroadcast,
+  applyMergeTags,
+  type Recipient,
+} from "./broadcast";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 群發收件人：全部有合法 email 的會員（去重、小寫） */
-export async function getBroadcastRecipients(): Promise<string[]> {
+// 以 email 為鍵去重（小寫），保留第一筆姓名
+function dedupeByEmail(rows: Recipient[]): Recipient[] {
+  const map = new Map<string, Recipient>();
+  for (const r of rows) {
+    const email = r.email?.trim().toLowerCase();
+    if (!email || !EMAIL_RE.test(email)) continue;
+    if (!map.has(email)) map.set(email, { email, name: r.name?.trim() || undefined });
+  }
+  return [...map.values()];
+}
+
+/** 群發收件人：全部有合法 email 的會員（去重、小寫、帶顯示名稱） */
+export async function getBroadcastRecipients(): Promise<Recipient[]> {
   const profiles = await listProfiles();
-  return [
-    ...new Set(
-      profiles
-        .map((p) => p.email?.trim().toLowerCase())
-        .filter((e): e is string => !!e && EMAIL_RE.test(e)),
-    ),
-  ];
+  return dedupeByEmail(
+    profiles.map((p) => ({ email: p.email ?? "", name: p.display_name ?? undefined })),
+  );
 }
 
 export type ManualRow = { email: string; name?: string };
 
-/** 依發送對象解析收件名單（寄出當下解析：群組取最新成員、全部會員含新加入者） */
+/** 依發送對象解析收件名單（寄出當下解析：群組取最新成員、全部會員含新加入者），帶姓名供變數替換 */
 async function resolveRecipients(record: {
   audienceType: string;
   groupId: string | null;
   manualRows: unknown;
-}): Promise<{ emails: string[]; error?: string }> {
+}): Promise<{ recipients: Recipient[]; error?: string }> {
   if (record.audienceType === "GROUP") {
-    if (!record.groupId) return { emails: [], error: "缺少名單群組" };
+    if (!record.groupId) return { recipients: [], error: "缺少名單群組" };
     const members = await prisma.mailGroupMember.findMany({
       where: { groupId: record.groupId },
-      select: { email: true },
+      select: { email: true, name: true },
     });
     if (members.length === 0)
-      return { emails: [], error: "名單群組不存在或沒有成員" };
-    return { emails: [...new Set(members.map((m) => m.email.toLowerCase()))] };
+      return { recipients: [], error: "名單群組不存在或沒有成員" };
+    return {
+      recipients: dedupeByEmail(
+        members.map((m) => ({ email: m.email, name: m.name ?? undefined })),
+      ),
+    };
   }
   if (record.audienceType === "MANUAL") {
     const rows = (record.manualRows ?? []) as ManualRow[];
-    const emails = [
-      ...new Set(
-        rows
-          .map((r) => r.email?.trim().toLowerCase())
-          .filter((e): e is string => !!e && EMAIL_RE.test(e)),
-      ),
-    ];
-    return emails.length > 0
-      ? { emails }
-      : { emails: [], error: "手動名單是空的" };
+    const recipients = dedupeByEmail(rows);
+    return recipients.length > 0
+      ? { recipients }
+      : { recipients: [], error: "手動名單是空的" };
   }
   // ALL：全部會員
-  const emails = await getBroadcastRecipients();
-  return emails.length > 0
-    ? { emails }
-    : { emails: [], error: "找不到任何會員 email" };
+  const recipients = await getBroadcastRecipients();
+  return recipients.length > 0
+    ? { recipients }
+    : { recipients: [], error: "找不到任何會員 email" };
 }
 
 /** 依群發紀錄內容實際寄出，並回寫結果與名單快照（立即寄送與排程 cron 共用） */
@@ -76,12 +86,13 @@ export async function executeBroadcast(broadcastId: string) {
       })
     : null;
 
-  const html = buildBroadcastHtml(record.body, course);
-  const { emails: recipients, error: resolveError } =
-    await resolveRecipients(record);
+  const { recipients, error: resolveError } = await resolveRecipients(record);
+  // 逐封產生 HTML：先把 {email}/{name} 替換成該收件人的值，再套品牌信版型
   const r =
     recipients.length > 0
-      ? await sendBroadcast(recipients, record.subject, html)
+      ? await sendBroadcast(recipients, record.subject, (rcpt) =>
+          buildBroadcastHtml(applyMergeTags(record.body, rcpt), course),
+        )
       : { sent: 0, failed: 0, error: resolveError ?? "收件名單是空的" };
 
   await prisma.emailBroadcast.update({
@@ -91,7 +102,7 @@ export async function executeBroadcast(broadcastId: string) {
       failedCount: r.failed,
       status: r.sent > 0 ? "SENT" : "FAILED",
       sentAt: new Date(),
-      recipients, // 快照：之後可存成名單群組
+      recipients: recipients.map((rcpt) => rcpt.email), // 快照（email 字串）：之後可存成名單群組
     },
   });
   return r;

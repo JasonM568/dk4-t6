@@ -30,7 +30,20 @@ export function BroadcastForm({
     null,
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [audience, setAudience] = useState<"all" | "group" | "manual">("all");
+
+  // 把變數插入內文游標處（textarea 為非受控，直接改 value 即可送出）
+  const insertVar = (token: string) => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    el.value = el.value.slice(0, start) + token + el.value.slice(end);
+    const pos = start + token.length;
+    el.focus();
+    el.setSelectionRange(pos, pos);
+  };
 
   const audienceDesc = () => {
     if (audience === "all") return `全部 ${memberCount} 位會員`;
@@ -57,16 +70,40 @@ export function BroadcastForm({
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium">內文</label>
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <label className="block text-sm font-medium">內文</label>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-400">插入變數：</span>
+              <button
+                type="button"
+                onClick={() => insertVar("{email}")}
+                className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
+              >
+                {"{email}"}
+              </button>
+              <button
+                type="button"
+                onClick={() => insertVar("{name}")}
+                className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
+              >
+                {"{name}"}
+              </button>
+            </div>
+          </div>
           <textarea
+            ref={bodyRef}
             name="body"
             required
             rows={8}
-            placeholder={"親愛的學員您好：\n\n希望學院推出新課程⋯⋯\n\n（空一行 = 分段）"}
+            placeholder={"親愛的學員您好：\n\n希望學院推出新課程⋯⋯\n\n您的帳號：{email}\n預設密碼：a12345\n\n（空一行 = 分段）"}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
           <p className="mt-1 text-xs text-gray-400">
-            純文字即可，空一行會自動分段；信件會套用希望學院品牌版型（紅底 LOGO 頁首＋金邊卡片）
+            純文字即可，空一行會自動分段；信件會套用希望學院品牌版型（紅底 LOGO 頁首＋金邊卡片）。
+            <br />
+            可用變數：<span className="font-mono">{"{email}"}</span>＝收件人 email、
+            <span className="font-mono">{"{name}"}</span>＝姓名，寄出時自動帶入每位收件人
+            （沒有姓名的人 <span className="font-mono">{"{name}"}</span> 會留空）。
           </p>
         </div>
 

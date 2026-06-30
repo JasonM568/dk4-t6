@@ -14,7 +14,7 @@ import {
   uploadCourseMaterial,
 } from "@/lib/supabase/admin";
 import { toSlideEmbedUrl } from "@/lib/embed";
-import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
+import { buildBroadcastHtml, sendBroadcast, applyMergeTags } from "@/lib/email/broadcast";
 import { executeBroadcast } from "@/lib/email/dispatch";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
@@ -616,8 +616,10 @@ export async function sendBroadcastAction(
   // 測試模式：只寄給自己（發送對象與排程時間不影響測試信）
   if (mode === "test") {
     if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
-    const html = buildBroadcastHtml(body, course);
-    const r = await sendBroadcast([admin.email], `[測試] ${subject}`, html);
+    const me = { email: admin.email, name: admin.displayName ?? undefined };
+    const r = await sendBroadcast([me], `[測試] ${subject}`, (rcpt) =>
+      buildBroadcastHtml(applyMergeTags(body, rcpt), course),
+    );
     return r.failed > 0
       ? { error: `測試信寄送失敗：${r.error ?? "未知錯誤"}` }
       : { success: `測試信已寄到 ${admin.email}，請收信確認版面` };
