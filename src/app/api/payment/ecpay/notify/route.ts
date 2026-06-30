@@ -46,6 +46,15 @@ export async function POST(req: NextRequest) {
       // 防線 2：已處理過的訂單直接略過（冪等）
       if (order.status === "PAID") return;
 
+      // 防線 5：訂單超過 7 天仍未付款，記錄異常但仍繼續處理（ECPay 有重送機制）
+      const orderAgeMs = Date.now() - order.createdAt.getTime();
+      if (orderAgeMs > 7 * 24 * 60 * 60 * 1000) {
+        console.warn("[ecpay notify] stale order callback", {
+          orderNo: result.orderNo,
+          ageDays: Math.floor(orderAgeMs / 86400000),
+        });
+      }
+
       if (result.success) {
         // 防線 4：比對回呼金額與商店代號，防止偽造/竄改的成功回呼開通課程。
         // 不符時記錄異常、不標 PAID、不開通；但仍須回傳成功字串以停止 ECPay 重送。

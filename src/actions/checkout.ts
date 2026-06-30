@@ -38,6 +38,14 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
     return { ok: false, error: "你已擁有此課程", redirect: "/my-courses" };
   }
 
+  // 防止重複送出：已有 PENDING 訂單時拒絕再建（避免快速點擊產生多筆待付訂單）
+  const pendingOrder = await prisma.order.findFirst({
+    where: { userId, status: "PENDING", items: { some: { courseId } } },
+  });
+  if (pendingOrder) {
+    return { ok: false, error: "你已有待付款的訂單，請完成付款或等待訂單逾期後再試" };
+  }
+
   // 讀取會員等級折扣（MemberStats 是 lazy upsert，沒有就視為無折扣）
   // 分級制度停用時一律原價，不查等級
   const stats = TIER_SYSTEM_ENABLED

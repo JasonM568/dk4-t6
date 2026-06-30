@@ -173,20 +173,23 @@ export async function updateCourse(
 export async function moveCourse(courseId: string, direction: "up" | "down") {
   await requireEditor();
 
-  const courses = await prisma.course.findMany({
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-    select: { id: true },
-  });
-  const idx = courses.findIndex((c) => c.id === courseId);
-  const swap = direction === "up" ? idx - 1 : idx + 1;
-  if (idx < 0 || swap < 0 || swap >= courses.length) return;
+  // Serializable 確保讀取與寫入之間不會被其他 transaction 插入，防止並發排序衝突
+  await prisma.$transaction(async (tx) => {
+    const courses = await tx.course.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      select: { id: true },
+    });
+    const idx = courses.findIndex((c) => c.id === courseId);
+    const swap = direction === "up" ? idx - 1 : idx + 1;
+    if (idx < 0 || swap < 0 || swap >= courses.length) return;
 
-  [courses[idx], courses[swap]] = [courses[swap], courses[idx]];
-  await prisma.$transaction(
-    courses.map((c, i) =>
-      prisma.course.update({ where: { id: c.id }, data: { sortOrder: i } }),
-    ),
-  );
+    [courses[idx], courses[swap]] = [courses[swap], courses[idx]];
+    await Promise.all(
+      courses.map((c, i) =>
+        tx.course.update({ where: { id: c.id }, data: { sortOrder: i } }),
+      ),
+    );
+  }, { isolationLevel: "Serializable" });
 
   revalidatePath("/admin/courses");
   revalidatePath("/courses");
