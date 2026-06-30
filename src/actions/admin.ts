@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/supabase/server";
 import {
+  getProfile,
   getProfilesByEmails,
   findAuthUserIdByEmail,
   listProfiles,
@@ -392,6 +393,9 @@ export async function grantEnrollmentAction(
 ): Promise<EnrollmentEditState> {
   await requireEditor();
 
+  const profile = await getProfile(userId);
+  if (!profile) return { error: "找不到此會員" };
+
   const courseId = String(formData.get("courseId") ?? "");
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   if (!course) return { error: "請選擇課程" };
@@ -409,6 +413,8 @@ export async function grantEnrollmentAction(
 /** 移除單一課程權限（客戶端先 confirm） */
 export async function revokeEnrollment(userId: string, courseId: string) {
   await requireEditor();
+  const profile = await getProfile(userId);
+  if (!profile) return;
   await prisma.enrollment.deleteMany({ where: { userId, courseId } });
   revalidatePath(`/admin/members/${userId}`);
 }
@@ -470,6 +476,9 @@ export async function resetMemberPasswordAction(
   formData: FormData,
 ): Promise<void> {
   await requireEditor();
+  const profile = await getProfile(userId);
+  // 不存在或為 admin 的帳號一律拒絕（防操作人員越權重設管理員密碼）
+  if (!profile || profile.role === "admin") return;
   const password = String(formData.get("password") ?? "").trim();
   if (password.length < 6) return;
   const ok = await setUserPassword(userId, password);

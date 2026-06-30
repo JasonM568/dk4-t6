@@ -8,7 +8,9 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/reset-password";
+  const nextRaw = searchParams.get("next") ?? "/reset-password";
+  // 只允許站內相對路徑，防止 open redirect（攻擊者偽造 ?next=https://attacker.com）
+  const next = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/reset-password";
 
   if (tokenHash && type) {
     const supabase = await createClient();

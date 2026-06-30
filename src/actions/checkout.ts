@@ -53,6 +53,10 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
   const discount = computeDiscount(subtotal, discountPercent);
   const total = subtotal - discount;
 
+  if (total <= 0) {
+    return { ok: false, error: "此課程無法透過金流購買，請聯繫管理員開通觀看權限" };
+  }
+
   const orderNo = genOrderNo();
 
   // 建立訂單 + 明細 + 付款紀錄（PENDING）
