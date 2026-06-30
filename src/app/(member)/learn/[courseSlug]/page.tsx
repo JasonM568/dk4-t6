@@ -9,6 +9,7 @@ import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { toSlideEmbedUrl } from "@/lib/embed";
 import { prisma } from "@/lib/db";
+import { LessonPlayer } from "./lesson-player";
 
 export default async function LearnPage({
   params,
@@ -63,23 +64,15 @@ export default async function LearnPage({
       <div className="grid gap-6 lg:grid-cols-3">
         {/* 播放器 */}
         <div className="lg:col-span-2">
-          <div className="aspect-video overflow-hidden rounded-xl bg-black">
-            {/* 容錯：舊資料若存成完整網址/嵌入碼，播放時自動抽出 ID */}
-            {(() => {
-              const videoId =
-                extractYoutubeId(current.youtubeId) ?? current.youtubeId;
-              return (
-                <iframe
-                  key={current.id}
-                  className="h-full w-full"
-                  src={`https://www.youtube.com/embed/${videoId}?rel=0`}
-                  title={current.title}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              );
-            })()}
-          </div>
+          {/* 容錯：舊資料若存成完整網址/嵌入碼，播放時自動抽出 ID。
+              用 LessonPlayer（YouTube IFrame API）以便累計實看秒數；
+              key=lesson id 讓換章節時重掛載，卸載前回報進度。 */}
+          <LessonPlayer
+            key={current.id}
+            videoId={extractYoutubeId(current.youtubeId) ?? current.youtubeId}
+            lessonId={current.id}
+            title={current.title}
+          />
           <h2 className="mt-4 text-xl font-bold">{current.title}</h2>
 
           {/* 線上簡報（章節有設定才顯示） */}

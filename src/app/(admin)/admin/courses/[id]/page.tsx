@@ -47,12 +47,20 @@ export default async function EditCoursePage({
       </Link>
       <div className="mb-6 mt-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">編輯課程</h1>
-        <Link
-          href={`/admin/courses/${course.id}/members`}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
-        >
-          👥 觀看權限名單
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href={`/admin/courses/${course.id}/progress`}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            ⏱ 觀看時長
+          </Link>
+          <Link
+            href={`/admin/courses/${course.id}/members`}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            👥 觀看權限名單
+          </Link>
+        </div>
       </div>
 
       <CourseForm

@@ -170,7 +170,30 @@ model Lesson {
   order       Int
   durationSec Int?
 
+  progress LessonProgress[]
+
   @@index([courseId])
+}
+
+// 觀看時長：每位學員每章節的累積「實看秒數」。
+// 播放頁用 YouTube IFrame API 只在 PLAYING 狀態累計，定時回報 /api/progress（increment）。
+// userId = auth.users.id（無 FK）；courseId 反正規化，方便依課程彙總後台統計。
+model LessonProgress {
+  id              String @id @default(cuid())
+  userId          String @db.Uuid
+  lessonId        String
+  lesson          Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  courseId        String
+  watchedSec      Int    @default(0) // 累積實看秒數（只在播放中累計）
+  lastPositionSec Int    @default(0) // 最後播放位置（續看參考）
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, lessonId]) // 每人每章節一列，回報時 upsert increment
+  @@index([userId])
+  @@index([courseId])
+  @@index([lessonId])
 }
 
 // 課程講義（下載檔案，存 Supabase Storage 或外部網址）
