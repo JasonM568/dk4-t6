@@ -37,53 +37,61 @@ export default async function ZonePage({
   const primary = zone.themePrimary ?? "#4f46e5";
   const accent = zone.themeAccent ?? zone.themePrimary ?? "#312e81";
 
+  // 整頁背景：主題色 → 輔助色漸層（卡片維持白底）
+  const pageBg = {
+    background: `linear-gradient(160deg, ${primary}, ${accent})`,
+  };
+
   // ── 非會員（也非後台幹部）：擋牆 ──
   if (!isMember && !isStaff) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-        <div
-          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-3xl text-white"
-          style={{ background: `linear-gradient(135deg, ${primary}, ${accent})` }}
-        >
-          🔒
-        </div>
-        <h1 className="mt-4 text-3xl font-bold" style={{ color: primary }}>
-          {zone.name}
-        </h1>
-        <p className="mt-3 text-gray-600">此專區僅限{zone.name.replace(/學習?專區$/, "")}會員使用。</p>
-        {zone.wallText && (
-          <p className="mx-auto mt-2 max-w-md whitespace-pre-line text-sm text-gray-500">
-            {zone.wallText}
+      <div className="flex-1" style={pageBg}>
+        <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/40 bg-white/15 text-3xl">
+            🔒
+          </div>
+          <h1 className="mt-4 text-3xl font-bold text-white">{zone.name}</h1>
+          <p className="mt-3 text-white/90">
+            此專區僅限{zone.name.replace(/學習?專區$/, "")}會員使用。
           </p>
-        )}
-
-        <div className="mx-auto mt-8 max-w-sm rounded-xl border border-gray-200 p-6 text-left">
-          {user ? (
-            <>
-              <div className="mb-3 text-sm font-medium">有邀請碼嗎？</div>
-              <RedeemInviteForm
-                redeemAction={redeemInviteAction.bind(null, zone.slug)}
-                buttonColor={primary}
-              />
-            </>
-          ) : (
-            <div className="space-y-3 text-center">
-              <Link
-                href="/login"
-                className="block w-full rounded-lg py-3 font-medium text-white transition hover:opacity-90"
-                style={{ backgroundColor: primary }}
-              >
-                會員登入
-              </Link>
-              <p className="text-sm text-gray-500">
-                還沒有帳號？請使用專屬邀請連結註冊，或先{" "}
-                <Link href="/register" className="text-indigo-600 underline">
-                  註冊
-                </Link>{" "}
-                後回到此頁輸入邀請碼
-              </p>
-            </div>
+          {zone.wallText && (
+            <p className="mx-auto mt-2 max-w-md whitespace-pre-line text-sm text-white/80">
+              {zone.wallText}
+            </p>
           )}
+
+          <div className="mx-auto mt-8 max-w-sm rounded-xl bg-white p-6 text-left shadow-lg">
+            {user ? (
+              <>
+                <div className="mb-3 text-sm font-medium">有邀請碼嗎？</div>
+                <RedeemInviteForm
+                  redeemAction={redeemInviteAction.bind(null, zone.slug)}
+                  buttonColor={primary}
+                />
+              </>
+            ) : (
+              <div className="space-y-3 text-center">
+                <Link
+                  href="/login"
+                  className="block w-full rounded-lg py-3 font-medium text-white transition hover:opacity-90"
+                  style={{ backgroundColor: primary }}
+                >
+                  會員登入
+                </Link>
+                <p className="text-sm text-gray-500">
+                  還沒有帳號？請使用專屬邀請連結註冊，或先{" "}
+                  <Link
+                    href="/register"
+                    className="underline"
+                    style={{ color: primary }}
+                  >
+                    註冊
+                  </Link>{" "}
+                  後回到此頁輸入邀請碼
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -108,41 +116,40 @@ export default async function ZonePage({
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      {isStaff && !isMember && (
-        <div className="mb-6 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
-          你正以管理身分預覽此專區（一般會員需在專區名單內才看得到這一頁）。
-        </div>
-      )}
-      {/* 專區主視覺標題區（配色由後台設定） */}
-      <div
-        className="mb-8 rounded-2xl px-6 py-10 text-white sm:px-10"
-        style={{ background: `linear-gradient(135deg, ${primary}, ${accent})` }}
-      >
-        <h1 className="text-3xl font-bold sm:text-4xl">{zone.name}</h1>
-        <p className="mt-2 text-sm text-white/85">
+    <div className="flex-1" style={pageBg}>
+      <div className="mx-auto max-w-6xl px-4 py-12">
+        {isStaff && !isMember && (
+          <div className="mb-6 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
+            你正以管理身分預覽此專區（一般會員需在專區名單內才看得到這一頁）。
+          </div>
+        )}
+        {/* 標題直接落在漸層底上（配色由後台設定） */}
+        <h1 className="text-3xl font-bold text-white sm:text-4xl">
+          {zone.name}
+        </h1>
+        <p className="mt-2 mb-8 text-sm text-white/85">
           專區課程由管理員開通觀看權限；已開通的課程點進去即可上課。
         </p>
+        {courses.length === 0 ? (
+          <p className="text-white/85">課程籌備中，敬請期待。</p>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {courses.map((c) => (
+              <CourseCard
+                key={c.id}
+                course={c}
+                hidePrice
+                badge={enrolledIds.has(c.id) ? "✓ 已開通" : "尚未開通"}
+                badgeStyle={
+                  enrolledIds.has(c.id)
+                    ? { backgroundColor: primary, color: "#fff" }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
       </div>
-      {courses.length === 0 ? (
-        <p className="text-gray-500">課程籌備中，敬請期待。</p>
-      ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {courses.map((c) => (
-            <CourseCard
-              key={c.id}
-              course={c}
-              hidePrice
-              badge={enrolledIds.has(c.id) ? "✓ 已開通" : "尚未開通"}
-              badgeStyle={
-                enrolledIds.has(c.id)
-                  ? { backgroundColor: primary, color: "#fff" }
-                  : undefined
-              }
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

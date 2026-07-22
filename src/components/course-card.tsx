@@ -25,7 +25,7 @@ export function CourseCard({
   return (
     <Link
       href={`/courses/${course.slug}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 transition hover:shadow-lg"
+      className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white transition hover:shadow-lg"
     >
       <div className="aspect-video overflow-hidden bg-gray-100">
         {course.coverImage && (
