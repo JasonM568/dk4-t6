@@ -2,10 +2,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { CourseCard } from "@/components/course-card";
 import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
+import { publicCourseWhere } from "@/lib/course-access";
 
 export default async function HomePage() {
   const courses = await prisma.course.findMany({
-    where: { isPublished: true },
+    where: publicCourseWhere(),
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     take: 3,
   });

@@ -8,10 +8,16 @@ export const metadata = { title: "新增課程" };
 import { pageGuardEditor } from "@/lib/auth/staff";
 export default async function NewCoursePage() {
   await pageGuardEditor();
-  const categories = await prisma.category.findMany({
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true, name: true },
-  });
+  const [categories, zones] = await Promise.all([
+    prisma.category.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true },
+    }),
+    prisma.courseGroup.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   return (
     <div>
@@ -22,7 +28,12 @@ export default async function NewCoursePage() {
         ← 課程管理
       </Link>
       <h1 className="mb-6 mt-2 text-2xl font-bold">新增課程</h1>
-      <CourseForm action={createCourse} allCategories={categories} submitLabel="建立課程" />
+      <CourseForm
+        action={createCourse}
+        allCategories={categories}
+        allZones={zones}
+        submitLabel="建立課程"
+      />
     </div>
   );
 }

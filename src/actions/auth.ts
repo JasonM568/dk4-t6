@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { validateInviteCode, redeemInvite } from "@/lib/zone-invite";
 
 export type ActionState = {
   error?: string;
@@ -99,6 +100,16 @@ export async function registerAction(
 
   const { displayName, email, password } = parsed.data;
 
+  // 企業專區邀請碼（選填）：先驗證再建帳號，碼無效就不註冊，
+  // 避免使用者以為拿到專區身分卻沒有
+  const inviteRaw = String(formData.get("invite") ?? "").trim();
+  let invite = null;
+  if (inviteRaw) {
+    const result = await validateInviteCode(inviteRaw);
+    if (!result.ok) return { error: result.error };
+    invite = result.invite;
+  }
+
   // metadata 對齊 hope 站，讓 QBC 的 handle_new_user trigger 建出一致的 profiles
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
@@ -122,14 +133,34 @@ export async function registerAction(
 
   // 已註冊過的 email：signUp 不報錯但回傳 identities 為空陣列
   if (data.user && data.user.identities?.length === 0) {
-    return { error: "此 Email 已被註冊，請直接登入或使用忘記密碼" };
+    return {
+      error: invite
+        ? "此 Email 已被註冊。請直接登入，再到專區頁輸入邀請碼即可加入專區"
+        : "此 Email 已被註冊，請直接登入或使用忘記密碼",
+    };
+  }
+
+  // 帶邀請碼註冊：帳號建立成功後立刻寫入專區會籍（以 email 為鍵，
+  // 不受 Confirm email 時序影響——確認信箱、登入後身分即生效）。
+  // 會籍寫入失敗不影響註冊結果，記 log 供後台補救。
+  if (invite && data.user) {
+    try {
+      await redeemInvite(invite, email, {
+        name: displayName,
+        userId: data.user.id,
+      });
+    } catch (e) {
+      console.error("[register] 邀請碼會籍寫入失敗", { email, code: invite.code, e });
+    }
   }
 
   // 專案若開啟 Confirm email，signUp 不會建立 session → 提示收信
   if (!data.session) {
     return {
       success: true,
-      message: "註冊成功！請到信箱收取確認信，完成驗證後即可登入。",
+      message: invite
+        ? `註冊成功，已加入「${invite.groupName}」！請到信箱收取確認信，完成驗證後即可登入。`
+        : "註冊成功！請到信箱收取確認信，完成驗證後即可登入。",
     };
   }
 

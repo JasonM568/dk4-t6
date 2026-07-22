@@ -6,9 +6,17 @@ export const SITE_PAGES = [
   { key: "lecturers", path: "/lecturers", title: "量子講師群" },
   { key: "knowledge", path: "/knowledge", title: "知識專區" },
   { key: "speaking", path: "/speaking", title: "講座邀約" },
+  { key: "shihua", path: "/zone/shihua", title: "世華會學習專區" },
 ] as const;
 
 export type SitePageKey = (typeof SITE_PAGES)[number]["key"];
+
+/** 依前台路徑反查分頁開關；沒有對應註冊項的路徑視為開啟（如未來後台自建的其他專區） */
+export async function isPathEnabled(path: string): Promise<boolean> {
+  const page = SITE_PAGES.find((p) => p.path === path);
+  if (!page) return true;
+  return isPageEnabled(page.key);
+}
 
 const settingKey = (key: SitePageKey) => `page:${key}`;
 

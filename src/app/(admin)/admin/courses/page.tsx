@@ -8,7 +8,10 @@ export const metadata = { title: "課程管理" };
 export default async function AdminCoursesPage() {
   const [courses, canEditNow] = await Promise.all([
     prisma.course.findMany({
-      include: { _count: { select: { lessons: true, enrollments: true } } },
+      include: {
+        _count: { select: { lessons: true, enrollments: true } },
+        group: { select: { name: true } },
+      },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     }),
     currentCanEdit(),
@@ -45,6 +48,7 @@ export default async function AdminCoursesPage() {
           lessons: c._count.lessons,
           enrollments: c._count.enrollments,
           isPublished: c.isPublished,
+          zoneName: c.group?.name ?? null,
         }))}
       />
     </div>

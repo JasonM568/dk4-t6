@@ -100,6 +100,17 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] **P0 修復（workflow 跑出 39 findings 後修的 11 項）**：B7 漏開根因徹底修（createMember 反查 auth id，batchEnroll 只反查不建）、B4/5/6 listProfiles/listAuthMeta 分頁、B9 Resend 逐封結果、B8 cron 回收卡死 SENDING(claimedAt)、B1/B2 金流驗金額+移除沙箱 fallback、B3 密碼遮蔽、B25 auth BASE_URL fallback
 - [x] **學員端 force-dynamic**（my-courses/learn/courses[slug]）：修「QBC 老會員先登入、後被批次開通、看到舊快取沒新課程」
 
+**2026-07-22（世華會學習專區＝企業專區系統）**
+- [x] **泛用企業專區模型**：`CourseGroup`（專區）/`CourseGroupMember`（會籍，email 小寫為鍵、userId 稽核回填）/`GroupInviteCode`（邀請碼）三表 + `Course.groupId`（migration `20260722104816_course_groups`，全 additive）
+- [x] **可見性防線四處**收斂到 `src/lib/course-access.ts` 的 `publicCourseWhere()`：課程列表/首頁不出現專區課、直連詳情 redirect 到專區擋牆、**checkout 擋專區課下單**（拿 courseId 也買不到）。之後任何新增課程查詢（sitemap/搜尋）都必須用這個 helper
+- [x] 前台 `/zone/[groupSlug]`：專區會員（或後台幹部預覽）看課程列表（無價格、標已開通/未開通）；非會員看擋牆（未登入→登入/註冊、已登入→輸邀請碼 `redeemInviteAction`）。navbar 入口走 SITE_PAGES（key `shihua`）
+- [x] 後台 `/admin/zones`（課程管理子分頁「企業專區」，editor 可管）：專區 CRUD/停用、會籍單筆+批次匯入（冪等 skipDuplicates、回填 userId）、邀請碼產生/停用/複製連結、擋牆文案
+- [x] 課程表單加「所屬專區」下拉；`duplicateCourse` 連 groupId 一併複製；課程列表加專區 badge
+- [x] 邀請註冊：`/register?invite=CODE` 預填、registerAction 先驗碼再建帳號、signUp 成功即寫會籍（email 為鍵，不受 Confirm email 時序影響）；邀請碼驗證/兌換共用 `src/lib/zone-invite.ts`
+- [x] 觀看權限**完全沿用 Enrollment**：專區課仍到「批次開通」逐課開通，`/admin/enrollments` 零改動
+- [x] 本機驗證全過：公開列表 0 洩漏、詳情 307 redirect、擋牆 200、分頁開關 404、lint/build 過
+- ⚠️ **`page:shihua` 預設 off**（migration `20260722110000`）：上線後 navbar 不會出現入口。啟用流程＝後台「企業專區」建立專區（slug 必須是 `shihua`）→ 匯入會員名單/發邀請碼 → 「分頁管理」開啟「世華會學習專區」
+
 ### ⏳ 待驗收（下次開工先確認）
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
 2. **會員列表「開通課程」綠色按鈕**：勾會員→開通課程→用 course schema 查 Enrollment 確認寫入

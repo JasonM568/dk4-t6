@@ -58,6 +58,11 @@ const courseSchema = z.object({
     .nullable(),
   price: z.coerce.number({ message: "優惠價要填數字" }).int("優惠價要填整數").min(0, "優惠價不能是負數"),
   isPublished: z.coerce.boolean(),
+  // 所屬企業專區；空字串（一般課程）→ null
+  groupId: z
+    .string()
+    .transform((v) => v.trim() || null)
+    .nullable(),
 }).refine((d) => d.listPrice == null || d.listPrice >= d.price, {
   message: "建議售價要大於或等於優惠價",
   path: ["listPrice"],
@@ -76,6 +81,7 @@ function courseInput(formData: FormData) {
     listPrice: String(formData.get("listPrice") ?? "").trim(),
     price: formData.get("price"),
     isPublished: formData.get("isPublished") === "on",
+    groupId: String(formData.get("groupId") ?? ""),
   };
 }
 
@@ -266,6 +272,8 @@ export async function duplicateCourse(courseId: string) {
       price: src.price,
       isPublished: false,
       courseCode: null,
+      // 專區歸屬必須跟著複製，否則專區課的複本會變成公開課
+      groupId: src.groupId,
       categories: { connect: src.categories },
       lessons: {
         create: src.lessons.map((l) => ({
@@ -1493,4 +1501,199 @@ export async function removeStaffRoleAction(userId: string) {
   await requireFullAdmin();
   await prisma.staffRole.deleteMany({ where: { userId } });
   revalidatePath("/admin/staff");
+}
+
+// ───────────────────────── 企業專區（世華會等企業包班）─────────────────────────
+// 專區只管「可見性」（公開型錄隱藏、專區頁限會員）；觀看權限仍走 Enrollment 逐課開通。
+// 會籍以 email（小寫）為鍵，允許尚未註冊的 email 先入名單。
+
+export type ZoneActionState = { error?: string; success?: string } | null;
+
+const zoneSlugSchema = z
+  .string()
+  .min(1, "請填寫網址代稱")
+  .regex(/^[a-z0-9-]+$/, "網址代稱只能用小寫英文、數字與連字號（-）");
+
+/** 建立企業專區 */
+export async function createZoneAction(
+  _prev: ZoneActionState,
+  formData: FormData,
+): Promise<ZoneActionState> {
+  await requireEditor();
+  const name = String(formData.get("name") ?? "").trim();
+  const slug = String(formData.get("slug") ?? "").trim().toLowerCase();
+  if (!name) return { error: "請填寫專區名稱" };
+  const parsedSlug = zoneSlugSchema.safeParse(slug);
+  if (!parsedSlug.success) return { error: parsedSlug.error.issues[0].message };
+
+  try {
+    await prisma.courseGroup.create({ data: { name, slug } });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("Unique constraint")) {
+      return { error: `網址代稱「${slug}」已被使用，請換一個` };
+    }
+    throw e;
+  }
+  revalidatePath("/admin/zones");
+  return { success: `已建立專區「${name}」` };
+}
+
+/** 更新專區基本資料（名稱/擋牆說明） */
+export async function updateZoneAction(zoneId: string, formData: FormData) {
+  await requireEditor();
+  const name = String(formData.get("name") ?? "").trim();
+  const wallText = String(formData.get("wallText") ?? "").trim() || null;
+  if (!name) return;
+  await prisma.courseGroup.update({
+    where: { id: zoneId },
+    data: { name, wallText },
+  });
+  revalidatePath("/admin/zones");
+  revalidatePath(`/admin/zones/${zoneId}`);
+}
+
+/** 專區啟用/停用（停用 = 前台整區 404，課程仍維持隱藏） */
+export async function toggleZoneActive(zoneId: string, isActive: boolean) {
+  await requireEditor();
+  await prisma.courseGroup.update({ where: { id: zoneId }, data: { isActive } });
+  revalidatePath("/admin/zones");
+  revalidatePath(`/admin/zones/${zoneId}`);
+}
+
+/** 刪除專區：課程退回一般課程（groupId SetNull），會籍/邀請碼一併刪除 */
+export async function deleteZoneAction(zoneId: string) {
+  await requireEditor();
+  await prisma.courseGroup.delete({ where: { id: zoneId } }).catch(() => undefined);
+  revalidatePath("/admin/zones");
+  redirect("/admin/zones");
+}
+
+/** 單筆新增專區會員 */
+export async function addZoneMemberAction(
+  zoneId: string,
+  _prev: ZoneActionState,
+  formData: FormData,
+): Promise<ZoneActionState> {
+  await requireEditor();
+  const admin = await getAuthUser();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const name = String(formData.get("name") ?? "").trim() || null;
+  if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確" };
+
+  // 已是站上會員就順手回填 userId（純稽核，非必要）
+  const profile = (await getProfilesByEmails([email])).get(email);
+
+  await prisma.courseGroupMember.upsert({
+    where: { groupId_email: { groupId: zoneId, email } },
+    update: {},
+    create: {
+      groupId: zoneId,
+      email,
+      name,
+      userId: profile?.id ?? null,
+      source: "MANUAL",
+      addedBy: admin?.email ?? null,
+    },
+  });
+  revalidatePath(`/admin/zones/${zoneId}`);
+  return { success: `已加入 ${email}` };
+}
+
+/** 批次匯入專區會員（textarea 貼名單，每行 email[,姓名]；冪等，重複自動略過） */
+export async function importZoneMembersAction(
+  zoneId: string,
+  _prev: ZoneActionState,
+  formData: FormData,
+): Promise<ZoneActionState> {
+  await requireEditor();
+  const admin = await getAuthUser();
+  const raw = String(formData.get("list") ?? "");
+  if (!raw.trim()) return { error: "請貼上名單" };
+
+  const rows = parseRows(raw);
+  if (rows.length > MAX_BATCH_ROWS)
+    return { error: `一次最多 ${MAX_BATCH_ROWS} 筆，請分批匯入` };
+
+  const seen = new Set<string>();
+  const valid = rows
+    .filter((r) => EMAIL_RE.test(r.email))
+    .filter((r) => !seen.has(r.email) && seen.add(r.email));
+  if (valid.length === 0)
+    return { error: "沒有讀到任何合法 email，請確認格式（每行 email,姓名）" };
+
+  // 批次反查已註冊會員，順手回填 userId
+  const profileMap = await getProfilesByEmails(valid.map((r) => r.email));
+
+  const created = await prisma.courseGroupMember.createMany({
+    data: valid.map((r) => ({
+      groupId: zoneId,
+      email: r.email,
+      name: r.name || null,
+      userId: profileMap.get(r.email)?.id ?? null,
+      source: "IMPORT",
+      addedBy: admin?.email ?? null,
+    })),
+    skipDuplicates: true,
+  });
+
+  revalidatePath(`/admin/zones/${zoneId}`);
+  const dup = valid.length - created.count;
+  const bad = rows.length - valid.length;
+  const registered = valid.filter((r) => profileMap.has(r.email)).length;
+  return {
+    success: `已加入 ${created.count} 筆（其中 ${registered} 位已是站上會員）${dup > 0 ? `、${dup} 筆已在名單內略過` : ""}${bad > 0 ? `、${bad} 行無法辨識已忽略` : ""}`,
+  };
+}
+
+/** 移除專區會員（只影響專區可見性，已開通的 Enrollment 不動） */
+export async function removeZoneMember(memberId: string, zoneId: string) {
+  await requireEditor();
+  await prisma.courseGroupMember.deleteMany({ where: { id: memberId } });
+  revalidatePath(`/admin/zones/${zoneId}`);
+}
+
+// 邀請碼字元集：去除易混淆的 0/O/1/I
+const INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function genInviteCode(): string {
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += INVITE_CODE_CHARS[Math.floor(Math.random() * INVITE_CODE_CHARS.length)];
+  }
+  return code;
+}
+
+/** 產生專區邀請碼 */
+export async function createZoneInviteAction(zoneId: string, formData: FormData) {
+  await requireEditor();
+  const admin = await getAuthUser();
+  const label = String(formData.get("label") ?? "").trim() || null;
+  const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
+  const expiresAt = expiresRaw ? new Date(`${expiresRaw}T23:59:59+08:00`) : null;
+
+  // code @unique 撞碼重試（32^8 空間，實務上一次就過）
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await prisma.groupInviteCode.create({
+        data: {
+          groupId: zoneId,
+          code: genInviteCode(),
+          label,
+          expiresAt,
+          createdBy: admin?.email ?? null,
+        },
+      });
+      break;
+    } catch (e) {
+      if (attempt === 4) throw e;
+    }
+  }
+  revalidatePath(`/admin/zones/${zoneId}`);
+}
+
+/** 停用/啟用邀請碼 */
+export async function toggleZoneInvite(inviteId: string, zoneId: string, isActive: boolean) {
+  await requireEditor();
+  await prisma.groupInviteCode.update({ where: { id: inviteId }, data: { isActive } });
+  revalidatePath(`/admin/zones/${zoneId}`);
 }

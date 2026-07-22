@@ -10,6 +10,7 @@ const COURSE_TABS = [
   { href: "/admin/courses", label: "課程上架" },
   { href: "/admin/categories", label: "課程分類", editorOnly: true },
   { href: "/admin/enrollments", label: "批次開通", editorOnly: true },
+  { href: "/admin/zones", label: "企業專區", editorOnly: true },
 ];
 const MEMBER_TABS = [
   { href: "/admin/members", label: "會員列表" },
@@ -17,7 +18,7 @@ const MEMBER_TABS = [
   { href: "/admin/broadcast/groups", label: "名單群組", editorOnly: true },
 ];
 
-const COURSE_PREFIXES = ["/admin/courses", "/admin/categories", "/admin/enrollments"];
+const COURSE_PREFIXES = ["/admin/courses", "/admin/categories", "/admin/enrollments", "/admin/zones"];
 const MEMBER_PREFIXES = ["/admin/members", "/admin/broadcast/groups"];
 
 function isUnder(pathname: string, prefixes: string[]) {

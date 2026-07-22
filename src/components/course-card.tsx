@@ -10,9 +10,12 @@ type CourseCardProps = {
     listPrice: number | null;
     price: number;
   };
+  /** 企業專區課程不販售：隱藏價格，可額外顯示開通狀態 */
+  hidePrice?: boolean;
+  badge?: string | null;
 };
 
-export function CourseCard({ course }: CourseCardProps) {
+export function CourseCard({ course, hidePrice = false, badge }: CourseCardProps) {
   return (
     <Link
       href={`/courses/${course.slug}`}
@@ -33,16 +36,26 @@ export function CourseCard({ course }: CourseCardProps) {
         <p className="mt-1 line-clamp-2 flex-1 text-sm text-gray-500">
           {course.description}
         </p>
-        <div className="mt-3 flex items-baseline gap-2">
-          {course.listPrice != null && course.listPrice > course.price && (
-            <span className="text-sm text-gray-400 line-through">
-              {formatNT(course.listPrice)}
+        {hidePrice ? (
+          badge != null && (
+            <div className="mt-3">
+              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+                {badge}
+              </span>
+            </div>
+          )
+        ) : (
+          <div className="mt-3 flex items-baseline gap-2">
+            {course.listPrice != null && course.listPrice > course.price && (
+              <span className="text-sm text-gray-400 line-through">
+                {formatNT(course.listPrice)}
+              </span>
+            )}
+            <span className="text-lg font-bold text-indigo-600">
+              {formatNT(course.price)}
             </span>
-          )}
-          <span className="text-lg font-bold text-indigo-600">
-            {formatNT(course.price)}
-          </span>
-        </div>
+          </div>
+        )}
       </div>
     </Link>
   );

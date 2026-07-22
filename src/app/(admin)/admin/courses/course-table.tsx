@@ -18,6 +18,7 @@ export type CourseRow = {
   lessons: number;
   enrollments: number;
   isPublished: boolean;
+  zoneName: string | null; // 所屬企業專區名稱（null = 一般公開課程）
 };
 
 // 拖曳排序用原生 HTML5 drag & drop（桌機）；觸控裝置用 ↑↓/置頂 按鈕備援。
@@ -131,7 +132,14 @@ export function CourseTable({
               </td>
               )}
               <td className="px-4 py-3">
-                <div className="font-medium">{c.title}</div>
+                <div className="font-medium">
+                  {c.title}
+                  {c.zoneName && (
+                    <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-normal text-indigo-700">
+                      {c.zoneName}
+                    </span>
+                  )}
+                </div>
                 <div className="font-mono text-xs text-gray-400">{c.slug}</div>
               </td>
               <td className="px-4 py-3">{formatNT(c.price)}</td>

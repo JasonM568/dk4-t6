@@ -32,10 +32,16 @@ export default async function EditCoursePage({
   });
   if (!course) notFound();
 
-  const allCategories = await prisma.category.findMany({
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true, name: true },
-  });
+  const [allCategories, allZones] = await Promise.all([
+    prisma.category.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true },
+    }),
+    prisma.courseGroup.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   return (
     <div>
@@ -62,6 +68,7 @@ export default async function EditCoursePage({
           categoryIds: course.categories.map((c) => c.id),
         }}
         allCategories={allCategories}
+        allZones={allZones}
         submitLabel="儲存變更"
       />
 

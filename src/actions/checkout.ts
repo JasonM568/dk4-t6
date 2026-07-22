@@ -26,7 +26,8 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
   const userId = user.id;
 
   const course = await prisma.course.findUnique({ where: { id: courseId } });
-  if (!course || !course.isPublished) {
+  // 企業專區課程（groupId 有值）不販售，一律視同不存在，堵住拿 courseId 直接下單
+  if (!course || !course.isPublished || course.groupId) {
     return { ok: false, error: "課程不存在" };
   }
 

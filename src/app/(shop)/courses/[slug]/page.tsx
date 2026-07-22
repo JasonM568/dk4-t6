@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/server";
 
@@ -6,6 +7,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
+import { canViewGroupCourse } from "@/lib/course-access";
 import { formatNT } from "@/lib/format";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { BuyButton } from "@/components/buy-button";
@@ -18,13 +20,23 @@ export default async function CourseDetailPage({
   const { slug } = await params;
   const course = await prisma.course.findUnique({
     where: { slug },
-    include: { lessons: { orderBy: { order: "asc" } } },
+    include: {
+      lessons: { orderBy: { order: "asc" } },
+      group: { select: { slug: true, name: true } },
+    },
   });
   if (!course || !course.isPublished) notFound();
 
   // 可選登入：未登入也能看課程詳情，只是沒有會員折扣
   const user = await getAuthUser();
   const userId = user?.id;
+
+  // 企業專區課程：非專區會員（也非後台幹部）導去專區擋牆頁
+  if (course.groupId && course.group) {
+    if (!(await canViewGroupCourse(course, user))) {
+      redirect(`/zone/${course.group.slug}`);
+    }
+  }
 
   let isEnrolled = false;
   let discountPercent = 0;
@@ -113,10 +125,32 @@ export default async function CourseDetailPage({
           </ul>
         </div>
 
-        {/* 右：購買區 */}
+        {/* 右：購買區（企業專區課程改為開通狀態卡，不販售） */}
         <aside className="lg:col-span-1">
           <div className="sticky top-20 rounded-xl border border-gray-200 p-6">
-            {discount > 0 ? (
+            {course.groupId && course.group ? (
+              <div>
+                <div className="mb-3 inline-block rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+                  {course.group.name}
+                </div>
+                {isEnrolled ? (
+                  <Link
+                    href={`/learn/${course.slug}`}
+                    className="block w-full rounded-lg bg-black py-3 text-center font-medium text-white transition hover:bg-gray-800"
+                  >
+                    前往上課
+                  </Link>
+                ) : (
+                  <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+                    本課程觀看權限由管理員開通，尚未開通請聯繫專區窗口。
+                  </div>
+                )}
+                <ul className="mt-4 space-y-1.5 text-sm text-gray-500">
+                  <li>✓ {course.lessons.length} 個章節</li>
+                  <li>✓ 專區會員專屬課程</li>
+                </ul>
+              </div>
+            ) : discount > 0 ? (
               <div className="mb-4">
                 <div className="text-sm text-gray-400 line-through">
                   {formatNT(course.price)}
@@ -150,18 +184,22 @@ export default async function CourseDetailPage({
               </div>
             )}
 
-            <BuyButton
-              courseId={course.id}
-              courseSlug={course.slug}
-              isLoggedIn={!!userId}
-              isEnrolled={isEnrolled}
-            />
+            {!course.groupId && (
+              <>
+                <BuyButton
+                  courseId={course.id}
+                  courseSlug={course.slug}
+                  isLoggedIn={!!userId}
+                  isEnrolled={isEnrolled}
+                />
 
-            <ul className="mt-4 space-y-1.5 text-sm text-gray-500">
-              <li>✓ 購買後永久觀看</li>
-              <li>✓ {course.lessons.length} 個章節</li>
-              <li>✓ 支援信用卡 / ATM / 超商付款</li>
-            </ul>
+                <ul className="mt-4 space-y-1.5 text-sm text-gray-500">
+                  <li>✓ 購買後永久觀看</li>
+                  <li>✓ {course.lessons.length} 個章節</li>
+                  <li>✓ 支援信用卡 / ATM / 超商付款</li>
+                </ul>
+              </>
+            )}
           </div>
         </aside>
       </div>

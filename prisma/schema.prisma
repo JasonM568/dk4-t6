@@ -127,6 +127,59 @@ model MailGroupMember {
   @@index([groupId])
 }
 
+// ── 企業專區（世華會等企業包班）──
+// 課程掛 groupId 後即從公開型錄（/courses、首頁、checkout）隱藏，
+// 僅專區會員（CourseGroupMember，以 email 比對）與後台幹部可見。
+// 觀看權限仍走 Enrollment（逐課開通），專區只管「可見性」。
+model CourseGroup {
+  id       String  @id @default(cuid())
+  slug     String  @unique // 前台路由 /zone/<slug>（如 shihua）
+  name     String // 顯示名稱（如 世華會學習專區）
+  wallText String? @db.Text // 非會員擋牆頁的說明文字（選填，如聯絡窗口）
+  isActive Boolean @default(true) // 停用 = 前台整區 404
+
+  courses     Course[]
+  members     CourseGroupMember[]
+  inviteCodes GroupInviteCode[]
+
+  createdAt DateTime @default(now())
+}
+
+// 專區會員：以 email 為鍵（存入前一律 toLowerCase().trim()），
+// 允許尚未註冊的 email 先入名單；userId 已知時回填，純稽核用。
+model CourseGroupMember {
+  id      String      @id @default(cuid())
+  groupId String
+  group   CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  email   String
+  name    String?
+  userId  String?     @db.Uuid // auth.users.id，已知時回填
+  source  String // MANUAL | IMPORT | INVITE
+  addedBy String? // 操作管理員 email 或邀請碼 code
+
+  createdAt DateTime @default(now())
+
+  @@unique([groupId, email]) // 群組內 email 唯一，重複匯入自動略過
+  @@index([groupId])
+  @@index([email])
+}
+
+// 專區邀請碼：註冊頁帶 ?invite=CODE 或擋牆頁輸入即取得會籍。
+// usedCount 純統計非上限；要停止發放就 isActive=false 或換碼。
+model GroupInviteCode {
+  id        String      @id @default(cuid())
+  groupId   String
+  group     CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  code      String      @unique // 8 碼易讀隨機（去 0/O/1/I），比對時 uppercase
+  label     String? // 備註（如 2026 年會發放）
+  isActive  Boolean     @default(true)
+  expiresAt DateTime? // null = 不限期
+  usedCount Int         @default(0)
+  createdBy String? // 產碼的管理員 email
+
+  createdAt DateTime @default(now())
+}
+
 // 課程分類（後台自行維護選項，課程可勾選多個分類）
 model Category {
   id        String   @id @default(cuid())
@@ -149,6 +202,8 @@ model Course {
   price       Int // 優惠價 = 實際售價（新台幣整數，金流以此計算）
   sortOrder   Int      @default(0) // 前台顯示順序（小的在前，後台上移/下移調整）
   isPublished Boolean  @default(false)
+  groupId     String? // 所屬企業專區；null = 一般公開販售課程
+  group       CourseGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
   lessons     Lesson[]
   materials   CourseMaterial[]
@@ -158,6 +213,8 @@ model Course {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([groupId])
 }
 
 model Lesson {

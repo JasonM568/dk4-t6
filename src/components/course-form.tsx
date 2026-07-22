@@ -22,8 +22,10 @@ type CourseFormProps = {
     price?: number;
     isPublished?: boolean;
     categoryIds?: string[];
+    groupId?: string | null;
   };
   allCategories?: { id: string; name: string }[];
+  allZones?: { id: string; name: string }[];
   submitLabel: string;
 };
 
@@ -54,12 +56,14 @@ export function CourseForm({
   action,
   defaultValues = {},
   allCategories = [],
+  allZones = [],
   submitLabel,
 }: CourseFormProps) {
   const [state, formAction, pending] = useActionState<CourseFormState, FormData>(
     action,
     null,
   );
+  const [groupId, setGroupId] = useState(defaultValues.groupId ?? "");
 
   const [coverImage, setCoverImage] = useState(defaultValues.coverImage ?? "");
   const [introImages, setIntroImages] = useState<string[]>(
@@ -167,6 +171,30 @@ export function CourseForm({
           </div>
         </Field>
       )}
+      {allZones.length > 0 && (
+        <Field label="所屬企業專區（選了專區＝不公開販售，僅專區會員可見）">
+          <select
+            name="groupId"
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value)}
+            className="input"
+          >
+            <option value="">一般課程（公開販售）</option>
+            {allZones.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.name}
+              </option>
+            ))}
+          </select>
+          {groupId && (
+            <p className="mt-1 text-xs text-amber-600">
+              專區課程不會出現在課程列表、不可購買，價格不對外顯示（可填
+              0）；觀看權限需另外到「批次開通」逐課開通給專區會員。
+            </p>
+          )}
+        </Field>
+      )}
+
       <Field label="課程描述">
         <textarea
           name="description"
