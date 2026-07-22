@@ -10,6 +10,13 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* main 是 flex-col（讓企業專區頁的漸層底能撐滿高度）。
+   副作用：flex 子元素若帶 mx-auto 會變成 shrink-to-fit（寬度隨內容縮放），
+   導致各頁置中容器寬度不一、切頁時左右位移——強制子層滿寬恢復 block 置中行為 */
+main > * {
+  width: 100%;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
