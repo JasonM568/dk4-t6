@@ -18,7 +18,9 @@ export default async function AdminLayout({
   const admin = isFullAdmin(role);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    // 後台統一容器：所有類別頁共用同一個左右留白（手機 24px / 平板 32px / 桌機 48px），
+    // 各頁內部不要再自訂外層 padding，維持左緣一致
+    <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8 lg:px-12">
       <div className="mb-6 flex items-center gap-4 border-b border-gray-200 pb-4">
         <span className="font-bold">⚙️ 管理後台</span>
         {role && (
