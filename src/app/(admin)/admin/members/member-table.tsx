@@ -31,12 +31,14 @@ export function MemberTable({
   groups,
   courses,
   zones = [],
+  showTier = false,
   canEdit = true,
 }: {
   members: MemberRow[];
   groups: { id: string; name: string }[];
   courses: { id: string; title: string }[];
   zones?: { id: string; name: string }[]; // 企業專區（無專區時隱藏該排操作）
+  showTier?: boolean; // 分級制度停用時隱藏「等級」欄（TIER_SYSTEM_ENABLED 由 page 傳入）
   canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/開通/加群組/重設密碼
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -93,8 +95,13 @@ export function MemberTable({
 
   return (
     <div>
-      {/* 勾選後的兩種操作（總教練唯讀時隱藏）：開通課程觀看權限 / 加入電子報名單群組 */}
-      {canEdit && (
+      {/* 批次操作面板：勾選了人才浮現，未勾選只留一行提示（減少頁面上方佔位） */}
+      {canEdit && selected.size === 0 && (
+        <p className="mb-3 text-xs text-gray-400">
+          勾選會員後可批次操作：開通課程／加入企業專區／加入名單群組
+        </p>
+      )}
+      {canEdit && selected.size > 0 && (
         <div className="mb-3 space-y-2 rounded-xl bg-gray-50 p-3 text-sm">
           <div className="font-medium">已勾選 {selected.size} 位會員</div>
 
@@ -235,18 +242,20 @@ export function MemberTable({
               )}
               <th className="px-4 py-3">會員</th>
               <th className="px-4 py-3">最後登入</th>
-              <th className="px-4 py-3">等級</th>
+              {showTier && <th className="px-4 py-3">等級</th>}
               <th className="px-4 py-3">累積消費</th>
               <th className="px-4 py-3">購課</th>
               <th className="px-4 py-3">初始密碼</th>
-              <th className="px-4 py-3">角色</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className={`divide-y divide-gray-100 ${resetting ? "opacity-60" : ""}`}>
             {members.length === 0 && (
               <tr>
-                <td colSpan={canEdit ? 9 : 8} className="px-4 py-6 text-center text-gray-400">
+                <td
+                  colSpan={6 + (canEdit ? 1 : 0) + (showTier ? 1 : 0)}
+                  className="px-4 py-6 text-center text-gray-400"
+                >
                   查無符合條件的會員
                 </td>
               </tr>
@@ -264,7 +273,22 @@ export function MemberTable({
                   </td>
                 )}
                 <td className="px-4 py-3">
-                  <div className="font-medium">{m.displayName ?? "—"}</div>
+                  <div className="font-medium">
+                    {m.displayName ?? "—"}
+                    {/* 角色不單獨成欄：管理員/特殊角色才在姓名旁標小徽章 */}
+                    {m.role === "admin" ? (
+                      <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-normal text-indigo-700">
+                        管理員
+                      </span>
+                    ) : (
+                      m.role &&
+                      m.role !== "student" && (
+                        <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-500">
+                          {m.role}
+                        </span>
+                      )
+                    )}
+                  </div>
                   <div className="text-xs text-gray-400">{m.email}</div>
                 </td>
                 <td className="px-4 py-3 text-gray-500">
@@ -274,7 +298,7 @@ export function MemberTable({
                     <span className="text-amber-600">從未登入</span>
                   )}
                 </td>
-                <td className="px-4 py-3">{m.tierName ?? "—"}</td>
+                {showTier && <td className="px-4 py-3">{m.tierName ?? "—"}</td>}
                 <td className="px-4 py-3">{formatNT(m.totalSpent)}</td>
                 <td className="px-4 py-3">{m.coursesBought}</td>
                 <td className="px-4 py-3">
@@ -294,15 +318,6 @@ export function MemberTable({
                     </span>
                   ) : (
                     <span className="text-gray-300">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {m.role === "admin" ? (
-                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
-                      管理員
-                    </span>
-                  ) : (
-                    (m.role ?? "會員")
                   )}
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">

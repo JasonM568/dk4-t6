@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { listProfiles, listAuthMeta, countProfiles } from "@/lib/supabase/admin";
-import { createGroupFromCourseAction } from "@/actions/admin";
-import { enrollmentSource, formatDate } from "@/lib/format";
 import { currentCanEdit } from "@/lib/auth/staff";
-import { SubmitButton } from "@/components/admin/submit-button";
+import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { MemberTable } from "./member-table";
+import { CourseMembersJump } from "./course-members-jump";
 
 export const metadata = { title: "會員管理" };
 
@@ -15,12 +14,10 @@ export default async function AdminMembersPage({
   searchParams: Promise<{
     q?: string;
     group?: string | string[];
-    course?: string;
   }>;
 }) {
-  const { q, group, course } = await searchParams;
+  const { q, group } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
-  const selectedCourseId = (course ?? "").trim();
   const selectedGroupIds = (Array.isArray(group) ? group : group ? [group] : []).filter(Boolean);
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
@@ -44,20 +41,12 @@ export default async function AdminMembersPage({
       }),
     ]);
 
-  // 依課程查觀看名單（選課程才查）
+  // 課程清單：批次開通下拉 + 「查課程觀看名單」捷徑用
   const allCourses = await prisma.course.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     select: { id: true, title: true },
   });
   const canEditNow = await currentCanEdit();
-  const selectedCourse = allCourses.find((c) => c.id === selectedCourseId) ?? null;
-  const courseEnrollments = selectedCourse
-    ? await prisma.enrollment.findMany({
-        where: { courseId: selectedCourseId },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
-  const profByIdForCourse = new Map(profiles.map((p) => [p.id, p]));
 
   // 勾選名單群組 → 取出群組內 email 集合過濾會員
   const groupEmails =
@@ -107,124 +96,22 @@ export default async function AdminMembersPage({
     : all;
 
   return (
-    <div className="space-y-10">
-      <header>
-        <h1 className="text-2xl font-bold">會員管理</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          查詢會員、依名單群組／課程篩選，並開通課程觀看權限。
-        </p>
-      </header>
-
-      {/* 依課程查觀看名單 + 匯出名單群組 */}
-      <section>
-        <h2 className="mb-1 text-2xl font-bold">依課程查觀看名單</h2>
-        <p className="mb-4 text-sm text-gray-500">
-          選一堂課，列出有觀看權限的會員，可整批匯出成名單群組（供電子報群發）。
-        </p>
-        <form action="/admin/members" className="mb-4 flex flex-wrap gap-2">
-          <select
-            name="course"
-            defaultValue={selectedCourseId}
-            className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-          >
-            <option value="">選擇課程…</option>
-            {allCourses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
-          <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
-            查詢觀看名單
-          </button>
-        </form>
-
-        {selectedCourse && (
-          <>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm">
-                「{selectedCourse.title}」共{" "}
-                <span className="font-bold">{courseEnrollments.length}</span>{" "}
-                位可觀看
-              </p>
-              {courseEnrollments.length > 0 && canEditNow && (
-                <form
-                  action={createGroupFromCourseAction.bind(null, selectedCourseId)}
-                  className="flex flex-wrap items-end gap-2"
-                >
-                  <input
-                    name="newName"
-                    placeholder={`${selectedCourse.title} 觀看名單`}
-                    className="w-56 rounded-lg border border-indigo-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
-                  />
-                  <SubmitButton
-                    pendingText="匯出中…"
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
-                  >
-                    匯出成名單群組
-                  </SubmitButton>
-                </form>
-              )}
-            </div>
-            <div className="overflow-hidden rounded-xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-left text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3">#</th>
-                    <th className="px-4 py-3">會員</th>
-                    <th className="px-4 py-3">Email</th>
-                    <th className="px-4 py-3">來源</th>
-                    <th className="px-4 py-3">開通時間</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {courseEnrollments.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-                        這堂課還沒有任何會員開通
-                      </td>
-                    </tr>
-                  )}
-                  {courseEnrollments.map((e, i) => {
-                    const p = profByIdForCourse.get(e.userId);
-                    const src = enrollmentSource(e.source, e.orderId);
-                    return (
-                      <tr key={e.id}>
-                        <td className="px-4 py-2 font-mono text-gray-400">{i + 1}</td>
-                        <td className="px-4 py-2">
-                          {p?.display_name ?? (
-                            <span className="text-gray-300">（查無會員資料）</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-gray-500">{p?.email ?? "—"}</td>
-                        <td className="px-4 py-2">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs ${src.className}`}
-                          >
-                            {src.text}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-gray-400">
-                          {formatDate(e.createdAt)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* 會員列表 */}
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold">
-            {hasFilter
-              ? `篩選結果：${members.length} 筆`
-              : `會員列表（全部 ${totalCount} 位）`}
-          </h2>
+    <div>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">
+            會員管理
+            <span className="ml-2 text-base font-normal text-gray-400">
+              共 {totalCount} 位
+            </span>
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            搜尋會員、依名單群組篩選；勾選會員可批次開通課程、加入企業專區或名單群組。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {/* 查某堂課的觀看名單 → 跳轉到該課程的觀看權限名單頁（可新增/移除/匯出） */}
+          <CourseMembersJump courses={allCourses} />
           <Link
             href="/admin/members/inactive"
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
@@ -232,80 +119,86 @@ export default async function AdminMembersPage({
             🔑 未登入會員（批次設密碼）
           </Link>
         </div>
+      </header>
 
-        {/* 搜尋 + 名單群組篩選：GET query，免 client JS */}
-        <form
-          action="/admin/members"
-          className="mb-4 space-y-3 rounded-xl border border-gray-200 p-4"
-        >
-          <div className="flex gap-2">
-            <input
-              name="q"
-              defaultValue={q ?? ""}
-              placeholder="輸入姓名或 email 搜尋"
-              className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-            />
-            <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
-              套用
-            </button>
-            {hasFilter && (
+      {/* 搜尋 + 名單群組篩選：GET query，免 client JS */}
+      <form
+        action="/admin/members"
+        className="mb-4 space-y-3 rounded-xl border border-gray-200 p-4"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            name="q"
+            defaultValue={q ?? ""}
+            placeholder="輸入姓名或 email 搜尋"
+            className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+          />
+          <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">
+            套用
+          </button>
+          {hasFilter && (
+            <>
               <Link
                 href="/admin/members"
                 className="flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
               >
                 清除
               </Link>
-            )}
-          </div>
-          {mailGroups.length > 0 && (
-            <div>
-              <div className="mb-1.5 text-xs text-gray-500">
-                名單群組篩選（可複選，只顯示群組名單內的會員）：
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {mailGroups.map((g) => (
-                  <label
-                    key={g.id}
-                    className="flex items-center gap-1.5 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      name="group"
-                      value={g.id}
-                      defaultChecked={selectedGroupIds.includes(g.id)}
-                    />
-                    {g.name}
-                    <span className="text-xs text-gray-400">
-                      （{g._count.members}）
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
+              <span className="text-sm text-gray-500">
+                篩選結果：{members.length} 筆
+              </span>
+            </>
           )}
-        </form>
+        </div>
+        {mailGroups.length > 0 && (
+          <div>
+            <div className="mb-1.5 text-xs text-gray-500">
+              名單群組篩選（可複選，只顯示群組名單內的會員）：
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {mailGroups.map((g) => (
+                <label
+                  key={g.id}
+                  className="flex items-center gap-1.5 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    name="group"
+                    value={g.id}
+                    defaultChecked={selectedGroupIds.includes(g.id)}
+                  />
+                  {g.name}
+                  <span className="text-xs text-gray-400">
+                    （{g._count.members}）
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </form>
 
-        <MemberTable
-          zones={zones}
-          canEdit={canEditNow}
-          courses={allCourses}
-          members={members.map((m) => ({
-            id: m.id,
-            displayName: m.display_name,
-            email: m.email,
-            role: m.role,
-            tierName: m.currentTier?.name ?? null,
-            totalSpent: m.totalSpent,
-            coursesBought: m.coursesBought,
-            initialPassword: m.initialPassword,
-            lastSignInAt: m.lastSignInAt,
-          }))}
-          groups={mailGroups.map((g) => ({ id: g.id, name: g.name }))}
-        />
-        <p className="mt-2 text-xs text-gray-400">
-          「初始密碼」為管理員建帳號／批次重設時設定的密碼備查；學員若自行修改過密碼，此欄不會更新。自行註冊的會員無此紀錄。勾選會員可加入名單群組；「重設密碼」會覆蓋該會員密碼並記錄為初始密碼。
-        </p>
-      </section>
+      <MemberTable
+        zones={zones}
+        canEdit={canEditNow}
+        courses={allCourses}
+        showTier={TIER_SYSTEM_ENABLED}
+        members={members.map((m) => ({
+          id: m.id,
+          displayName: m.display_name,
+          email: m.email,
+          role: m.role,
+          tierName: m.currentTier?.name ?? null,
+          totalSpent: m.totalSpent,
+          coursesBought: m.coursesBought,
+          initialPassword: m.initialPassword,
+          lastSignInAt: m.lastSignInAt,
+        }))}
+        groups={mailGroups.map((g) => ({ id: g.id, name: g.name }))}
+      />
+      <p className="mt-2 text-xs text-gray-400">
+        「初始密碼」為管理員建帳號／批次重設時設定的密碼備查；學員若自行修改過密碼，此欄不會更新。自行註冊的會員無此紀錄。「重設密碼」會覆蓋該會員密碼並記錄為初始密碼。
+      </p>
     </div>
   );
 }
