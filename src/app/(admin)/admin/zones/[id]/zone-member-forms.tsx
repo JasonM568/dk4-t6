@@ -108,6 +108,56 @@ export function ImportZoneMembersForm({
   );
 }
 
+/** 主題色欄位：色票選擇器與 hex 文字框雙向同步（空 = 用全站預設色） */
+export function ColorField({
+  name,
+  label,
+  defaultValue,
+  placeholder,
+}: {
+  name: string;
+  label: string;
+  defaultValue?: string | null;
+  placeholder: string;
+}) {
+  const [value, setValue] = useState(defaultValue ?? "");
+  const valid = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-500">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={valid ? value : "#4f46e5"}
+          onChange={(e) => setValue(e.target.value)}
+          className="h-9 w-10 cursor-pointer rounded border border-gray-300 p-0.5"
+          aria-label={`${label}色票`}
+        />
+        <input
+          name={name}
+          value={value}
+          onChange={(e) => setValue(e.target.value.trim())}
+          placeholder={placeholder}
+          className="w-28 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
+        />
+        {value && !valid && (
+          <span className="text-xs text-red-600">格式須為 #RRGGBB</span>
+        )}
+        {value && valid && (
+          <button
+            type="button"
+            onClick={() => setValue("")}
+            className="text-xs text-gray-400 hover:underline"
+          >
+            清除（用預設色）
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** 一鍵複製邀請連結 */
 export function CopyInviteLink({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);

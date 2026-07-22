@@ -15,6 +15,7 @@ import {
   AddZoneMemberForm,
   ImportZoneMembersForm,
   CopyInviteLink,
+  ColorField,
 } from "./zone-member-forms";
 
 export const metadata = { title: "專區管理 — 管理後台" };
@@ -80,6 +81,20 @@ export default async function AdminZoneDetailPage({
               defaultValue={zone.wallText ?? ""}
               placeholder="例：本專區為世華會企業包班會員專屬，欲加入請洽世華會祕書處。"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-wrap gap-6">
+            <ColorField
+              name="themePrimary"
+              label="主題色（專區標題區/按鈕；空 = 全站預設）"
+              defaultValue={zone.themePrimary}
+              placeholder="#7c3aed"
+            />
+            <ColorField
+              name="themeAccent"
+              label="輔助色（漸層第二色/徽章；空 = 沿用主題色）"
+              defaultValue={zone.themeAccent}
+              placeholder="#f59e0b"
             />
           </div>
           <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800">

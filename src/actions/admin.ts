@@ -1538,7 +1538,13 @@ export async function createZoneAction(
   return { success: `已建立專區「${name}」` };
 }
 
-/** 更新專區基本資料（名稱/擋牆說明） */
+// 主題色驗證：#RGB / #RRGGBB，其他一律存 null（回全站預設色）
+function parseHexColor(raw: FormDataEntryValue | null): string | null {
+  const v = String(raw ?? "").trim();
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v) ? v.toLowerCase() : null;
+}
+
+/** 更新專區基本資料（名稱/擋牆說明/主題配色） */
 export async function updateZoneAction(zoneId: string, formData: FormData) {
   await requireEditor();
   const name = String(formData.get("name") ?? "").trim();
@@ -1546,7 +1552,12 @@ export async function updateZoneAction(zoneId: string, formData: FormData) {
   if (!name) return;
   await prisma.courseGroup.update({
     where: { id: zoneId },
-    data: { name, wallText },
+    data: {
+      name,
+      wallText,
+      themePrimary: parseHexColor(formData.get("themePrimary")),
+      themeAccent: parseHexColor(formData.get("themeAccent")),
+    },
   });
   revalidatePath("/admin/zones");
   revalidatePath(`/admin/zones/${zoneId}`);

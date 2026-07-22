@@ -33,12 +33,23 @@ export default async function ZonePage({
   ]);
   const isStaff = canAccessAdmin(staffRole);
 
+  // 專區主題配色（後台可設定）：主色用於標題區/按鈕，輔助色用於漸層/徽章
+  const primary = zone.themePrimary ?? "#4f46e5";
+  const accent = zone.themeAccent ?? zone.themePrimary ?? "#312e81";
+
   // ── 非會員（也非後台幹部）：擋牆 ──
   if (!isMember && !isStaff) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-        <div className="text-5xl">🔒</div>
-        <h1 className="mt-4 text-3xl font-bold">{zone.name}</h1>
+        <div
+          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-3xl text-white"
+          style={{ background: `linear-gradient(135deg, ${primary}, ${accent})` }}
+        >
+          🔒
+        </div>
+        <h1 className="mt-4 text-3xl font-bold" style={{ color: primary }}>
+          {zone.name}
+        </h1>
         <p className="mt-3 text-gray-600">此專區僅限{zone.name.replace(/學習?專區$/, "")}會員使用。</p>
         {zone.wallText && (
           <p className="mx-auto mt-2 max-w-md whitespace-pre-line text-sm text-gray-500">
@@ -52,13 +63,15 @@ export default async function ZonePage({
               <div className="mb-3 text-sm font-medium">有邀請碼嗎？</div>
               <RedeemInviteForm
                 redeemAction={redeemInviteAction.bind(null, zone.slug)}
+                buttonColor={primary}
               />
             </>
           ) : (
             <div className="space-y-3 text-center">
               <Link
                 href="/login"
-                className="block w-full rounded-lg bg-black py-3 font-medium text-white transition hover:bg-gray-800"
+                className="block w-full rounded-lg py-3 font-medium text-white transition hover:opacity-90"
+                style={{ backgroundColor: primary }}
               >
                 會員登入
               </Link>
@@ -101,10 +114,16 @@ export default async function ZonePage({
           你正以管理身分預覽此專區（一般會員需在專區名單內才看得到這一頁）。
         </div>
       )}
-      <h1 className="mb-2 text-3xl font-bold">{zone.name}</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        專區課程由管理員開通觀看權限；已開通的課程點進去即可上課。
-      </p>
+      {/* 專區主視覺標題區（配色由後台設定） */}
+      <div
+        className="mb-8 rounded-2xl px-6 py-10 text-white sm:px-10"
+        style={{ background: `linear-gradient(135deg, ${primary}, ${accent})` }}
+      >
+        <h1 className="text-3xl font-bold sm:text-4xl">{zone.name}</h1>
+        <p className="mt-2 text-sm text-white/85">
+          專區課程由管理員開通觀看權限；已開通的課程點進去即可上課。
+        </p>
+      </div>
       {courses.length === 0 ? (
         <p className="text-gray-500">課程籌備中，敬請期待。</p>
       ) : (
@@ -115,6 +134,11 @@ export default async function ZonePage({
               course={c}
               hidePrice
               badge={enrolledIds.has(c.id) ? "✓ 已開通" : "尚未開通"}
+              badgeStyle={
+                enrolledIds.has(c.id)
+                  ? { backgroundColor: primary, color: "#fff" }
+                  : undefined
+              }
             />
           ))}
         </div>

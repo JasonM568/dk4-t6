@@ -6,8 +6,10 @@ import type { RedeemState } from "@/actions/zone";
 /** 擋牆頁：已登入的非會員輸入邀請碼取得會籍 */
 export function RedeemInviteForm({
   redeemAction,
+  buttonColor,
 }: {
   redeemAction: (prev: RedeemState, formData: FormData) => Promise<RedeemState>;
+  buttonColor?: string; // 專區主題色（未提供時用黑色）
 }) {
   const [state, formAction, pending] = useActionState<RedeemState, FormData>(
     redeemAction,
@@ -27,7 +29,8 @@ export function RedeemInviteForm({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+          className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition disabled:opacity-50 ${buttonColor ? "hover:opacity-90" : "bg-black hover:bg-gray-800"}`}
+          style={buttonColor ? { backgroundColor: buttonColor } : undefined}
         >
           {pending ? "驗證中…" : "加入專區"}
         </button>

@@ -132,11 +132,13 @@ model MailGroupMember {
 // 僅專區會員（CourseGroupMember，以 email 比對）與後台幹部可見。
 // 觀看權限仍走 Enrollment（逐課開通），專區只管「可見性」。
 model CourseGroup {
-  id       String  @id @default(cuid())
-  slug     String  @unique // 前台路由 /zone/<slug>（如 shihua）
-  name     String // 顯示名稱（如 世華會學習專區）
-  wallText String? @db.Text // 非會員擋牆頁的說明文字（選填，如聯絡窗口）
-  isActive Boolean @default(true) // 停用 = 前台整區 404
+  id           String  @id @default(cuid())
+  slug         String  @unique // 前台路由 /zone/<slug>（如 shihua）
+  name         String // 顯示名稱（如 世華會學習專區）
+  wallText     String? @db.Text // 非會員擋牆頁的說明文字（選填，如聯絡窗口）
+  isActive     Boolean @default(true) // 停用 = 前台整區 404
+  themePrimary String? // 專區主題色 #RRGGBB（標題區/按鈕）；空 = 全站預設靛藍
+  themeAccent  String? // 輔助色 #RRGGBB（漸層第二色/徽章）；空 = 沿用主題色
 
   courses     Course[]
   members     CourseGroupMember[]

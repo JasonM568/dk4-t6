@@ -13,9 +13,15 @@ type CourseCardProps = {
   /** 企業專區課程不販售：隱藏價格，可額外顯示開通狀態 */
   hidePrice?: boolean;
   badge?: string | null;
+  badgeStyle?: React.CSSProperties; // 專區主題色徽章（未提供時用預設靛藍淡底）
 };
 
-export function CourseCard({ course, hidePrice = false, badge }: CourseCardProps) {
+export function CourseCard({
+  course,
+  hidePrice = false,
+  badge,
+  badgeStyle,
+}: CourseCardProps) {
   return (
     <Link
       href={`/courses/${course.slug}`}
@@ -39,7 +45,10 @@ export function CourseCard({ course, hidePrice = false, badge }: CourseCardProps
         {hidePrice ? (
           badge != null && (
             <div className="mt-3">
-              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${badgeStyle ? "" : "bg-indigo-50 text-indigo-700"}`}
+                style={badgeStyle}
+              >
                 {badge}
               </span>
             </div>
