@@ -25,7 +25,7 @@ export default async function AdminMembersPage({
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
-  const [profiles, statsList, mailGroups, passwords, authMeta, totalCount] =
+  const [profiles, statsList, mailGroups, passwords, authMeta, totalCount, zones] =
     await Promise.all([
       listProfiles(),
       prisma.memberStats.findMany({ include: { currentTier: true } }),
@@ -37,6 +37,11 @@ export default async function AdminMembersPage({
       listAuthMeta(),
       // B5：「共 N 位」用真實總數（head:true 只取 count），不受列表筆數影響
       countProfiles(),
+      // 企業專區（勾選會員 → 批次加入專區用）
+      prisma.courseGroup.findMany({
+        orderBy: { createdAt: "asc" },
+        select: { id: true, name: true },
+      }),
     ]);
 
   // 依課程查觀看名單（選課程才查）
@@ -281,6 +286,7 @@ export default async function AdminMembersPage({
         </form>
 
         <MemberTable
+          zones={zones}
           canEdit={canEditNow}
           courses={allCourses}
           members={members.map((m) => ({

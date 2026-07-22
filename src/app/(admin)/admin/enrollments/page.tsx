@@ -25,6 +25,9 @@ export default async function EnrollmentsPage() {
         名單裡查無的會員，填一組預設密碼就能<strong>直接建立帳號並開通</strong>；
         還可順便把整份名單加進<strong>寄信名單群組</strong>。開通後學員登入即可在「我的課程」看到該課程。
       </p>
+      <p className="mt-1 text-xs text-gray-400">
+        企業專區（世華會等）的課程也在這裡開通；「能不能看到專區頁」則到「企業專區」管理會員名單，兩者獨立。
+      </p>
       <EnrollForm courses={courses} mailGroups={mailGroups} />
     </div>
   );

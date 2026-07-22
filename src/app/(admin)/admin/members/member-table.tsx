@@ -5,10 +5,12 @@ import { useActionState } from "react";
 import Link from "next/link";
 import {
   addMembersToGroupAction,
+  addMembersToZoneBulkAction,
   grantCourseToMembersAction,
   resetMemberPasswordAction,
   type AddToGroupState,
   type GrantState,
+  type ZoneActionState,
 } from "@/actions/admin";
 import { formatNT, formatDate } from "@/lib/format";
 
@@ -28,11 +30,13 @@ export function MemberTable({
   members,
   groups,
   courses,
+  zones = [],
   canEdit = true,
 }: {
   members: MemberRow[];
   groups: { id: string; name: string }[];
   courses: { id: string; title: string }[];
+  zones?: { id: string; name: string }[]; // 企業專區（無專區時隱藏該排操作）
   canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/開通/加群組/重設密碼
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -44,6 +48,10 @@ export function MemberTable({
     GrantState,
     FormData
   >(grantCourseToMembersAction, null);
+  const [zoneState, zoneAction, zonePending] = useActionState<
+    ZoneActionState,
+    FormData
+  >(addMembersToZoneBulkAction, null);
   const [resetting, startReset] = useTransition();
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
@@ -124,7 +132,51 @@ export function MemberTable({
             )}
           </form>
 
-          {/* ② 加入電子報名單群組（MailGroup）—— 只是寄信名單，不影響課程觀看 */}
+          {/* ② 加入企業專區（CourseGroupMember）—— 讓會員「看得到」專區；觀看仍需逐課開通 */}
+          {zones.length > 0 && (
+            <form action={zoneAction} className="flex flex-wrap items-center gap-2">
+              <input
+                type="hidden"
+                name="rowsJson"
+                value={JSON.stringify(
+                  members
+                    .filter((m) => selected.has(m.id) && m.email)
+                    .map((m) => ({ id: m.id, email: m.email, name: m.displayName })),
+                )}
+              />
+              <span className="w-40 text-gray-500">🏢 加入企業專區：</span>
+              <select
+                name="zoneId"
+                required
+                defaultValue={zones.length === 1 ? zones[0].id : ""}
+                className="rounded border border-gray-300 px-2 py-1"
+              >
+                <option value="" disabled>
+                  選擇專區
+                </option>
+                {zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={zonePending || selected.size === 0}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 font-medium text-white transition hover:bg-indigo-700 disabled:opacity-40"
+              >
+                {zonePending ? "加入中…" : "加入專區"}
+              </button>
+              {zoneState?.success && (
+                <span className="text-green-700">✓ {zoneState.success}</span>
+              )}
+              {zoneState?.error && (
+                <span className="text-red-600">{zoneState.error}</span>
+              )}
+            </form>
+          )}
+
+          {/* ③ 加入電子報名單群組（MailGroup）—— 只是寄信名單，不影響課程觀看 */}
           <form action={groupAction} className="flex flex-wrap items-center gap-2">
             {hidden()}
             <span className="w-40 text-gray-500">✉ 加入電子報名單群組：</span>
@@ -162,7 +214,7 @@ export function MemberTable({
             )}
           </form>
           <p className="text-xs text-gray-400">
-            「開通課程」才會讓會員能看影片；「名單群組」只是寄電子報用的名單，兩者獨立。
+            三種操作各自獨立：「開通課程」＝能看影片；「企業專區」＝看得到專區頁（影片仍需開通）；「名單群組」＝只是寄電子報的名單。
           </p>
         </div>
       )}

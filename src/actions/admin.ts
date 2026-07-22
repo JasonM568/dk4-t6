@@ -1708,3 +1708,56 @@ export async function toggleZoneInvite(inviteId: string, zoneId: string, isActiv
   await prisma.groupInviteCode.update({ where: { id: inviteId }, data: { isActive } });
   revalidatePath(`/admin/zones/${zoneId}`);
 }
+
+/** 會員列表勾選 → 批次加入企業專區（冪等，已在名單內自動略過）。
+ *  rowsJson = 勾選會員的 [{id,email,name}]（client 端已有資料，免再反查） */
+export async function addMembersToZoneBulkAction(
+  _prev: ZoneActionState,
+  formData: FormData,
+): Promise<ZoneActionState> {
+  await requireEditor();
+  const admin = await getAuthUser();
+
+  const zoneId = String(formData.get("zoneId") ?? "");
+  const zone = await prisma.courseGroup.findUnique({
+    where: { id: zoneId },
+    select: { id: true, name: true },
+  });
+  if (!zone) return { error: "請選擇企業專區" };
+
+  let rows: { id?: string; email?: string; name?: string }[] = [];
+  try {
+    rows = JSON.parse(String(formData.get("rowsJson") ?? "[]"));
+  } catch {
+    return { error: "名單格式錯誤，請重新勾選後再試" };
+  }
+
+  const seen = new Set<string>();
+  const valid = rows
+    .map((r) => ({
+      email: String(r.email ?? "").trim().toLowerCase(),
+      name: String(r.name ?? "").trim() || null,
+      userId: r.id || null,
+    }))
+    .filter((r) => EMAIL_RE.test(r.email))
+    .filter((r) => !seen.has(r.email) && seen.add(r.email));
+  if (valid.length === 0) return { error: "請先勾選要加入的會員" };
+
+  const created = await prisma.courseGroupMember.createMany({
+    data: valid.map((r) => ({
+      groupId: zone.id,
+      email: r.email,
+      name: r.name,
+      userId: r.userId,
+      source: "MANUAL",
+      addedBy: admin?.email ?? null,
+    })),
+    skipDuplicates: true,
+  });
+
+  revalidatePath(`/admin/zones/${zone.id}`);
+  const dup = valid.length - created.count;
+  return {
+    success: `已將 ${created.count} 位會員加入「${zone.name}」${dup > 0 ? `、${dup} 位原本就在名單內` : ""}`,
+  };
+}

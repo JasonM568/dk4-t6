@@ -37,6 +37,12 @@ export default async function AdminLayout({
           <Link href="/admin/members" className="text-gray-600 hover:text-black">
             會員管理
           </Link>
+          {/* 企業專區（包班）：自成一區——專區課程/會員/邀請碼都在這裡管 */}
+          {editor && (
+            <Link href="/admin/zones" className="text-gray-600 hover:text-black">
+              企業專區
+            </Link>
+          )}
           <Link href="/admin/orders" className="text-gray-600 hover:text-black">
             訂單查詢
           </Link>
