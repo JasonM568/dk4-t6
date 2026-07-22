@@ -2,8 +2,11 @@
 
 /* 永遠保留垂直捲軸的空間：
    否則長頁（有捲軸）與短頁（無捲軸）的可用寬度差 ~15px，
-   置中容器與後台導覽列會在切換頁面時左右跳動 */
+   置中容器與後台導覽列會在切換頁面時左右跳動。
+   overflow-y: scroll 是全瀏覽器通用寫法（Safari 17 不支援 scrollbar-gutter）；
+   兩者並存，系統用覆蓋式捲軸（無寬度）時皆無視覺影響 */
 html {
+  overflow-y: scroll;
   scrollbar-gutter: stable;
 }
 
