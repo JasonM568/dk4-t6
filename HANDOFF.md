@@ -119,6 +119,7 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - 決策：世華會維持**逐課開通**（入會≠能看影片）；使用者已知邀請連結註冊後需等管理員開通，發群組訊息時要註明
 - [x] 後台容器留白統一（px-6/sm:px-8/lg:px-12）
 - [x] **會員列表頁重整**：移除「依課程查觀看名單」區塊（與 courses/[id]/members 重複）→ 右上捷徑下拉跳轉；批次面板勾選才浮現；欄位 9→7（等級欄綁 `TIER_SYSTEM_ENABLED`、角色改姓名旁徽章）
+- [x] **修「後台類別列每頁位移」**（Jason 反映三次，真因=main 改 flex-col 後 mx-auto 子容器 shrink-to-fit）：`globals.css` 加 `main > * { width:100% }`；順帶保留 `overflow-y:scroll` + `scrollbar-gutter:stable`（防捲軸位移）。⚠️ 動 main/layout 結構前先讀 globals.css 註解
 
 ### ⏳ 待驗收（下次開工先確認）
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
