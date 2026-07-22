@@ -111,6 +111,13 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] 本機驗證全過：公開列表 0 洩漏、詳情 307 redirect、擋牆 200、分頁開關 404、lint/build 過
 - ⚠️ **`page:shihua` 預設 off**（migration `20260722110000`）：上線後 navbar 不會出現入口。啟用流程＝後台「企業專區」建立專區（slug 必須是 `shihua`）→ 匯入會員名單/發邀請碼 → 「分頁管理」開啟「世華會學習專區」
 
+**2026-07-22 晚（世華會上線調整＋後台重整，全數已部署）**
+- [x] 世華會專區已在正式站啟用：修正 slug（使用者誤填 `shihua-0721-ai-course` → `shihua`）、`page:shihua` 已開
+- [x] 專區主題配色（`themePrimary/themeAccent`，migration `20260722112810`）：後台專區「基本資料」色票設定；世華會 = `#b17ad5`/`#da9af0`（正式庫已設）；整頁漸層底（layout main 改 flex-col、子頁 flex-1 撐滿）
+- [x] **後台導覽重整**：批次開通移到會員管理、企業專區升主導覽、名單群組歸位 Email群發子分頁；分區邏輯＝課程管內容/會員管人/專區管包班/群發管行銷
+- [x] 會員列表勾選批次操作三合一：開通課程／**加入企業專區（新，`addMembersToZoneBulkAction`）**／加入名單群組
+- 決策：世華會維持**逐課開通**（入會≠能看影片）；使用者已知邀請連結註冊後需等管理員開通，發群組訊息時要註明
+
 ### ⏳ 待驗收（下次開工先確認）
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
 2. **會員列表「開通課程」綠色按鈕**：勾會員→開通課程→用 course schema 查 Enrollment 確認寫入
