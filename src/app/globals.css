@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* 永遠保留垂直捲軸的空間：
+   否則長頁（有捲軸）與短頁（無捲軸）的可用寬度差 ~15px，
+   置中容器與後台導覽列會在切換頁面時左右跳動 */
+html {
+  scrollbar-gutter: stable;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
