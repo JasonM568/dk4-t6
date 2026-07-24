@@ -8,6 +8,7 @@ import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { toSlideEmbedUrl } from "@/lib/embed";
+import { canWatchCourse } from "@/lib/course-access";
 import { prisma } from "@/lib/db";
 
 export default async function LearnPage({
@@ -33,12 +34,10 @@ export default async function LearnPage({
   });
   if (!course) notFound();
 
-  // ── 權限閘門：以 Enrollment 為唯一真實來源，未購買者一律導回詳情頁 ──
+  // ── 權限閘門：canWatchCourse（Enrollment ∨ 專區限時開放且為會員）──
   // 例外：管理員免購買可看全部課程（含未上架，方便上架前預覽）
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { userId_courseId: { userId, courseId: course.id } },
-  });
-  if (!enrollment && !isAdminRole(await getProfileRole(userId))) {
+  const allowed = await canWatchCourse(course, { id: userId, email: user.email });
+  if (!allowed && !isAdminRole(await getProfileRole(userId))) {
     redirect(`/courses/${courseSlug}`);
   }
 

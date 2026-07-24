@@ -7,7 +7,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
-import { canViewGroupCourse } from "@/lib/course-access";
+import { canViewGroupCourse, canWatchCourse } from "@/lib/course-access";
 import { formatNT } from "@/lib/format";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { BuyButton } from "@/components/buy-button";
@@ -43,10 +43,9 @@ export default async function CourseDetailPage({
   let tierName: string | null = null;
 
   if (userId) {
-    const [enrollment, stats] = await Promise.all([
-      prisma.enrollment.findUnique({
-        where: { userId_courseId: { userId, courseId: course.id } },
-      }),
+    const [canWatch, stats] = await Promise.all([
+      // Enrollment ∨ 專區限時開放且為會員（與觀看頁閘門同一判斷）
+      canWatchCourse(course, { id: userId, email: user?.email ?? null }),
       // 分級制度停用時不查等級，一律顯示原價
       TIER_SYSTEM_ENABLED
         ? prisma.memberStats.findUnique({
@@ -55,7 +54,7 @@ export default async function CourseDetailPage({
           })
         : Promise.resolve(null),
     ]);
-    isEnrolled = !!enrollment;
+    isEnrolled = canWatch;
     discountPercent = stats?.currentTier?.discountPercent ?? 0;
     tierName = stats?.currentTier?.name ?? null;
 

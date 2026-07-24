@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/server";
-import { isGroupMember } from "@/lib/course-access";
+import { isGroupMember, groupOpenAccessActive } from "@/lib/course-access";
 import { currentStaffRole } from "@/lib/auth/staff";
 import { canAccessAdmin } from "@/lib/auth/role";
 import { isPathEnabled } from "@/lib/site-pages";
@@ -134,19 +134,30 @@ export default async function ZonePage({
           <p className="text-white/85">課程籌備中，敬請期待。</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {courses.map((c) => (
-              <CourseCard
-                key={c.id}
-                course={c}
-                hidePrice
-                badge={enrolledIds.has(c.id) ? "✓ 已開通" : "尚未開通"}
-                badgeStyle={
-                  enrolledIds.has(c.id)
-                    ? { backgroundColor: primary, color: "#fff" }
-                    : undefined
-                }
-              />
-            ))}
+            {courses.map((c) => {
+              // 限時免開通期間，會員未逐課開通也視同可看
+              const canWatch =
+                enrolledIds.has(c.id) || groupOpenAccessActive(c);
+              return (
+                <CourseCard
+                  key={c.id}
+                  course={c}
+                  hidePrice
+                  badge={
+                    enrolledIds.has(c.id)
+                      ? "✓ 已開通"
+                      : canWatch
+                        ? "✓ 開放觀看中"
+                        : "尚未開通"
+                  }
+                  badgeStyle={
+                    canWatch
+                      ? { backgroundColor: primary, color: "#fff" }
+                      : undefined
+                  }
+                />
+              );
+            })}
           </div>
         )}
       </div>

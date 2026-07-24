@@ -206,6 +206,7 @@ model Course {
   isPublished Boolean  @default(false)
   groupId     String? // 所屬企業專區；null = 一般公開販售課程
   group       CourseGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  openToGroupUntil DateTime? // 專區限時免開通觀看：此日期前專區會員不需 Enrollment 即可觀看；null/過期 = 回到手動開通
 
   lessons     Lesson[]
   materials   CourseMaterial[]

@@ -63,6 +63,12 @@ const courseSchema = z.object({
     .string()
     .transform((v) => v.trim() || null)
     .nullable(),
+  // 專區限時免開通觀看（日期，含當天整天；空 = 不開放，一律手動開通）
+  openToGroupUntil: z
+    .string()
+    .regex(/^(\d{4}-\d{2}-\d{2})?$/, "開放日期格式不正確")
+    .transform((v) => (v ? new Date(`${v}T23:59:59+08:00`) : null))
+    .nullable(),
 }).refine((d) => d.listPrice == null || d.listPrice >= d.price, {
   message: "建議售價要大於或等於優惠價",
   path: ["listPrice"],
@@ -82,6 +88,7 @@ function courseInput(formData: FormData) {
     price: formData.get("price"),
     isPublished: formData.get("isPublished") === "on",
     groupId: String(formData.get("groupId") ?? ""),
+    openToGroupUntil: String(formData.get("openToGroupUntil") ?? "").trim(),
   };
 }
 

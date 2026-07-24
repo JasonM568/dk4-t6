@@ -33,6 +33,38 @@ export async function isGroupMember(
   return !!member;
 }
 
+/** 專區限時免開通觀看是否生效中（openToGroupUntil 未過期） */
+export function groupOpenAccessActive(course: {
+  groupId: string | null;
+  openToGroupUntil: Date | null;
+}): boolean {
+  return (
+    !!course.groupId &&
+    !!course.openToGroupUntil &&
+    course.openToGroupUntil > new Date()
+  );
+}
+
+/**
+ * 觀看權限唯一真實來源：Enrollment ∨（專區限時開放中且為專區會員）。
+ * 管理員例外由呼叫端自行補判（避免這裡耦合 staff 查詢）。
+ */
+export async function canWatchCourse(
+  course: { id: string; groupId: string | null; openToGroupUntil: Date | null },
+  user: { id: string; email: string | null } | null
+): Promise<boolean> {
+  if (!user) return false;
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId: user.id, courseId: course.id } },
+    select: { id: true },
+  });
+  if (enrollment) return true;
+  if (groupOpenAccessActive(course)) {
+    return isGroupMember(course.groupId!, user.email);
+  }
+  return false;
+}
+
 /**
  * 專區課程守門：專區會員或後台幹部（admin/operator/coach 皆可預覽）放行。
  * 一般公開課程（groupId=null）恆為 true。
