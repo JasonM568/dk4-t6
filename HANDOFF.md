@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-06-13 深夜（後台 RBAC 三級權限、P0 修復、課程/會員管理大擴充，全數已部署）**
+> 最後更新：**2026-07-25（開啟 Supabase session 逾時設定：Time-box 24h + Inactivity 168h）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
 > 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
@@ -121,7 +121,15 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] **會員列表頁重整**：移除「依課程查觀看名單」區塊（與 courses/[id]/members 重複）→ 右上捷徑下拉跳轉；批次面板勾選才浮現；欄位 9→7（等級欄綁 `TIER_SYSTEM_ENABLED`、角色改姓名旁徽章）
 - [x] **修「後台類別列每頁位移」**（Jason 反映三次，真因=main 改 flex-col 後 mx-auto 子容器 shrink-to-fit）：`globals.css` 加 `main > * { width:100% }`；順帶保留 `overflow-y:scroll` + `scrollbar-gutter:stable`（防捲軸位移）。⚠️ 動 main/layout 結構前先讀 globals.css 註解
 
+**2026-07-25（Supabase session 逾時設定，Dashboard 操作、無程式改動）**
+- [x] 調查「登入後永不登出」：確認是 Supabase Auth 預設行為（refresh token 無限續命 + cookie ~400 天），非程式 bug
+- [x] 依 Jason 決定開啟專案層級逾時（Dashboard → Authentication → Sessions，需 Pro plan）：**Time-box `24` 小時**（每天強制重登，蓋過 inactivity）＋ **Inactivity timeout `168` 小時**
+- 生效機制：不會立刻踢掉現有 session，下次 token 刷新（≤1 小時）才判定；實際壽命 = 設定值 + JWT 1h
+- ⚠️ **專案層級設定，hope.huangxi.info 同步生效**（兩站會員都會每天被要求重登），Jason 已知情同意
+- 回滾方式：Dashboard 同頁清空兩欄位即可；程式端 `src/proxy.ts` → `updateSession()` 與此設定相容，零改動
+
 ### ⏳ 待驗收（下次開工先確認）
+0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
 2. **會員列表「開通課程」綠色按鈕**：勾會員→開通課程→用 course schema 查 Enrollment 確認寫入
 3. **RBAC**：指派一個測試帳號為總教練/操作人員，登入驗證權限分級
