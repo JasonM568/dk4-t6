@@ -104,24 +104,42 @@ export default async function CourseDetailPage({
           )}
 
           <h2 className="mt-8 mb-3 text-xl font-bold">課程章節</h2>
+          {/* 已開通：章節直接連到觀看頁對應單元；未開通維持鎖頭 */}
           <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200">
-            {course.lessons.map((l, i) => (
-              <li
-                key={l.id}
-                className="flex items-center gap-3 px-4 py-3 text-sm"
-              >
-                <span className="font-mono text-gray-400">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="flex-1">{l.title}</span>
-                {l.durationSec && (
-                  <span className="text-gray-400">
-                    {Math.round(l.durationSec / 60)} 分鐘
+            {course.lessons.map((l, i) => {
+              const row = (
+                <>
+                  <span className="font-mono text-gray-400">
+                    {String(i + 1).padStart(2, "0")}
                   </span>
-                )}
-                <span className="text-gray-300">🔒</span>
-              </li>
-            ))}
+                  <span className="flex-1">{l.title}</span>
+                  {l.durationSec && (
+                    <span className="text-gray-400">
+                      {Math.round(l.durationSec / 60)} 分鐘
+                    </span>
+                  )}
+                  {isEnrolled ? (
+                    <span className="font-medium text-indigo-600">▶ 觀看</span>
+                  ) : (
+                    <span className="text-gray-300">🔒</span>
+                  )}
+                </>
+              );
+              return (
+                <li key={l.id} className="text-sm">
+                  {isEnrolled ? (
+                    <Link
+                      href={`/learn/${course.slug}?lesson=${l.id}`}
+                      className="flex items-center gap-3 px-4 py-3 transition hover:bg-gray-50"
+                    >
+                      {row}
+                    </Link>
+                  ) : (
+                    <div className="flex items-center gap-3 px-4 py-3">{row}</div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
 
