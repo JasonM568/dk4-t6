@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-07-25（開啟 Supabase session 逾時設定：Time-box 24h + Inactivity 168h）**
+> 最後更新：**2026-07-25（session 逾時設定 + 472 位學員大批匯入執行順序規劃）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
 > 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
@@ -133,6 +133,19 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
 2. **會員列表「開通課程」綠色按鈕**：勾會員→開通課程→用 course schema 查 Enrollment 確認寫入
 3. **RBAC**：指派一個測試帳號為總教練/操作人員，登入驗證權限分級
+
+### 📋 472 位學員大批匯入——執行順序（2026-07-25 規劃，動手前照做）
+
+> 情境：一次匯入 472 位名單＋email 寄帳密，預估 60 分鐘內約 200 人湧入。
+> 流量本身無虞（Vercel/pgbouncer 遠低於負荷），瓶頸全在信件額度與匯入超時。
+
+1. **升級 Resend 方案**——免費 100 封/天，472 封帳密信必爆（HANDOFF 既有地雷）；忘記密碼信同吃此額度
+2. **調高 Supabase Auth email rate limit**（Dashboard → Authentication → Rate Limits，預設約 30 封/小時 → 建議 150/小時）——防湧入期間忘記密碼信被擋「操作太頻繁」；專案層級但調高對 hope 站無害
+3. **分 2-3 批匯入會員（每批 150-200 筆）**——批次匯入逐筆打 Auth API（0.3-0.5s/筆），472 筆一次跑恐撞 Vercel 300s timeout；冪等可續跑（已建立自動跳過，同名單重貼即續）。順便匯入專區會籍＋批次開通課程
+4. **群發帳密信**，信內附「無法登入請點忘記密碼」＋ https://course.huangxi.info/forgot-password （後台代建帳號 email_confirm=true，可直接登入/直接走忘記密碼，全流程已實測）
+5. **開放學員進站**
+
+相關結論（2026-07-25 查證）：先匯入會籍再點邀請碼註冊不會出錯（signUp 擋已註冊、redeemInvite 冪等）；唯一陷阱＝學員用**不同 email** 註冊會產生第二筆會籍且 Enrollment 不會跟過去——已匯入開通者勿再發邀請連結，或註明務必用登記 email。
 
 ## 📌 待辦（依優先序）
 
