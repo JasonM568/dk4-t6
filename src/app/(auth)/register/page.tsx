@@ -1,9 +1,21 @@
 "use client";
 
-import { Suspense, useActionState } from "react";
+import { Suspense, useActionState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { registerAction, type ActionState } from "@/actions/auth";
+
+/** 註冊完成轉換事件（GA4 sign_up / Meta Pixel CompleteRegistration / GTM dataLayer）。
+ *  只在成功畫面掛載時觸發一次；追蹤碼未啟用時 window.gtag/fbq 為 undefined，安全略過。
+ *  註：Confirm email 關閉時走 server redirect("/dashboard")，該路徑不埋（正式環境 Confirm 開啟，不會走到） */
+function TrackSignUpOnce() {
+  useEffect(() => {
+    window.gtag?.("event", "sign_up", { method: "email" });
+    window.fbq?.("track", "CompleteRegistration");
+    window.dataLayer?.push({ event: "sign_up" });
+  }, []);
+  return null;
+}
 
 export default function RegisterPage() {
   // useSearchParams 需要 Suspense 邊界（讀取 ?invite= 邀請碼）
@@ -25,6 +37,7 @@ function RegisterForm() {
   if (state.success && state.message) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4">
+        <TrackSignUpOnce />
         <h1 className="mb-6 text-2xl font-bold">會員註冊</h1>
         <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
           {state.message}

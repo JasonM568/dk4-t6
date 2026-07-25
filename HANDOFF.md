@@ -148,6 +148,13 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
   2. Resend Dashboard → Domains → 開 **Open/Click Tracking**
   3. Resend Dashboard → Webhooks → Add `https://course.huangxi.info/api/webhooks/resend`，勾 delivered/opened/clicked/bounced/complained → 複製 signing secret → Vercel env `RESEND_WEBHOOK_SECRET` → redeploy
 
+**2026-07-25 深夜（Phase B：全站追蹤碼設定）**
+- [x] **追蹤碼三欄位**（GA4 / Meta Pixel / GTM）：存 SiteSetting（`tracking:*` keys，零 migration）；後台「分頁管理」下方新增設定區（僅 admin，`saveTrackingSettingsAction` 格式嚴格驗證——ID 會內插進 inline script，防呆防注入；清空=停用）
+- [x] **前台注入** `src/components/tracking-scripts.tsx`（root layout 條件渲染）：/admin 路徑一律不載；GA4 `send_page_view:false` + Pixel init 不自動 PageView → 統一由 PageViewTracker 在路由切換發送（防重複計數；useSearchParams 包 Suspense）；GTM 含 noscript iframe、Pixel 含 noscript img
+- [x] **註冊完成轉換事件**：register 成功畫面 `TrackSignUpOnce`（gtag sign_up / fbq CompleteRegistration / dataLayer push）；Confirm email 關閉時的 redirect 路徑不埋（正式環境 Confirm 開啟不會走到）
+- [x] headless browser 實測：gtag/fbq 函式存在、dataLayer 有 config+event、SPA 路由切換 page_view 正確 +1；本機測試 ID 已清
+- 📋 **啟用方式**：後台 /admin/settings 填入正式 GA4（G-…）/ Pixel（數字）/ GTM（GTM-…）ID 即生效，不用重新部署
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）

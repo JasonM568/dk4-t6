@@ -27,6 +27,7 @@ import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
+import { TRACKING_KEYS } from "@/lib/tracking";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
@@ -1765,6 +1766,51 @@ export async function togglePageAction(key: SitePageKey, enabled: boolean) {
   // navbar 在 root layout，全站重新驗證
   revalidatePath("/", "layout");
   revalidatePath("/admin/settings");
+}
+
+/** 儲存全站追蹤碼設定（GA4/Meta Pixel/GTM）。
+ *  格式嚴格驗證：ID 會內插進前台 inline script，不能放行任意字串；空字串 = 停用 */
+export async function saveTrackingSettingsAction(
+  _prev: BroadcastState,
+  formData: FormData,
+): Promise<BroadcastState> {
+  await requireFullAdmin();
+
+  const fields = [
+    {
+      key: TRACKING_KEYS.ga4,
+      value: String(formData.get("ga4") ?? "").trim(),
+      re: /^G-[A-Z0-9]{4,20}$/i,
+      label: "GA4 評估 ID 格式不正確（應為 G- 開頭，例：G-XXXXXXXXXX）",
+    },
+    {
+      key: TRACKING_KEYS.metaPixel,
+      value: String(formData.get("metaPixel") ?? "").trim(),
+      re: /^\d{5,20}$/,
+      label: "Meta Pixel ID 格式不正確（應為純數字）",
+    },
+    {
+      key: TRACKING_KEYS.gtm,
+      value: String(formData.get("gtm") ?? "").trim(),
+      re: /^GTM-[A-Z0-9]{4,15}$/i,
+      label: "GTM 容器 ID 格式不正確（應為 GTM- 開頭，例：GTM-XXXXXXX）",
+    },
+  ];
+  for (const f of fields) {
+    if (f.value && !f.re.test(f.value)) return { error: f.label };
+  }
+
+  for (const f of fields) {
+    await prisma.siteSetting.upsert({
+      where: { key: f.key },
+      create: { key: f.key, value: f.value },
+      update: { value: f.value },
+    });
+  }
+  // 追蹤碼在 root layout 注入，全站重新驗證
+  revalidatePath("/", "layout");
+  revalidatePath("/admin/settings");
+  return { success: "追蹤碼設定已儲存，前台即刻生效" };
 }
 
 // ── 權限管理（指派總教練/操作人員）── 僅管理員

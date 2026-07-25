@@ -1,12 +1,17 @@
 import { getPageStates } from "@/lib/site-pages";
+import { getTrackingSettings } from "@/lib/tracking";
 import { togglePageAction } from "@/actions/admin";
 import { pageGuardFullAdmin } from "@/lib/auth/staff";
+import { TrackingForm } from "./tracking-form";
 
 export const metadata = { title: "分頁管理 — 管理後台" };
 
 export default async function AdminSettingsPage() {
   await pageGuardFullAdmin(); // 僅管理員
-  const pages = await getPageStates();
+  const [pages, tracking] = await Promise.all([
+    getPageStates(),
+    getTrackingSettings(),
+  ]);
 
   return (
     <div className="max-w-2xl">
@@ -45,6 +50,19 @@ export default async function AdminSettingsPage() {
           </li>
         ))}
       </ul>
+
+      {/* 追蹤碼設定 */}
+      <section className="mt-10">
+        <h2 className="mb-1 text-lg font-bold">追蹤碼設定</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          填入 ID 即啟用、清空即停用；追蹤碼只在前台載入（/admin 後台一律不載）。
+          儲存後全站生效，投放廣告前先在這裡設定好轉換追蹤。
+        </p>
+        <TrackingForm defaults={tracking} />
+        <p className="mt-2 text-xs text-gray-400">
+          已內建事件：全站瀏覽（page_view）、註冊完成（sign_up / CompleteRegistration）。
+        </p>
+      </section>
     </div>
   );
 }
