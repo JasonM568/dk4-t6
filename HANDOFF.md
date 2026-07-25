@@ -143,10 +143,11 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] **開信/點擊/退信回流**：每封帶 `tags: broadcast_id` → `/api/webhooks/resend`（手動 svix 驗簽零依賴：HMAC+timingSafeEqual+timestamp ±5min；雙 tags shape 容錯）→ `BroadcastEvent` 表（唯一鍵天然去重=唯一開信/點擊）；bounced/complained 自動進退訂表；明細頁成效列（送達/開信%/點擊%/退信）、列表頁開信/點擊欄（groupBy 防 N+1）
 - [x] **四小項**：排程/草稿編輯頁 `/admin/broadcast/[id]/edit`（BroadcastForm defaultValues + `updateBroadcastAction` updateMany 狀態守衛防 cron 撞寫）；寄送紀錄分頁（?page=，每頁 20）；草稿（status DRAFT、存草稿鈕 formNoValidate 只驗主旨、繼續編輯/刪除、cron 不撈）；明細頁預覽套範例變數（example@example.com/王小明）
 - [x] 本機驗證全過：退訂頁正確/壞 token、one-click 200/400/冪等、cron 過濾退訂者（excluded=1、快照不含）、草稿不被 cron 撈、webhook 七情境（雙 shape/重放冪等/bounce 進退訂表/壞簽 401/過期 401/無 tags 忽略）
-- ⚠️ **部署後手動步驟（退訂+成效追蹤要生效必做）**：
-  1. Vercel env 加 `UNSUBSCRIBE_SECRET`（本機 .env 已產，同值複製）→ 沒設信件就不含退訂連結（不炸）
-  2. Resend Dashboard → Domains → 開 **Open/Click Tracking**
-  3. Resend Dashboard → Webhooks → Add `https://course.huangxi.info/api/webhooks/resend`，勾 delivered/opened/clicked/bounced/complained → 複製 signing secret → Vercel env `RESEND_WEBHOOK_SECRET` → redeploy
+- ✅ **部署後設定（2026-07-25 已全部完成）**：
+  1. ~~Vercel env `UNSUBSCRIBE_SECRET`~~ 已設（與本機 .env 同值）＋ redeploy，**正式站實測**：正確 token 進確認畫面、偽 token 擋「連結無效」
+  2. Resend Domains **Open/Click Tracking**：Jason 操作 Resend Dashboard（webhook 已建，tracking 開關若未開請順手確認）
+  3. ~~`RESEND_WEBHOOK_SECRET`~~ Jason 建好 webhook 後提供 secret，已設進 Vercel + 本機 .env + redeploy，**正式站實測**：無簽章 POST → 401、真 secret 簽章 → 200（無 tags 不寫庫）
+  → 下一封群發信起：footer 退訂連結生效、開信/點擊/退信數據開始回流明細頁
 
 **2026-07-25 深夜（Phase B：全站追蹤碼設定）**
 - [x] **追蹤碼三欄位**（GA4 / Meta Pixel / GTM）：存 SiteSetting（`tracking:*` keys，零 migration）；後台「分頁管理」下方新增設定區（僅 admin，`saveTrackingSettingsAction` 格式嚴格驗證——ID 會內插進 inline script，防呆防注入；清空=停用）
