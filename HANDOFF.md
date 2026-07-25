@@ -190,6 +190,18 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - 管理員（306465@gmail.com，role=admin）本來就免開通可看全部課程（learn/詳情頁既有 isAdminRole 例外）
 - 邀請碼註冊防呆已驗證：已註冊 email 再註冊會被擋並導向登入；redeemInvite 冪等不產生重複會籍
 
+**2026-07-25〜26（群發後個案查修日＋EDM 五功能＋寄信網域切換，全數已部署上線）**
+- [x] **「沒收到信」個案 SOP 建立**：查 CSV 原檔 → MailGroupMember → recipients 快照 → BroadcastEvent → MailUnsubscribe → auth.users，逐層定位。今日查明的型態：不在原名單（4 筆補入）、送達進垃圾匣（GMX 德國信箱最嚴）、報名 email ≠ 慣用 email（周秦誼 gmail↔ntu、郭素綾 gmail↔gmx）、共用 email 第二報名人（7 組，已解 2 組：劉安立/劉芳君 geosun 公司信箱、賴雪嬌 hinet）
+- [x] **名單解析容錯**（parseRows 重寫）：空白分隔、一行多 email、折行 email 自動接回、NBSP/零寬字元清除；逗號/Tab/密碼格式不變，8 情境實測全過
+- [x] **EDM 五功能**：群組明細頁搜尋＋原地編輯成員；群發對象第 4 選項「選取會員」（搜會員勾選，底層沿用 MANUAL）；會員列表「企業專區」欄（琥珀=邀請碼/靛藍=手動徽章＋✕ 一鍵移出）；寄送紀錄「以此為範本」（帶入主旨/內文/課程，對象不帶防誤發）；註冊頁邀請碼欄位鎖唯讀（防學員誤改，今日實際發生 5 例）
+- [x] **登入直達專區**：INVITE 來源會員登入後 redirect /zone/<slug>（多專區取最新、專區停用回一般流程）
+- [x] **名單資料修正**：世華會 EDM 名單 421 筆（+劉安立/劉芳君 geosun、−共用 chenruby26；4 位缺席者已補）；專區白名單全量匯入（EDM 100% 覆蓋，zone 457 筆：INVITE 144/IMPORT 303/MANUAL 10）——未註冊者註冊即自動有專區資格，邀請碼降為便利入口非必要條件
+- [x] **寄信網域切換 huibang.com.tw → course@huangxi.info**：Resend 驗證 huangxi.info（DKIM/SPF verified）＋ GoDaddy 加 4 筆 DNS ＋ DMARC p=quarantine ＋ EMAIL_FROM（.env+Vercel）＋ Supabase SMTP Sender（Jason 手動改，實測確認）。動機：GMX/hinet/公司信箱對「寄件網域≠連結網域」扣分（郭素綾 gmx 實例）。huibang.com.tw（公司官網）保留原驗證零影響；Resend 額度兩網域共用
+- [x] **修 build 穩定性**：getTrackingSettings 查詢失敗降級空設定（root layout 每頁查 SiteSetting，pooler 瞬斷曾連炸三次 Vercel build P1001）
+- [x] **補寄手法（無 UI 路徑時）**：直接 INSERT EmailBroadcast（status SCHEDULED、scheduledAt now、MANUAL manualRows、resendOfId 回鏈）→ cron 5 分鐘內走正式管線寄出（劉安立/劉芳君補寄 2/2 送達實證）
+- ⏳ 共用 email 第二報名人剩 4 位未解（陳秀美/許秀珍/馮玉庭/黃小娟/李季洳）：等本人提供 email → 群組新增＋範本補寄
+- ⏳ 7/27 行前通知：用「以此為範本」＋群組（421 筆）；黃秀森（andyboy7558355）已一鍵退訂會漏接，發送前確認是否誤按
+
 ## 📌 待辦（依優先序）
 
 0. **觀看影片累積時長**（用戶要做、方案已設計）：LessonProgress 表 + 播放頁 YouTube IFrame API 埋點算實看秒數 + 進度回報 API + 後台顯示（約 1.5-2 人日，純 ADD）
