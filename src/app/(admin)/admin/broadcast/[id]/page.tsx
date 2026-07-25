@@ -2,9 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
-import { buildBroadcastHtml } from "@/lib/email/broadcast";
+import { buildBroadcastHtml, type FailedRecipient } from "@/lib/email/broadcast";
+import { ResendFailedButton } from "./resend-failed-button";
 
 export const metadata = { title: "寄送內容 — Email群發" };
+
+// 補寄失敗者 action 由本頁送出（沿用本 segment 設定），最壞情況數百封也要跑得完
+export const maxDuration = 300;
 
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 
@@ -46,6 +50,14 @@ export default async function BroadcastDetailPage({
   const badge = STATUS_BADGE[record.status] ?? STATUS_BADGE.SENT;
   const isScheduled = record.status === "SCHEDULED";
   const when = isScheduled ? record.scheduledAt : (record.sentAt ?? record.createdAt);
+
+  // 逐筆失敗名單（Json 欄位窄化；比照 dispatch.ts 對 manualRows 的處理）
+  const failedList = Array.isArray(record.failedRecipients)
+    ? (record.failedRecipients as FailedRecipient[])
+    : [];
+  const canResend =
+    failedList.length > 0 &&
+    (record.status === "SENT" || record.status === "FAILED");
 
   return (
     <div className="max-w-3xl">
@@ -90,7 +102,52 @@ export default async function BroadcastDetailPage({
             <dd className="text-gray-600">{record.sentBy}</dd>
           </>
         )}
+
+        {record.resendOfId && (
+          <>
+            <dt className="text-gray-500">補寄來源</dt>
+            <dd>
+              <Link
+                href={`/admin/broadcast/${record.resendOfId}`}
+                className="text-indigo-600 hover:underline"
+              >
+                查看原始群發 →
+              </Link>
+            </dd>
+          </>
+        )}
       </dl>
+
+      {/* 失敗名單＋補寄 */}
+      {failedList.length > 0 && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50/50 p-4">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <h2 className="text-sm font-bold text-red-700">
+              失敗名單（{failedList.length}）
+            </h2>
+            {canResend && (
+              <ResendFailedButton
+                broadcastId={record.id}
+                count={failedList.length}
+              />
+            )}
+          </div>
+          <ul className="max-h-64 overflow-auto rounded-lg border border-red-100 bg-white p-3 text-xs">
+            {failedList.map((f) => (
+              <li key={f.email} className="flex justify-between gap-4 py-0.5">
+                <span className="text-gray-700">
+                  {f.email}
+                  {f.name ? `（${f.name}）` : ""}
+                </span>
+                <span className="text-gray-400">{f.reason}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-gray-500">
+            補寄只會寄給上列失敗的收件人，會另開一筆寄送紀錄；補寄成功者會從此名單移除。
+          </p>
+        </div>
+      )}
 
       {/* 實際寄出的 email 樣式 */}
       <h2 className="mb-2 text-lg font-bold">寄出內容</h2>

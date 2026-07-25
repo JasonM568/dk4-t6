@@ -128,6 +128,16 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - ⚠️ **專案層級設定，hope.huangxi.info 同步生效**（兩站會員都會每天被要求重登），Jason 已知情同意
 - 回滾方式：Dashboard 同頁清空兩欄位即可；程式端 `src/proxy.ts` → `updateSession()` 與此設定相容，零改動
 
+**2026-07-25 晚（電子報寄送強化——470 筆世華會進階課通知的前置工程）**
+- [x] **per-recipient 失敗記錄**：`EmailBroadcast.failedRecipients Json?`（[{email,name?,reason}]）+ `resendOfId`（補寄來源軟連結），migration `20260726090000_broadcast_failed_recipients`（手寫 SQL、本機驗證、grep 乾淨）
+- [x] **一鍵補寄失敗者**：明細頁失敗名單區塊（email+原因）+ 紅色「補寄失敗者（N）」按鈕 → `resendFailedBroadcastAction`：開新 MANUAL 紀錄（audienceLabel 標補寄來源、resendOfId 回鏈）重用 executeBroadcast；原紀錄 failedRecipients 收斂為仍失敗子集（sentCount/failedCount 凍結）；併發防護（同源 SENDING 中擋重複點）
+- [x] **429/5xx retry + backoff**（broadcast.ts）：每批最多 3 次嘗試，429 尊重 Retry-After（上限 10s）、否則 2s→4s 指數退避；網路錯誤/timeout（AbortSignal 15s）同樣重試；其他 4xx 不重試；批間延遲 600ms 守 Resend 2 req/sec
+- [x] **修 claimedAt bug**：立即群發建紀錄補 `claimedAt`（原本 cron 的「SENDING 且 claimedAt=null → FAILED」回收會誤標進行中的立即寄送）
+- [x] broadcast 三頁 + cron route 加 `maxDuration = 300`
+- [x] 本機驗證全過（空 key 測法 + mock Resend 4010 埠）：到期排程 FAILED+逐筆失敗名單、進行中 SENDING 不被誤動、卡死 SENDING 回收、429→等 1s→500→等 4s→成功的退避時序、3 封全寄出
+- 📋 **470 筆群發 SOP**：CSV 匯入名單群組 → 測試寄送給自己 → 正式群發 → 明細頁看失敗名單一鍵補寄 → 剩餘真退信（打錯/停用信箱）輸出走 LINE 群個案催辦。Resend 已升級付費方案；群發當天若逢註冊潮（Auth 信共用額度）錯開時段較穩
+- ⏳ 待正式站驗收：部署後用含假 email 的手動名單實測一次失敗→補寄流程（本機只驗到 action 以下的層，UI 送出鏈路要在正式站點一次）
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）

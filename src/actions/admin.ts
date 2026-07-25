@@ -15,7 +15,13 @@ import {
   uploadCourseMaterial,
 } from "@/lib/supabase/admin";
 import { toSlideEmbedUrl } from "@/lib/embed";
-import { buildBroadcastHtml, sendBroadcast, applyMergeTags } from "@/lib/email/broadcast";
+import { Prisma } from "@prisma/client";
+import {
+  buildBroadcastHtml,
+  sendBroadcast,
+  applyMergeTags,
+  type FailedRecipient,
+} from "@/lib/email/broadcast";
 import { executeBroadcast } from "@/lib/email/dispatch";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
@@ -719,12 +725,15 @@ export async function sendBroadcastAction(
   }
 
   // 立即群發：先建紀錄再寄，結果回寫同一筆
+  // claimedAt 必填：cron 會把「SENDING 且 claimedAt=null」視為卡死回收標 FAILED，
+  // 沒寫的話進行中的立即寄送可能被 cron 誤標
   const record = await prisma.emailBroadcast.create({
     data: {
       subject,
       body,
       courseId: courseId || null,
       status: "SENDING",
+      claimedAt: new Date(),
       sentBy: admin?.email ?? null,
       ...audienceData,
     },
@@ -755,6 +764,76 @@ export async function cancelScheduledBroadcast(id: string) {
     data: { status: "CANCELED" },
   });
   revalidatePath("/admin/broadcast");
+}
+
+/** 補寄失敗者：只對原紀錄 failedRecipients 名單重寄。
+ *  開「新」EmailBroadcast 紀錄（MANUAL + resendOfId）保留稽核軌跡；
+ *  補寄後把原紀錄 failedRecipients 更新為「仍失敗子集」（全成功設 null），
+ *  sentCount/failedCount 凍結不動 → 按鈕數字隨補寄收斂、重複點擊冪等 */
+export async function resendFailedBroadcastAction(
+  _prev: BroadcastState,
+  formData: FormData,
+): Promise<BroadcastState> {
+  await requireEditor();
+  const admin = await getAuthUser();
+
+  const id = String(formData.get("broadcastId") ?? "");
+  const orig = await prisma.emailBroadcast.findUnique({ where: { id } });
+  if (!orig) return { error: "找不到群發紀錄" };
+  if (orig.status !== "SENT" && orig.status !== "FAILED") {
+    return { error: "只有已寄出/失敗的群發可以補寄" };
+  }
+  const failed = (orig.failedRecipients ?? []) as FailedRecipient[];
+  if (!Array.isArray(failed) || failed.length === 0) {
+    return { error: "這筆群發沒有失敗名單可補寄" };
+  }
+
+  // 併發防護：同一筆已有補寄進行中就擋下（避免連點重複寄）
+  const inFlight = await prisma.emailBroadcast.findFirst({
+    where: { resendOfId: id, status: "SENDING" },
+    select: { id: true },
+  });
+  if (inFlight) return { error: "已有補寄進行中，請稍候再試" };
+
+  const record = await prisma.emailBroadcast.create({
+    data: {
+      subject: orig.subject,
+      body: orig.body,
+      courseId: orig.courseId,
+      status: "SENDING",
+      claimedAt: new Date(),
+      sentBy: admin?.email ?? null,
+      audienceType: "MANUAL",
+      audienceLabel: `補寄失敗者 ${failed.length} 筆（來源：${orig.subject}）`,
+      manualRows: failed.map((f) =>
+        f.name ? { email: f.email, name: f.name } : { email: f.email },
+      ),
+      resendOfId: orig.id,
+    },
+  });
+  const r = await executeBroadcast(record.id);
+
+  // 原紀錄失敗名單收斂為仍失敗子集
+  await prisma.emailBroadcast.update({
+    where: { id: orig.id },
+    data: {
+      failedRecipients:
+        r.failedRecipients.length > 0 ? r.failedRecipients : Prisma.JsonNull,
+    },
+  });
+
+  revalidatePath("/admin/broadcast");
+  revalidatePath(`/admin/broadcast/${id}`);
+  if (r.failed > 0) {
+    return {
+      error: `補寄完成但仍有失敗：成功 ${r.sent}、失敗 ${r.failed}（${r.error ?? ""}）`,
+      broadcastId: record.id,
+    };
+  }
+  return {
+    success: `補寄完成！已成功寄給 ${r.sent} 位原本失敗的收件人`,
+    broadcastId: record.id,
+  };
 }
 
 // ───────────────────────── 電子報名單群組 ─────────────────────────

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
 import {
@@ -72,7 +73,8 @@ export async function executeBroadcast(broadcastId: string) {
   const record = await prisma.emailBroadcast.findUnique({
     where: { id: broadcastId },
   });
-  if (!record) return { sent: 0, failed: 0, error: "找不到群發紀錄" };
+  if (!record)
+    return { sent: 0, failed: 0, error: "找不到群發紀錄", failedRecipients: [] };
 
   const course = record.courseId
     ? await prisma.course.findUnique({
@@ -94,7 +96,12 @@ export async function executeBroadcast(broadcastId: string) {
       ? await sendBroadcast(recipients, record.subject, (rcpt) =>
           buildBroadcastHtml(applyMergeTags(record.body, rcpt), course),
         )
-      : { sent: 0, failed: 0, error: resolveError ?? "收件名單是空的" };
+      : {
+          sent: 0,
+          failed: 0,
+          error: resolveError ?? "收件名單是空的",
+          failedRecipients: [],
+        };
 
   await prisma.emailBroadcast.update({
     where: { id: broadcastId },
@@ -104,6 +111,11 @@ export async function executeBroadcast(broadcastId: string) {
       status: r.sent > 0 ? "SENT" : "FAILED",
       sentAt: new Date(),
       recipients: recipients.map((rcpt) => rcpt.email), // 快照（email 字串）：之後可存成名單群組
+      // 逐筆失敗名單（含原因），供明細頁顯示與「補寄失敗者」使用；全成功設 null
+      failedRecipients:
+        r.failedRecipients.length > 0
+          ? r.failedRecipients
+          : Prisma.JsonNull,
     },
   });
   return r;

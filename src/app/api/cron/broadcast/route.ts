@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { processDueBroadcasts } from "@/lib/email/dispatch";
 
+// 大量群發（數百封分批＋退避重試）可能超過平台預設時限，明確給足 300s
+export const maxDuration = 300;
+
 // Vercel Cron（vercel.json：*/5 * * * *）。
 // 設了 CRON_SECRET 環境變數後，Vercel 觸發時會自動帶 Authorization: Bearer <CRON_SECRET>。
 export async function GET(request: Request) {

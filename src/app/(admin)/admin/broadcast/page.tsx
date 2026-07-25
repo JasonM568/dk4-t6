@@ -12,6 +12,9 @@ import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "Email群發 — 管理後台" };
 
+// 立即群發（server action 沿用本 segment 設定）數百封分批＋退避重試需要時間，明確給足 300s
+export const maxDuration = 300;
+
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {

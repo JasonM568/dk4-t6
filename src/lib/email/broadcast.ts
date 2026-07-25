@@ -5,8 +5,17 @@ import "server-only";
 //   RESEND_API_KEY  — Resend 的 API Key（re_ 開頭）
 //   EMAIL_FROM      — 寄件人，如：希望學院 <no-reply@huibang.com.tw>
 
-const RESEND_BATCH_URL = "https://api.resend.com/emails/batch";
+// RESEND_BATCH_URL 可用環境變數覆寫，僅供本機 mock 測試 retry 邏輯
+const RESEND_BATCH_URL =
+  process.env.RESEND_BATCH_URL ?? "https://api.resend.com/emails/batch";
 const BATCH_SIZE = 100; // Resend batch 單次上限
+const MAX_ATTEMPTS = 3; // 初次 + 2 次重試（僅 429/5xx/網路錯誤）
+const BACKOFF_BASE_MS = 2_000; // 指數退避：2s → 4s
+const RETRY_AFTER_CAP_MS = 10_000; // 429 Retry-After 上限
+const FETCH_TIMEOUT_MS = 15_000;
+const INTER_BATCH_DELAY_MS = 600; // Resend 限速 2 req/sec，批間留餘裕
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type BroadcastCourse = {
   title: string;
@@ -109,7 +118,67 @@ export function buildBroadcastHtml(
 </html>`;
 }
 
-export type SendResult = { sent: number; failed: number; error?: string };
+export type FailedRecipient = { email: string; name?: string; reason: string };
+export type SendResult = {
+  sent: number;
+  failed: number;
+  error?: string;
+  failedRecipients: FailedRecipient[];
+};
+
+/** 429/5xx/網路錯誤自動退避重試；其他 4xx 不重試直接回傳失敗 response */
+async function postBatchWithRetry(
+  apiKey: string,
+  body: string,
+): Promise<Response | { networkError: string }> {
+  let lastNetworkError = "";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response | null = null;
+    try {
+      res = await fetch(RESEND_BATCH_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+    } catch (e) {
+      lastNetworkError = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[email/broadcast] 批次網路錯誤（第 ${attempt} 次）：`,
+        lastNetworkError,
+      );
+    }
+
+    if (res) {
+      const retryable = res.status === 429 || res.status >= 500;
+      if (res.ok || !retryable) return res;
+      if (attempt < MAX_ATTEMPTS) {
+        // 429 優先尊重 Retry-After（秒），否則指數退避
+        const retryAfterSec = Number(res.headers.get("retry-after"));
+        const waitMs =
+          res.status === 429 && Number.isFinite(retryAfterSec) && retryAfterSec > 0
+            ? Math.min(retryAfterSec * 1000, RETRY_AFTER_CAP_MS)
+            : BACKOFF_BASE_MS * 2 ** (attempt - 1);
+        console.error(
+          `[email/broadcast] Resend ${res.status}，${waitMs}ms 後重試（第 ${attempt}/${MAX_ATTEMPTS} 次）`,
+        );
+        await sleep(waitMs);
+        continue;
+      }
+      return res; // 用盡重試，回傳最後的失敗 response
+    }
+
+    // 網路錯誤：還有次數就退避重試
+    if (attempt < MAX_ATTEMPTS) {
+      await sleep(BACKOFF_BASE_MS * 2 ** (attempt - 1));
+      continue;
+    }
+  }
+  return { networkError: lastNetworkError || "連線失敗" };
+}
 
 /** 以 Resend batch API 寄送（每批 100 封）；html 逐封產生，支援每位收件人不同內容 */
 export async function sendBroadcast(
@@ -120,38 +189,59 @@ export async function sendBroadcast(
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   if (!apiKey || !from) {
+    const reason = "尚未設定 RESEND_API_KEY / EMAIL_FROM 環境變數";
     return {
       sent: 0,
       failed: recipients.length,
-      error: "尚未設定 RESEND_API_KEY / EMAIL_FROM 環境變數",
+      error: reason,
+      failedRecipients: recipients.map((r) => ({
+        email: r.email,
+        ...(r.name ? { name: r.name } : {}),
+        reason,
+      })),
     };
   }
 
   let sent = 0;
   let failed = 0;
   let firstError: string | undefined;
+  const failedRecipients: FailedRecipient[] = [];
+  const failChunk = (chunk: Recipient[], reason: string) => {
+    failed += chunk.length;
+    for (const r of chunk) {
+      failedRecipients.push({
+        email: r.email,
+        ...(r.name ? { name: r.name } : {}),
+        reason,
+      });
+    }
+    if (!firstError) firstError = reason;
+  };
 
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+    if (i > 0) await sleep(INTER_BATCH_DELAY_MS);
     const chunk = recipients.slice(i, i + BATCH_SIZE);
-    const res = await fetch(RESEND_BATCH_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(
+    const res = await postBatchWithRetry(
+      apiKey,
+      JSON.stringify(
         chunk.map((r) => ({ from, to: [r.email], subject, html: renderHtml(r) })),
       ),
-    });
+    );
+
+    if ("networkError" in res) {
+      failChunk(chunk, `連線失敗：${res.networkError.slice(0, 200)}`);
+      console.error("[email/broadcast] 批次寄送失敗（網路）：", res.networkError);
+      continue;
+    }
 
     if (!res.ok) {
-      // HTTP 4xx / 429 / 5xx：整批計為失敗
-      failed += chunk.length;
-      if (!firstError) {
-        const text = await res.text().catch(() => "");
-        firstError = `Resend ${res.status}：${text.slice(0, 200)}`;
-        console.error("[email/broadcast] 批次寄送失敗：", firstError);
-      }
+      // 不可重試的 4xx，或 429/5xx 用盡重試：整批計為失敗
+      const text = await res.text().catch(() => "");
+      failChunk(chunk, `Resend ${res.status}：${text.slice(0, 200)}`);
+      console.error(
+        "[email/broadcast] 批次寄送失敗：",
+        `Resend ${res.status}：${text.slice(0, 200)}`,
+      );
       continue;
     }
 
@@ -164,11 +254,8 @@ export async function sendBroadcast(
 
     if (!Array.isArray(items)) {
       // 回傳格式非預期：保守起見整批計為失敗
-      failed += chunk.length;
-      if (!firstError) {
-        firstError = `Resend ${res.status}：回傳格式非預期`;
-        console.error("[email/broadcast] 批次回傳格式非預期：", payload);
-      }
+      failChunk(chunk, `Resend ${res.status}：回傳格式非預期`);
+      console.error("[email/broadcast] 批次回傳格式非預期：", payload);
       continue;
     }
 
@@ -177,24 +264,24 @@ export async function sendBroadcast(
       if (item && item.id && !item.error) {
         sent += 1;
       } else {
+        const errText =
+          item && item.error
+            ? typeof item.error === "string"
+              ? item.error
+              : JSON.stringify(item.error)
+            : "未取得寄送結果";
+        const reason = `Resend 退信：${errText.slice(0, 200)}`;
         failed += 1;
-        if (!firstError) {
-          const errText =
-            item && item.error
-              ? typeof item.error === "string"
-                ? item.error
-                : JSON.stringify(item.error)
-              : "未取得寄送結果";
-          firstError = `Resend 退信：${errText.slice(0, 200)}`;
-          console.error(
-            "[email/broadcast] 單筆寄送失敗：",
-            chunk[j].email,
-            firstError,
-          );
-        }
+        failedRecipients.push({
+          email: chunk[j].email,
+          ...(chunk[j].name ? { name: chunk[j].name } : {}),
+          reason,
+        });
+        if (!firstError) firstError = reason;
+        console.error("[email/broadcast] 單筆寄送失敗：", chunk[j].email, reason);
       }
     }
   }
 
-  return { sent, failed, error: firstError };
+  return { sent, failed, error: firstError, failedRecipients };
 }

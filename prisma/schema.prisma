@@ -102,6 +102,9 @@ model EmailBroadcast {
   recipients    String[]  @default([]) // 實際寄出名單快照（供事後存成群組）
   claimedAt     DateTime? // 進入 SENDING（cron 認領）的時間；用於回收逾時卡死的寄送
 
+  failedRecipients Json? // 逐筆失敗名單 [{email,name?,reason}]；補寄後更新為「仍失敗子集」，全成功設 null
+  resendOfId       String? // 此紀錄若為「補寄失敗者」，記來源群發紀錄 id（軟連結不加 FK，與 groupId 慣例一致）
+
   createdAt DateTime @default(now())
 }
 
