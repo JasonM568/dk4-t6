@@ -81,6 +81,41 @@ export default async function BroadcastDetailPage({
     failedList.length > 0 &&
     (record.status === "SENT" || record.status === "FAILED");
 
+  // 逐人投遞狀態：退信名單（含原因）與「寄出但尚未回報送達」名單。
+  // 只有 webhook 有回流事件的寄送才算（老寄送沒事件，全列未送達會誤導）
+  const hasEvents = eventGroups.length > 0;
+  let bouncedList: { email: string; reason: string | null }[] = [];
+  let pendingList: string[] = [];
+  if (hasEvents && record.recipients.length > 0) {
+    const events = await prisma.broadcastEvent.findMany({
+      where: { broadcastId: id },
+      select: { email: true, type: true },
+    });
+    // 有任何事件（送達/開信/點擊）都代表信已到；退信另列
+    const bouncedSet = new Set(
+      events.filter((e) => e.type === "BOUNCED").map((e) => e.email),
+    );
+    const receivedSet = new Set(
+      events
+        .filter((e) => e.type !== "BOUNCED" && e.type !== "COMPLAINED")
+        .map((e) => e.email),
+    );
+    const reasons = bouncedSet.size
+      ? await prisma.mailUnsubscribe.findMany({
+          where: { email: { in: [...bouncedSet] } },
+          select: { email: true, reason: true },
+        })
+      : [];
+    const reasonMap = new Map(reasons.map((r) => [r.email, r.reason]));
+    bouncedList = [...bouncedSet].map((email) => ({
+      email,
+      reason: reasonMap.get(email) ?? null,
+    }));
+    pendingList = record.recipients.filter(
+      (email) => !receivedSet.has(email) && !bouncedSet.has(email),
+    );
+  }
+
   return (
     <div className="max-w-3xl">
       <Link
@@ -201,6 +236,49 @@ export default async function BroadcastDetailPage({
           <p className="mt-2 text-xs text-gray-500">
             補寄只會寄給上列失敗的收件人，會另開一筆寄送紀錄；補寄成功者會從此名單移除。
           </p>
+        </div>
+      )}
+
+      {/* 逐人投遞狀態（webhook 回流後才有） */}
+      {(bouncedList.length > 0 || pendingList.length > 0) && (
+        <div className="mb-6 space-y-3">
+          {bouncedList.length > 0 && (
+            <details className="rounded-xl border border-red-200 bg-red-50/50 p-4">
+              <summary className="cursor-pointer text-sm font-bold text-red-700">
+                📮 退信名單（{bouncedList.length}）— 信箱收不到，已自動列入排除
+              </summary>
+              <ul className="mt-2 max-h-64 overflow-auto rounded-lg border border-red-100 bg-white p-3 text-xs">
+                {bouncedList.map((b) => (
+                  <li key={b.email} className="flex justify-between gap-4 py-0.5">
+                    <span className="text-gray-700">{b.email}</span>
+                    <span className="text-gray-400">{b.reason ?? "退信"}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-gray-500">
+                退信信箱已自動加入排除名單，之後群發不會再寄。多半是報名時打錯字或公司信箱擋信
+                → 建議個案聯繫確認正確 email 後，到名單群組修正。
+              </p>
+            </details>
+          )}
+          {pendingList.length > 0 && (
+            <details className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+              <summary className="cursor-pointer text-sm font-bold text-amber-700">
+                ⏳ 已寄出、尚未回報送達（{pendingList.length}）
+              </summary>
+              <ul className="mt-2 max-h-64 overflow-auto rounded-lg border border-amber-100 bg-white p-3 text-xs text-gray-700">
+                {pendingList.map((email) => (
+                  <li key={email} className="py-0.5">
+                    {email}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-gray-500">
+                通常是對方信箱（常見 Gmail）暫時延遲收信，系統會自動重試投遞最長 72
+                小時，此名單會隨送達回報自動縮短；72 小時後仍在此名單才需要個案處理。
+              </p>
+            </details>
+          )}
         </div>
       )}
 
