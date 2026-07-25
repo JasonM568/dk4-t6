@@ -41,6 +41,18 @@ export default async function AdminMembersPage({
       }),
     ]);
 
+  // 邀請碼註冊來源：email → 專區名稱（source=INVITE 才算，取最早一筆＝註冊當下兌換的）
+  const inviteRows = await prisma.courseGroupMember.findMany({
+    where: { source: "INVITE" },
+    orderBy: { createdAt: "asc" },
+    select: { email: true, group: { select: { name: true } } },
+  });
+  const inviteSourceByEmail = new Map<string, string>();
+  for (const r of inviteRows) {
+    if (!inviteSourceByEmail.has(r.email))
+      inviteSourceByEmail.set(r.email, r.group.name);
+  }
+
   // 課程清單：批次開通下拉 + 「查課程觀看名單」捷徑用
   const allCourses = await prisma.course.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -193,6 +205,8 @@ export default async function AdminMembersPage({
           coursesBought: m.coursesBought,
           initialPassword: m.initialPassword,
           lastSignInAt: m.lastSignInAt,
+          registerSource:
+            inviteSourceByEmail.get((m.email ?? "").toLowerCase()) ?? null,
         }))}
         groups={mailGroups.map((g) => ({ id: g.id, name: g.name }))}
       />

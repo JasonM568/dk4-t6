@@ -24,6 +24,7 @@ export type MemberRow = {
   coursesBought: number;
   initialPassword: string | null;
   lastSignInAt: string | null;
+  registerSource: string | null; // 邀請碼註冊的來源專區名稱（如 世華會學習專區）
 };
 
 export function MemberTable({
@@ -241,6 +242,7 @@ export function MemberTable({
                 </th>
               )}
               <th className="px-4 py-3">會員</th>
+              <th className="px-4 py-3">註冊來源</th>
               <th className="px-4 py-3">最後登入</th>
               {showTier && <th className="px-4 py-3">等級</th>}
               <th className="px-4 py-3">累積消費</th>
@@ -253,7 +255,7 @@ export function MemberTable({
             {members.length === 0 && (
               <tr>
                 <td
-                  colSpan={6 + (canEdit ? 1 : 0) + (showTier ? 1 : 0)}
+                  colSpan={7 + (canEdit ? 1 : 0) + (showTier ? 1 : 0)}
                   className="px-4 py-6 text-center text-gray-400"
                 >
                   查無符合條件的會員
@@ -290,6 +292,18 @@ export function MemberTable({
                     )}
                   </div>
                   <div className="text-xs text-gray-400">{m.email}</div>
+                </td>
+                <td className="px-4 py-3">
+                  {m.registerSource ? (
+                    <span
+                      className="inline-block max-w-36 truncate rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+                      title={`邀請碼註冊：${m.registerSource}`}
+                    >
+                      {m.registerSource}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {m.lastSignInAt ? (

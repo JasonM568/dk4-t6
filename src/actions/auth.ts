@@ -4,6 +4,8 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateInviteCode, redeemInvite } from "@/lib/zone-invite";
+import { prisma } from "@/lib/db";
+import { normalizeEmail } from "@/lib/course-access";
 
 export type ActionState = {
   error?: string;
@@ -82,7 +84,20 @@ export async function loginAction(
     return { error: mapAuthError(error.code, error.status) };
   }
 
-  redirect("/dashboard");
+  // 邀請碼註冊的專區會員：登入後直接進所屬企業專區（多個專區取最近加入的）
+  const zoneMember = await prisma.courseGroupMember
+    .findFirst({
+      where: {
+        email: normalizeEmail(parsed.data.email),
+        source: "INVITE",
+        group: { isActive: true },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { group: { select: { slug: true } } },
+    })
+    .catch(() => null); // 導向查詢失敗不擋登入
+
+  redirect(zoneMember ? `/zone/${zoneMember.group.slug}` : "/dashboard");
 }
 
 export async function registerAction(
