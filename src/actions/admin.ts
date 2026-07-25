@@ -1378,36 +1378,69 @@ export type BatchState = {
 // - 含中文的欄位 → 姓名
 // - 其餘欄位 → 密碼（單一非中文欄位時：≥6 碼且含數字當密碼，否則當英文姓名）
 // 空行與 # 開頭的註解行略過
+// 容錯（實際貼名單常見狀況）：
+// - 零寬字元移除、不斷行空白轉一般空白（LINE / 網頁複製會夾帶）
+// - 以「.」開頭的行自動接回上一行（email 被折行成兩行時還原）
+// - 欄位裡同時有 @ 和空白 → 再按空白拆欄（空白分隔的貼法）
+// - 一行出現多個 email（整批空白分隔貼上）→ 每個 email 各自成一筆
 function parseRows(raw: string): { email: string; name: string; password: string }[] {
   const CJK = /[一-鿿]/;
-  return raw
-    .replace(/^﻿/, "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"))
-    .map((line) => {
-      const parts = line
-        .split(/[,\t，]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
 
-      const email = (parts.find((p) => EMAIL_RE.test(p)) ?? "").toLowerCase();
-      const rest = parts.filter((p) => !EMAIL_RE.test(p));
+  const lines: string[] = [];
+  for (const rawLine of raw
+    .replace(/\u00A0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith(".") && lines.length > 0)
+      lines[lines.length - 1] += line;
+    else lines.push(line);
+  }
 
-      let name = "";
-      let password = "";
-      const cjkField = rest.find((p) => CJK.test(p));
-      if (cjkField) {
-        name = cjkField;
-        password = rest.find((p) => p !== cjkField) ?? "";
-      } else if (rest.length >= 2) {
-        [name, password] = rest;
-      } else if (rest.length === 1) {
-        if (rest[0].length >= 6 && /\d/.test(rest[0])) password = rest[0];
-        else name = rest[0];
-      }
-      return { email, name, password };
-    });
+  return lines.flatMap((line) => {
+    const parts = line
+      .split(/[,\t，]/)
+      .flatMap((p) => {
+        if (!(/@/.test(p) && /\s/.test(p.trim()))) return [p];
+        // 欄位裡有 @ 又夾空白 → 按空白拆欄；「.」開頭的片段接回前一段
+        // （email 內夾到隱形空白或折行時還原）
+        const tokens: string[] = [];
+        for (const t of p.trim().split(/\s+/)) {
+          if (t.startsWith(".") && tokens.length > 0)
+            tokens[tokens.length - 1] += t;
+          else tokens.push(t);
+        }
+        return tokens;
+      })
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const emails = parts.filter((p) => EMAIL_RE.test(p));
+    const rest = parts.filter((p) => !EMAIL_RE.test(p));
+
+    if (emails.length > 1)
+      return emails.map((e) => ({
+        email: e.toLowerCase(),
+        name: "",
+        password: "",
+      }));
+
+    const email = (emails[0] ?? "").toLowerCase();
+    let name = "";
+    let password = "";
+    const cjkField = rest.find((p) => CJK.test(p));
+    if (cjkField) {
+      name = cjkField;
+      password = rest.find((p) => p !== cjkField) ?? "";
+    } else if (rest.length >= 2) {
+      [name, password] = rest;
+    } else if (rest.length === 1) {
+      if (rest[0].length >= 6 && /\d/.test(rest[0])) password = rest[0];
+      else name = rest[0];
+    }
+    return [{ email, name, password }];
+  });
 }
 
 /** 記錄管理員設定的初始密碼（後台備查；學員自行改密碼不會同步） */
