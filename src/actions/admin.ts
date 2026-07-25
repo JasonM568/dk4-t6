@@ -1196,6 +1196,35 @@ export async function removeGroupMember(memberId: string, groupId: string) {
   revalidatePath("/admin/broadcast/groups");
 }
 
+export type GroupMemberEditState = { error?: string; success?: string } | null;
+
+/** 原地修改群組成員的 email / 姓名（修正匯入時打錯的資料） */
+export async function updateGroupMemberAction(
+  memberId: string,
+  groupId: string,
+  _prev: GroupMemberEditState,
+  formData: FormData,
+): Promise<GroupMemberEditState> {
+  await requireEditor();
+
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確" };
+
+  const dup = await prisma.mailGroupMember.findFirst({
+    where: { groupId, email, NOT: { id: memberId } },
+    select: { id: true },
+  });
+  if (dup) return { error: `${email} 已在群組內，請改用移除` };
+
+  await prisma.mailGroupMember.update({
+    where: { id: memberId },
+    data: { email, name: name || null },
+  });
+  revalidatePath(`/admin/broadcast/groups/${groupId}`);
+  return { success: "已更新" };
+}
+
 /** 把某次群發的名單存進群組：
  *  newName 有填 → 建立（或併入同名）群組；否則加入選擇的既有群組。
  *  名單來源優先用 manualRows（含姓名），否則用寄出快照 recipients */
