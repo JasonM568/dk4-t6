@@ -151,6 +151,14 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
   4. Click Tracking CNAME（`service68.huibang.com.tw → links1.resend-dns.com`，cyberdns.tw 後台）：初次驗證 failed 是 Resend 在 DNS 生效前搶跑，重按 Verify 即過
   5. ✅ **2026-07-25 Jason 實測確認：明細頁已看到開信、點擊數據**——退訂/補寄/成效追蹤全鏈路正式驗收完畢，470 筆世華會群發基礎設施就緒
 
+**2026-07-25 世華會進階課通知正式群發（首次實戰，全成功）**
+- [x] 名單：「世華會-0727-AI進階」群組，CSV 441 筆 → 413 唯一（28 檔案內重複自動剔除、0 格式錯誤，已與正式庫雙向 diff 核對零漏匯）；寄出時 416 筆（Jason 後續有加人）
+- [x] **群發結果：416/416 寄出成功、0 失敗**；送達 405+、開信 27%+、退信 2
+- [x] 退信 2 筆已查明：`carrieliujp@gmail.cim`（報名打錯字，.cim 無 MX，待個案要正確 email）、`linda-chuang@diet-u.com.tw`（公司信箱內容過濾擋信，建議改留個人信箱）；皆已自動進排除名單
+- [x] 9 筆 Gmail 暫時延遲（deferred）＝ Gmail 對突增流量的信譽控管，Resend 自動重試最長 72h，會自動變送達——此為正常現象非 bug
+- [x] **明細頁新增逐人投遞狀態**（ed93a56）：📮 退信名單（email+原因）＋ ⏳ 已寄出未回報送達名單（自動隨回報縮短），後台可自助查，不用查 SQL
+- ⚠️ **正式 Supabase exposed schemas 已變**：只剩 public/graphql_public/elite（course 的 REST expose 被移除、elite 來歷不明疑似 QBC 端變動）→ 查正式 course 資料改走 Supabase MCP execute_sql；`elite` 是誰加的建議與 hope 站確認
+
 **2026-07-25 深夜（Phase B：全站追蹤碼設定）**
 - [x] **追蹤碼三欄位**（GA4 / Meta Pixel / GTM）：存 SiteSetting（`tracking:*` keys，零 migration）；後台「分頁管理」下方新增設定區（僅 admin，`saveTrackingSettingsAction` 格式嚴格驗證——ID 會內插進 inline script，防呆防注入；清空=停用）
 - [x] **前台注入** `src/components/tracking-scripts.tsx`（root layout 條件渲染）：/admin 路徑一律不載；GA4 `send_page_view:false` + Pixel init 不自動 PageView → 統一由 PageViewTracker 在路由切換發送（防重複計數；useSearchParams 包 Suspense）；GTM 含 noscript iframe、Pixel 含 noscript img
