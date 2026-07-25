@@ -23,6 +23,7 @@ import {
   type FailedRecipient,
 } from "@/lib/email/broadcast";
 import { executeBroadcast } from "@/lib/email/dispatch";
+import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
@@ -612,7 +613,79 @@ export type BroadcastState = {
   manualCount?: number; // 手動名單筆數（>0 時前端提醒「是否建立群組」）
 } | null;
 
-/** 群發通知：mode=test 只寄給操作的管理員本人；mode=all 寄給全部會員並留紀錄。
+type BroadcastAudience = {
+  error?: string;
+  audienceData: {
+    audienceType: string;
+    groupId: string | null;
+    audienceLabel: string;
+    manualRows: { email: string; name?: string }[] | undefined;
+  };
+};
+
+/** 解析群發表單的發送對象（sendBroadcastAction / updateBroadcastAction 共用）。
+ *  lenient = 草稿模式：群組不存在/名單空也照存，之後編輯再補 */
+async function resolveBroadcastAudience(
+  audience: string,
+  groupId: string,
+  manualRaw: string,
+  lenient = false,
+): Promise<BroadcastAudience> {
+  let audienceType = "ALL";
+  let audienceLabel = "全部會員";
+  let audienceGroupId: string | null = null;
+  let manualRows: { email: string; name?: string }[] | undefined;
+
+  if (audience === "group") {
+    audienceType = "GROUP";
+    const group = groupId
+      ? await prisma.mailGroup.findUnique({
+          where: { id: groupId },
+          include: { _count: { select: { members: true } } },
+        })
+      : null;
+    if (!group) {
+      if (!lenient)
+        return {
+          error: "請選擇名單群組",
+          audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
+        };
+      audienceLabel = "群組：未選擇";
+    } else {
+      if (!lenient && group._count.members === 0)
+        return {
+          error: `群組「${group.name}」沒有成員，請先到名單群組加入名單`,
+          audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
+        };
+      audienceGroupId = group.id;
+      audienceLabel = `群組：${group.name}`;
+    }
+  } else if (audience === "manual") {
+    audienceType = "MANUAL";
+    const seen = new Set<string>();
+    manualRows = parseRows(manualRaw)
+      .filter((r) => EMAIL_RE.test(r.email))
+      .filter((r) => !seen.has(r.email) && seen.add(r.email))
+      .map((r) => (r.name ? { email: r.email, name: r.name } : { email: r.email }));
+    if (!lenient && manualRows.length === 0)
+      return {
+        error: "手動名單沒有任何合法的 email",
+        audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
+      };
+    audienceLabel = `手動名單 ${manualRows.length} 筆`;
+  }
+
+  return {
+    audienceData: {
+      audienceType,
+      groupId: audienceGroupId,
+      audienceLabel,
+      manualRows: manualRows ?? undefined,
+    },
+  };
+}
+
+/** 群發通知：mode=test 只寄給操作的管理員本人；mode=draft 存草稿；mode=all 正式群發並留紀錄。
  *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
 export async function sendBroadcastAction(
   _prev: BroadcastState,
@@ -631,7 +704,36 @@ export async function sendBroadcastAction(
   const manualRaw = String(formData.get("manualList") ?? "");
 
   if (!subject) return { error: "請填寫主旨" };
-  if (!body) return { error: "請填寫內文" };
+  if (mode !== "draft" && !body) return { error: "請填寫內文" };
+
+  // 存草稿：只驗主旨，發送對象寬鬆解析（之後編輯再補）
+  if (mode === "draft") {
+    const { audienceData } = await resolveBroadcastAudience(
+      audience,
+      groupId,
+      manualRaw,
+      true,
+    );
+    const scheduledAt = scheduledAtRaw
+      ? new Date(`${scheduledAtRaw}:00+08:00`)
+      : null;
+    const record = await prisma.emailBroadcast.create({
+      data: {
+        subject,
+        body,
+        courseId: courseId || null,
+        status: "DRAFT",
+        scheduledAt: scheduledAt && !isNaN(scheduledAt.getTime()) ? scheduledAt : null,
+        sentBy: admin?.email ?? null,
+        ...audienceData,
+      },
+    });
+    revalidatePath("/admin/broadcast");
+    return {
+      success: "草稿已儲存，可到下方寄送紀錄「繼續編輯」",
+      broadcastId: record.id,
+    };
+  }
 
   const course = courseId
     ? await prisma.course.findUnique({
@@ -646,12 +748,16 @@ export async function sendBroadcastAction(
       })
     : null;
 
-  // 測試模式：只寄給自己（發送對象與排程時間不影響測試信）
+  // 測試模式：只寄給自己（發送對象與排程時間不影響測試信；不過濾退訂名單，版面所見即所寄）
   if (mode === "test") {
     if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
     const me = { email: admin.email, name: admin.displayName ?? undefined };
     const r = await sendBroadcast([me], `[測試] ${subject}`, (rcpt) =>
-      buildBroadcastHtml(applyMergeTags(body, rcpt), course),
+      buildBroadcastHtml(
+        applyMergeTags(body, rcpt),
+        course,
+        buildUnsubscribePageUrl(rcpt.email),
+      ),
     );
     return r.failed > 0
       ? { error: `測試信寄送失敗：${r.error ?? "未知錯誤"}` }
@@ -659,40 +765,11 @@ export async function sendBroadcastAction(
   }
 
   // ── 解析發送對象 ──
-  let audienceType = "ALL";
-  let audienceLabel = "全部會員";
-  let audienceGroupId: string | null = null;
-  let manualRows: { email: string; name?: string }[] | undefined;
-
-  if (audience === "group") {
-    const group = await prisma.mailGroup.findUnique({
-      where: { id: groupId },
-      include: { _count: { select: { members: true } } },
-    });
-    if (!group) return { error: "請選擇名單群組" };
-    if (group._count.members === 0)
-      return { error: `群組「${group.name}」沒有成員，請先到名單群組加入名單` };
-    audienceType = "GROUP";
-    audienceGroupId = group.id;
-    audienceLabel = `群組：${group.name}`;
-  } else if (audience === "manual") {
-    const seen = new Set<string>();
-    manualRows = parseRows(manualRaw)
-      .filter((r) => EMAIL_RE.test(r.email))
-      .filter((r) => !seen.has(r.email) && seen.add(r.email))
-      .map((r) => (r.name ? { email: r.email, name: r.name } : { email: r.email }));
-    if (manualRows.length === 0)
-      return { error: "手動名單沒有任何合法的 email" };
-    audienceLabel = `手動名單 ${manualRows.length} 筆`;
-    audienceType = "MANUAL";
-  }
-
-  const audienceData = {
-    audienceType,
-    groupId: audienceGroupId,
-    audienceLabel,
-    manualRows: manualRows ?? undefined,
-  };
+  const resolved = await resolveBroadcastAudience(audience, groupId, manualRaw);
+  if (resolved.error) return { error: resolved.error };
+  const { audienceData } = resolved;
+  const audienceLabel = audienceData.audienceLabel;
+  const manualRows = audienceData.manualRows;
 
   // 排程模式：datetime-local 值無時區，固定以台灣時間解讀
   if (scheduledAtRaw) {
@@ -764,6 +841,160 @@ export async function cancelScheduledBroadcast(id: string) {
     data: { status: "CANCELED" },
   });
   revalidatePath("/admin/broadcast");
+}
+
+/** 刪除草稿（只動 DRAFT 狀態） */
+export async function deleteDraftBroadcastAction(id: string) {
+  await requireEditor();
+  await prisma.emailBroadcast.deleteMany({
+    where: { id, status: "DRAFT" },
+  });
+  revalidatePath("/admin/broadcast");
+}
+
+/** 編輯排程/草稿後送出（/admin/broadcast/[id]/edit）：
+ *  mode=test 寄測試信；mode=draft 存回草稿；mode=all 轉排程或立即寄出。
+ *  一律以 updateMany where status in [SCHEDULED, DRAFT] 守衛——
+ *  count=0 代表狀態已變（可能已被 cron 認領寄出），不覆寫 */
+export async function updateBroadcastAction(
+  id: string,
+  _prev: BroadcastState,
+  formData: FormData,
+): Promise<BroadcastState> {
+  await requireEditor();
+  const admin = await getAuthUser();
+
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const courseId = String(formData.get("courseId") ?? "");
+  const mode = String(formData.get("mode") ?? "test");
+  const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
+  const audience = String(formData.get("audience") ?? "all");
+  const groupId = String(formData.get("groupId") ?? "");
+  const manualRaw = String(formData.get("manualList") ?? "");
+
+  if (!subject) return { error: "請填寫主旨" };
+  if (mode !== "draft" && !body) return { error: "請填寫內文" };
+
+  const course = courseId
+    ? await prisma.course.findUnique({
+        where: { id: courseId },
+        select: { title: true, slug: true, coverImage: true, price: true, listPrice: true },
+      })
+    : null;
+
+  // 測試信：不動紀錄
+  if (mode === "test") {
+    if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
+    const me = { email: admin.email, name: admin.displayName ?? undefined };
+    const r = await sendBroadcast([me], `[測試] ${subject}`, (rcpt) =>
+      buildBroadcastHtml(
+        applyMergeTags(body, rcpt),
+        course,
+        buildUnsubscribePageUrl(rcpt.email),
+      ),
+    );
+    return r.failed > 0
+      ? { error: `測試信寄送失敗：${r.error ?? "未知錯誤"}` }
+      : { success: `測試信已寄到 ${admin.email}，請收信確認版面` };
+  }
+
+  const editableWhere = { id, status: { in: ["SCHEDULED", "DRAFT"] } };
+  const staleMsg = "這筆紀錄的狀態已變更（可能已寄出或被取消），請回寄送紀錄確認";
+
+  // 存回草稿
+  if (mode === "draft") {
+    const { audienceData } = await resolveBroadcastAudience(
+      audience,
+      groupId,
+      manualRaw,
+      true,
+    );
+    const scheduledAt = scheduledAtRaw
+      ? new Date(`${scheduledAtRaw}:00+08:00`)
+      : null;
+    const updated = await prisma.emailBroadcast.updateMany({
+      where: editableWhere,
+      data: {
+        subject,
+        body,
+        courseId: courseId || null,
+        status: "DRAFT",
+        scheduledAt: scheduledAt && !isNaN(scheduledAt.getTime()) ? scheduledAt : null,
+        sentBy: admin?.email ?? null,
+        ...audienceData,
+      },
+    });
+    if (updated.count === 0) return { error: staleMsg };
+    revalidatePath("/admin/broadcast");
+    return { success: "草稿已更新", broadcastId: id };
+  }
+
+  // 正式：解析發送對象（嚴格）
+  const resolved = await resolveBroadcastAudience(audience, groupId, manualRaw);
+  if (resolved.error) return { error: resolved.error };
+  const { audienceData } = resolved;
+
+  // 轉排程
+  if (scheduledAtRaw) {
+    const scheduledAt = new Date(`${scheduledAtRaw}:00+08:00`);
+    if (isNaN(scheduledAt.getTime())) return { error: "發送時間格式不正確" };
+    if (scheduledAt.getTime() < Date.now() + 60_000) {
+      return { error: "發送時間需晚於現在（要立即寄出請清空發送時間）" };
+    }
+    const updated = await prisma.emailBroadcast.updateMany({
+      where: editableWhere,
+      data: {
+        subject,
+        body,
+        courseId: courseId || null,
+        status: "SCHEDULED",
+        scheduledAt,
+        sentBy: admin?.email ?? null,
+        ...audienceData,
+      },
+    });
+    if (updated.count === 0) return { error: staleMsg };
+    revalidatePath("/admin/broadcast");
+    const shown = scheduledAt.toLocaleString("zh-TW", {
+      timeZone: "Asia/Taipei",
+      hour12: false,
+    });
+    return {
+      success: `已更新排程：${shown} 寄給「${audienceData.audienceLabel}」`,
+      broadcastId: id,
+    };
+  }
+
+  // 立即寄出：原子認領（防與 cron 撞）後執行
+  const claimed = await prisma.emailBroadcast.updateMany({
+    where: editableWhere,
+    data: {
+      subject,
+      body,
+      courseId: courseId || null,
+      status: "SENDING",
+      claimedAt: new Date(),
+      scheduledAt: null,
+      sentBy: admin?.email ?? null,
+      ...audienceData,
+    },
+  });
+  if (claimed.count === 0) return { error: staleMsg };
+  const r = await executeBroadcast(id);
+
+  revalidatePath("/admin/broadcast");
+  if (r.sent === 0) return { error: `群發失敗：${r.error ?? "未知錯誤"}` };
+  if (r.failed > 0) {
+    return {
+      error: `寄送完成但有失敗：成功 ${r.sent}、失敗 ${r.failed}（${r.error ?? ""}）`,
+      broadcastId: id,
+    };
+  }
+  return {
+    success: `群發完成！已寄給 ${r.sent} 位收件人（${audienceData.audienceLabel}）`,
+    broadcastId: id,
+  };
 }
 
 /** 補寄失敗者：只對原紀錄 failedRecipients 名單重寄。

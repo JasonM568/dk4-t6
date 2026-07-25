@@ -1,5 +1,7 @@
 import "server-only";
 
+import { buildOneClickUnsubscribeUrl } from "./unsubscribe";
+
 // 群發通知：走 Resend API（與 Supabase Auth 信共用同一個 Resend 帳號/網域）。
 // 需要環境變數：
 //   RESEND_API_KEY  — Resend 的 API Key（re_ 開頭）
@@ -41,10 +43,12 @@ function esc(s: string): string {
     .replaceAll('"', "&quot;");
 }
 
-/** 希望學院品牌信 HTML（與重置密碼信同視覺）；內文純文字自動分段 */
+/** 希望學院品牌信 HTML（與重置密碼信同視覺）；內文純文字自動分段。
+ *  unsubscribeUrl 有值時 footer 加「取消訂閱」連結 */
 export function buildBroadcastHtml(
   bodyText: string,
   course: BroadcastCourse | null,
+  unsubscribeUrl?: string | null,
 ): string {
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
   const paragraphs = bodyText
@@ -106,7 +110,11 @@ export function buildBroadcastHtml(
               <td align="center" style="background-color: #faf7f0; border-top: 1px solid #ecdfc2; padding: 18px 40px;">
                 <p style="margin: 0; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 12px; line-height: 1.8; color: #999999;">
                   此信由希望學院學習平台寄出 · <a href="${base}" style="color: #999999;">course.huangxi.info</a><br />
-                  &copy; 希望學院 HOPE Academy
+                  &copy; 希望學院 HOPE Academy${
+                    unsubscribeUrl
+                      ? `<br />不想再收到這類信件？<a href="${esc(unsubscribeUrl)}" style="color: #999999; text-decoration: underline;">取消訂閱</a>`
+                      : ""
+                  }
                 </p>
               </td>
             </tr>
@@ -180,11 +188,17 @@ async function postBatchWithRetry(
   return { networkError: lastNetworkError || "連線失敗" };
 }
 
+export type SendOptions = {
+  broadcastId?: string; // 有值時每封帶 tag，供 Resend webhook 事件回流對應群發紀錄
+  withUnsubscribe?: boolean; // 有值時每封帶 List-Unsubscribe one-click headers（RFC 8058）
+};
+
 /** 以 Resend batch API 寄送（每批 100 封）；html 逐封產生，支援每位收件人不同內容 */
 export async function sendBroadcast(
   recipients: Recipient[],
   subject: string,
   renderHtml: (r: Recipient) => string,
+  options?: SendOptions,
 ): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
@@ -224,7 +238,28 @@ export async function sendBroadcast(
     const res = await postBatchWithRetry(
       apiKey,
       JSON.stringify(
-        chunk.map((r) => ({ from, to: [r.email], subject, html: renderHtml(r) })),
+        chunk.map((r) => {
+          const oneClick = options?.withUnsubscribe
+            ? buildOneClickUnsubscribeUrl(r.email)
+            : null;
+          return {
+            from,
+            to: [r.email],
+            subject,
+            html: renderHtml(r),
+            ...(oneClick
+              ? {
+                  headers: {
+                    "List-Unsubscribe": `<${oneClick}>`,
+                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                  },
+                }
+              : {}),
+            ...(options?.broadcastId
+              ? { tags: [{ name: "broadcast_id", value: options.broadcastId }] }
+              : {}),
+          };
+        }),
       ),
     );
 

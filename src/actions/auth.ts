@@ -226,3 +226,33 @@ export async function logoutAction() {
   await supabase.auth.signOut();
   redirect("/");
 }
+
+// ───────────────────────── 電子報退訂（公開，不需登入）─────────────────────────
+
+/** 退訂電子報：服務端重驗 HMAC token（不能信 client），upsert 冪等 */
+export async function unsubscribeAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { verifyUnsubscribeToken, normalizeEmail } = await import(
+    "@/lib/email/unsubscribe"
+  );
+  const { prisma } = await import("@/lib/db");
+
+  const email = String(formData.get("email") ?? "");
+  const token = String(formData.get("token") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 500);
+
+  if (!verifyUnsubscribeToken(email, token)) {
+    return { error: "退訂連結無效，請使用信件中的「取消訂閱」連結" };
+  }
+
+  const normalized = normalizeEmail(email);
+  await prisma.mailUnsubscribe.upsert({
+    where: { email: normalized },
+    create: { email: normalized, reason: reason || null },
+    // 重複退訂：不動 source/createdAt，只補使用者這次填的原因
+    update: reason ? { reason } : {},
+  });
+  redirect("/unsubscribe?done=1");
+}

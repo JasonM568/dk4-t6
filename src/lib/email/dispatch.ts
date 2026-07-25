@@ -9,6 +9,7 @@ import {
   applyMergeTags,
   type Recipient,
 } from "./broadcast";
+import { buildUnsubscribePageUrl } from "./unsubscribe";
 
 // 要求 TLD 至少 2 個字母，防止 user@localhost. 或單字元 TLD 通過
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
@@ -34,38 +35,51 @@ export async function getBroadcastRecipients(): Promise<Recipient[]> {
 
 export type ManualRow = { email: string; name?: string };
 
-/** 依發送對象解析收件名單（寄出當下解析：群組取最新成員、全部會員含新加入者），帶姓名供變數替換 */
+/** 依發送對象解析收件名單（寄出當下解析：群組取最新成員、全部會員含新加入者），帶姓名供變數替換。
+ *  三路匯合後統一過濾退訂名單（MailUnsubscribe）；excludedCount = 被排除的退訂人數 */
 async function resolveRecipients(record: {
   audienceType: string;
   groupId: string | null;
   manualRows: unknown;
-}): Promise<{ recipients: Recipient[]; error?: string }> {
+}): Promise<{ recipients: Recipient[]; excludedCount: number; error?: string }> {
+  let deduped: Recipient[] = [];
+  let emptyError = "";
+
   if (record.audienceType === "GROUP") {
-    if (!record.groupId) return { recipients: [], error: "缺少名單群組" };
+    if (!record.groupId)
+      return { recipients: [], excludedCount: 0, error: "缺少名單群組" };
     const members = await prisma.mailGroupMember.findMany({
       where: { groupId: record.groupId },
       select: { email: true, name: true },
     });
-    if (members.length === 0)
-      return { recipients: [], error: "名單群組不存在或沒有成員" };
-    return {
-      recipients: dedupeByEmail(
-        members.map((m) => ({ email: m.email, name: m.name ?? undefined })),
-      ),
-    };
+    deduped = dedupeByEmail(
+      members.map((m) => ({ email: m.email, name: m.name ?? undefined })),
+    );
+    emptyError = "名單群組不存在或沒有成員";
+  } else if (record.audienceType === "MANUAL") {
+    deduped = dedupeByEmail((record.manualRows ?? []) as ManualRow[]);
+    emptyError = "手動名單是空的";
+  } else {
+    // ALL：全部會員
+    deduped = await getBroadcastRecipients();
+    emptyError = "找不到任何會員 email";
   }
-  if (record.audienceType === "MANUAL") {
-    const rows = (record.manualRows ?? []) as ManualRow[];
-    const recipients = dedupeByEmail(rows);
-    return recipients.length > 0
-      ? { recipients }
-      : { recipients: [], error: "手動名單是空的" };
-  }
-  // ALL：全部會員
-  const recipients = await getBroadcastRecipients();
-  return recipients.length > 0
-    ? { recipients }
-    : { recipients: [], error: "找不到任何會員 email" };
+
+  if (deduped.length === 0)
+    return { recipients: [], excludedCount: 0, error: emptyError };
+
+  // 過濾退訂名單（email 已於 dedupeByEmail 統一小寫）；測試信不經此路，不受影響
+  const unsub = await prisma.mailUnsubscribe.findMany({
+    where: { email: { in: deduped.map((r) => r.email) } },
+    select: { email: true },
+  });
+  const unsubSet = new Set(unsub.map((u) => u.email));
+  const recipients = deduped.filter((r) => !unsubSet.has(r.email));
+  const excludedCount = deduped.length - recipients.length;
+
+  if (recipients.length === 0)
+    return { recipients: [], excludedCount, error: "名單全數已退訂，無人可寄" };
+  return { recipients, excludedCount };
 }
 
 /** 依群發紀錄內容實際寄出，並回寫結果與名單快照（立即寄送與排程 cron 共用） */
@@ -89,12 +103,24 @@ export async function executeBroadcast(broadcastId: string) {
       })
     : null;
 
-  const { recipients, error: resolveError } = await resolveRecipients(record);
-  // 逐封產生 HTML：先把 {email}/{name} 替換成該收件人的值，再套品牌信版型
+  const {
+    recipients,
+    excludedCount,
+    error: resolveError,
+  } = await resolveRecipients(record);
+  // 逐封產生 HTML：先把 {email}/{name} 替換成該收件人的值，再套品牌信版型（footer 帶個人退訂連結）
   const r =
     recipients.length > 0
-      ? await sendBroadcast(recipients, record.subject, (rcpt) =>
-          buildBroadcastHtml(applyMergeTags(record.body, rcpt), course),
+      ? await sendBroadcast(
+          recipients,
+          record.subject,
+          (rcpt) =>
+            buildBroadcastHtml(
+              applyMergeTags(record.body, rcpt),
+              course,
+              buildUnsubscribePageUrl(rcpt.email),
+            ),
+          { broadcastId: record.id, withUnsubscribe: true },
         )
       : {
           sent: 0,
@@ -110,6 +136,7 @@ export async function executeBroadcast(broadcastId: string) {
       failedCount: r.failed,
       status: r.sent > 0 ? "SENT" : "FAILED",
       sentAt: new Date(),
+      excludedCount, // 因退訂被排除的人數（明細頁顯示）
       recipients: recipients.map((rcpt) => rcpt.email), // 快照（email 字串）：之後可存成名單群組
       // 逐筆失敗名單（含原因），供明細頁顯示與「補寄失敗者」使用；全成功設 null
       failedRecipients:

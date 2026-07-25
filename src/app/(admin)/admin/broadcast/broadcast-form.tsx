@@ -11,19 +11,31 @@ import { SubmitButton } from "@/components/admin/submit-button";
 
 type GroupOption = { id: string; name: string; memberCount: number };
 
+export type BroadcastFormDefaults = {
+  subject: string;
+  body: string;
+  courseId: string;
+  audience: "all" | "group" | "manual";
+  groupId: string;
+  manualList: string;
+  scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
+};
+
 type BroadcastFormProps = {
   courses: { id: string; title: string }[];
   groups: GroupOption[];
   memberCount: number;
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
+  defaultValues?: BroadcastFormDefaults; // 編輯排程/草稿時帶入
 };
 
-/** 電子報群發表單：選發送對象（全部會員/名單群組/手動名單）→ 寄測試信 → 正式群發/排程 */
+/** 電子報群發表單：選發送對象（全部會員/名單群組/手動名單）→ 寄測試信 → 正式群發/排程/存草稿 */
 export function BroadcastForm({
   courses,
   groups,
   memberCount,
   sendAction,
+  defaultValues,
 }: BroadcastFormProps) {
   const [state, formAction, pending] = useActionState<BroadcastState, FormData>(
     sendAction,
@@ -31,7 +43,9 @@ export function BroadcastForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const [audience, setAudience] = useState<"all" | "group" | "manual">("all");
+  const [audience, setAudience] = useState<"all" | "group" | "manual">(
+    defaultValues?.audience ?? "all",
+  );
 
   // 把變數插入內文游標處（textarea 為非受控，直接改 value 即可送出）
   const insertVar = (token: string) => {
@@ -64,6 +78,7 @@ export function BroadcastForm({
           <input
             name="subject"
             required
+            defaultValue={defaultValues?.subject}
             placeholder="例：新課程上架｜內在豐盛工作坊開放報名"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
@@ -94,6 +109,7 @@ export function BroadcastForm({
             ref={bodyRef}
             name="body"
             required
+            defaultValue={defaultValues?.body}
             rows={8}
             placeholder={"親愛的學員您好：\n\n希望學院推出新課程⋯⋯\n\n您的帳號：{email}\n預設密碼：a12345\n\n（空一行 = 分段）"}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
@@ -113,7 +129,7 @@ export function BroadcastForm({
           </label>
           <select
             name="courseId"
-            defaultValue=""
+            defaultValue={defaultValues?.courseId ?? ""}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           >
             <option value="">不帶課程</option>
@@ -165,7 +181,7 @@ export function BroadcastForm({
               <select
                 name="groupId"
                 required
-                defaultValue=""
+                defaultValue={defaultValues?.groupId ?? ""}
                 className="ml-6 w-80 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
               >
                 <option value="" disabled>
@@ -193,6 +209,7 @@ export function BroadcastForm({
                 <textarea
                   name="manualList"
                   required
+                  defaultValue={defaultValues?.manualList}
                   rows={6}
                   placeholder={"student1@example.com,王小明\nstudent2@example.com\n（一行一筆，可附姓名）"}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
@@ -212,6 +229,7 @@ export function BroadcastForm({
           <input
             name="scheduledAt"
             type="datetime-local"
+            defaultValue={defaultValues?.scheduledAt}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
           <p className="mt-1 text-xs text-gray-400">
@@ -251,6 +269,17 @@ export function BroadcastForm({
             className="rounded-lg bg-red-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {pending ? "處理中…" : "② 正式群發"}
+          </button>
+          <button
+            type="submit"
+            name="mode"
+            value="draft"
+            formNoValidate
+            disabled={pending}
+            className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+            title="只需填主旨即可儲存，之後可在寄送紀錄繼續編輯"
+          >
+            {pending ? "處理中…" : "存草稿"}
           </button>
         </div>
 

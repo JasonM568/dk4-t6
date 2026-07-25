@@ -2,7 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
-import { buildBroadcastHtml, type FailedRecipient } from "@/lib/email/broadcast";
+import {
+  applyMergeTags,
+  buildBroadcastHtml,
+  type FailedRecipient,
+} from "@/lib/email/broadcast";
 import { ResendFailedButton } from "./resend-failed-button";
 
 export const metadata = { title: "寄送內容 — Email群發" };
@@ -13,6 +17,7 @@ export const maxDuration = 300;
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  DRAFT: { label: "草稿", cls: "bg-gray-100 text-gray-600" },
   SCHEDULED: { label: "排程中", cls: "bg-amber-100 text-amber-700" },
   SENDING: { label: "寄送中", cls: "bg-blue-100 text-blue-700" },
   SENT: { label: "已寄出", cls: "bg-green-100 text-green-700" },
@@ -31,6 +36,16 @@ export default async function BroadcastDetailPage({
   const record = await prisma.emailBroadcast.findUnique({ where: { id } });
   if (!record) notFound();
 
+  // 成效統計（Resend webhook 回流；唯一人數）
+  const eventGroups = await prisma.broadcastEvent.groupBy({
+    by: ["type"],
+    where: { broadcastId: id },
+    _count: true,
+  });
+  const stats = Object.fromEntries(eventGroups.map((g) => [g.type, g._count]));
+  const pct = (n: number) =>
+    record.sentCount > 0 ? `（${Math.round((n / record.sentCount) * 100)}%）` : "";
+
   // 信中帶課程連結時，明細頁也要重現課程卡
   const course = record.courseId
     ? await prisma.course.findUnique({
@@ -45,10 +60,17 @@ export default async function BroadcastDetailPage({
       })
     : null;
 
-  // 用與實際寄送同一支函式產生 HTML → iframe 所見即所寄
-  const html = buildBroadcastHtml(record.body, course);
+  // 用與實際寄送同一支函式產生 HTML → iframe 所見即所寄；變數以範例收件人帶入
+  const sampleRecipient = { email: "example@example.com", name: "王小明" };
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
+  const html = buildBroadcastHtml(
+    applyMergeTags(record.body, sampleRecipient),
+    course,
+    `${base}/unsubscribe`,
+  );
   const badge = STATUS_BADGE[record.status] ?? STATUS_BADGE.SENT;
-  const isScheduled = record.status === "SCHEDULED";
+  const isScheduled = record.status === "SCHEDULED" || record.status === "DRAFT";
+  const isEditable = record.status === "SCHEDULED" || record.status === "DRAFT";
   const when = isScheduled ? record.scheduledAt : (record.sentAt ?? record.createdAt);
 
   // 逐筆失敗名單（Json 欄位窄化；比照 dispatch.ts 對 manualRows 的處理）
@@ -68,7 +90,17 @@ export default async function BroadcastDetailPage({
         ← 回 Email群發
       </Link>
 
-      <h1 className="mb-4 mt-2 text-2xl font-bold">{record.subject}</h1>
+      <div className="mb-4 mt-2 flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold">{record.subject}</h1>
+        {isEditable && (
+          <Link
+            href={`/admin/broadcast/${record.id}/edit`}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+          >
+            ✏️ 編輯
+          </Link>
+        )}
+      </div>
 
       {/* 寄送資訊 */}
       <dl className="mb-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-xl border border-gray-200 p-4 text-sm">
@@ -92,6 +124,29 @@ export default async function BroadcastDetailPage({
               <span className="text-green-600">{record.sentCount}</span>
               {" / "}
               <span className="text-red-600">{record.failedCount || 0}</span>
+              {record.excludedCount > 0 && (
+                <span className="ml-2 text-xs text-gray-400">
+                  已排除退訂 {record.excludedCount} 筆
+                </span>
+              )}
+            </dd>
+          </>
+        )}
+
+        {record.sentCount > 0 && (
+          <>
+            <dt className="text-gray-500">成效</dt>
+            <dd className="text-gray-700">
+              送達 {stats.DELIVERED ?? 0} · 開信 {stats.OPENED ?? 0}
+              {pct(stats.OPENED ?? 0)} · 點擊 {stats.CLICKED ?? 0}
+              {pct(stats.CLICKED ?? 0)} · 退信{" "}
+              <span className={stats.BOUNCED ? "text-red-600" : ""}>
+                {stats.BOUNCED ?? 0}
+              </span>
+              <span className="mt-0.5 block text-xs text-gray-400">
+                開信/點擊為唯一人數；需在 Resend 開啟 tracking 並設定 webhook
+                後的新寄送才有數據
+              </span>
             </dd>
           </>
         )}
@@ -152,10 +207,10 @@ export default async function BroadcastDetailPage({
       {/* 實際寄出的 email 樣式 */}
       <h2 className="mb-2 text-lg font-bold">寄出內容</h2>
       <p className="mb-2 text-xs text-gray-400">
-        以下為樣板；內文中的{" "}
+        以下以範例收件人（example@example.com／王小明）呈現；內文中的{" "}
         <span className="font-mono">{"{email}"}</span>／
         <span className="font-mono">{"{name}"}</span>{" "}
-        在實際寄出時會替換成各收件人的值。
+        與底部退訂連結，實際寄出時會替換成各收件人的值。
       </p>
       <iframe
         title="email 預覽"

@@ -5,6 +5,7 @@ import { countProfiles } from "@/lib/supabase/admin";
 import {
   sendBroadcastAction,
   cancelScheduledBroadcast,
+  deleteDraftBroadcastAction,
   saveBroadcastListToGroupAction,
 } from "@/actions/admin";
 import { BroadcastForm } from "./broadcast-form";
@@ -18,6 +19,7 @@ export const maxDuration = 300;
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  DRAFT: { label: "草稿", cls: "bg-gray-100 text-gray-600" },
   SCHEDULED: { label: "排程中", cls: "bg-amber-100 text-amber-700" },
   SENDING: { label: "寄送中", cls: "bg-blue-100 text-blue-700" },
   SENT: { label: "已寄出", cls: "bg-green-100 text-green-700" },
@@ -25,9 +27,18 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   FAILED: { label: "失敗", cls: "bg-red-100 text-red-700" },
 };
 
-export default async function BroadcastPage() {
+const PAGE_SIZE = 20;
+
+export default async function BroadcastPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   await pageGuardEditor();
-  const [courses, memberCount, history, groups] = await Promise.all([
+  const { page: pageRaw } = await searchParams;
+  const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
+
+  const [courses, memberCount, history, totalCount, groups] = await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true },
@@ -35,13 +46,33 @@ export default async function BroadcastPage() {
     countProfiles(),
     prisma.emailBroadcast.findMany({
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: PAGE_SIZE,
+      skip: (page - 1) * PAGE_SIZE,
     }),
+    prisma.emailBroadcast.count(),
     prisma.mailGroup.findMany({
       include: { _count: { select: { members: true } } },
       orderBy: { createdAt: "desc" },
     }),
   ]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // 本頁紀錄的開信/點擊統計（一次 groupBy 防 N+1）
+  const eventGroups = await prisma.broadcastEvent.groupBy({
+    by: ["broadcastId", "type"],
+    where: {
+      broadcastId: { in: history.map((h) => h.id) },
+      type: { in: ["OPENED", "CLICKED"] },
+    },
+    _count: true,
+  });
+  const eventStats = new Map<string, { opened: number; clicked: number }>();
+  for (const g of eventGroups) {
+    const s = eventStats.get(g.broadcastId) ?? { opened: 0, clicked: 0 };
+    if (g.type === "OPENED") s.opened = g._count;
+    if (g.type === "CLICKED") s.clicked = g._count;
+    eventStats.set(g.broadcastId, s);
+  }
 
   const groupOptions = groups.map((g) => ({
     id: g.id,
@@ -84,13 +115,14 @@ export default async function BroadcastPage() {
                 <th className="px-4 py-3">對象</th>
                 <th className="px-4 py-3">狀態</th>
                 <th className="px-4 py-3">成功/失敗</th>
+                <th className="px-4 py-3">開信/點擊</th>
                 <th className="px-4 py-3">名單</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {history.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-4 text-gray-400">
+                  <td colSpan={7} className="px-4 py-4 text-gray-400">
                     尚無寄送紀錄
                   </td>
                 </tr>
@@ -141,7 +173,7 @@ export default async function BroadcastPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {h.status === "SCHEDULED" ? (
+                      {h.status === "SCHEDULED" || h.status === "DRAFT" ? (
                         "—"
                       ) : (
                         <>
@@ -153,16 +185,46 @@ export default async function BroadcastPage() {
                         </>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {h.sentCount > 0
+                        ? `${eventStats.get(h.id)?.opened ?? 0} / ${eventStats.get(h.id)?.clicked ?? 0}`
+                        : "—"}
+                    </td>
                     <td className="px-4 py-3">
-                      {h.status === "SCHEDULED" ? (
-                        <form action={cancelScheduledBroadcast.bind(null, h.id)}>
-                          <SubmitButton
-                            pendingText="取消中…"
-                            className="text-sm text-red-600 hover:underline"
+                      {h.status === "DRAFT" ? (
+                        <span className="flex items-center gap-3">
+                          <Link
+                            href={`/admin/broadcast/${h.id}/edit`}
+                            className="text-sm text-indigo-600 hover:underline"
                           >
-                            取消排程
-                          </SubmitButton>
-                        </form>
+                            繼續編輯
+                          </Link>
+                          <form action={deleteDraftBroadcastAction.bind(null, h.id)}>
+                            <SubmitButton
+                              pendingText="刪除中…"
+                              className="text-sm text-red-600 hover:underline"
+                            >
+                              刪除
+                            </SubmitButton>
+                          </form>
+                        </span>
+                      ) : h.status === "SCHEDULED" ? (
+                        <span className="flex items-center gap-3">
+                          <Link
+                            href={`/admin/broadcast/${h.id}/edit`}
+                            className="text-sm text-indigo-600 hover:underline"
+                          >
+                            編輯
+                          </Link>
+                          <form action={cancelScheduledBroadcast.bind(null, h.id)}>
+                            <SubmitButton
+                              pendingText="取消中…"
+                              className="text-sm text-red-600 hover:underline"
+                            >
+                              取消排程
+                            </SubmitButton>
+                          </form>
+                        </span>
                       ) : listCount > 0 ? (
                         <details>
                           <summary className="cursor-pointer text-sm text-indigo-600 hover:underline">
@@ -215,6 +277,33 @@ export default async function BroadcastPage() {
         <p className="mt-2 text-xs text-gray-400">
           「存入群組」會把該次寄送的名單加進群組（填新群組名稱或選既有群組，重複 email 自動略過）
         </p>
+        {totalPages > 1 && (
+          <div className="mt-3 flex items-center justify-center gap-4 text-sm">
+            {page > 1 ? (
+              <Link
+                href={`/admin/broadcast?page=${page - 1}`}
+                className="text-indigo-600 hover:underline"
+              >
+                ← 上一頁
+              </Link>
+            ) : (
+              <span className="text-gray-300">← 上一頁</span>
+            )}
+            <span className="text-gray-500">
+              第 {page} / {totalPages} 頁（共 {totalCount} 筆）
+            </span>
+            {page < totalPages ? (
+              <Link
+                href={`/admin/broadcast?page=${page + 1}`}
+                className="text-indigo-600 hover:underline"
+              >
+                下一頁 →
+              </Link>
+            ) : (
+              <span className="text-gray-300">下一頁 →</span>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );

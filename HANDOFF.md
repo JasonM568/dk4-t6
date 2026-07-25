@@ -138,6 +138,16 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - 📋 **470 筆群發 SOP**：CSV 匯入名單群組 → 測試寄送給自己 → 正式群發 → 明細頁看失敗名單一鍵補寄 → 剩餘真退信（打錯/停用信箱）輸出走 LINE 群個案催辦。Resend 已升級付費方案；群發當天若逢註冊潮（Auth 信共用額度）錯開時段較穩
 - ⏳ 待正式站驗收：部署後用含假 email 的手動名單實測一次失敗→補寄流程（本機只驗到 action 以下的層，UI 送出鏈路要在正式站點一次）
 
+**2026-07-25 深夜（電子報缺口補齊 Phase A：退訂/成效追蹤/webhook/草稿/排程編輯/分頁）**
+- [x] **退訂機制**：`MailUnsubscribe` 表（email PK、source USER/BOUNCE/COMPLAINT）+ HMAC token（`src/lib/email/unsubscribe.ts`，UNSUBSCRIBE_SECRET）+ 公開退訂頁 `/unsubscribe`（確認按鈕+選填原因，冪等）+ RFC 8058 one-click（`/api/unsubscribe` POST + List-Unsubscribe headers）+ 信 footer 逐人退訂連結 + `resolveRecipients` 三路匯合統一過濾（`excludedCount` 回寫顯示「已排除退訂 N 筆」）；測試信不過濾
+- [x] **開信/點擊/退信回流**：每封帶 `tags: broadcast_id` → `/api/webhooks/resend`（手動 svix 驗簽零依賴：HMAC+timingSafeEqual+timestamp ±5min；雙 tags shape 容錯）→ `BroadcastEvent` 表（唯一鍵天然去重=唯一開信/點擊）；bounced/complained 自動進退訂表；明細頁成效列（送達/開信%/點擊%/退信）、列表頁開信/點擊欄（groupBy 防 N+1）
+- [x] **四小項**：排程/草稿編輯頁 `/admin/broadcast/[id]/edit`（BroadcastForm defaultValues + `updateBroadcastAction` updateMany 狀態守衛防 cron 撞寫）；寄送紀錄分頁（?page=，每頁 20）；草稿（status DRAFT、存草稿鈕 formNoValidate 只驗主旨、繼續編輯/刪除、cron 不撈）；明細頁預覽套範例變數（example@example.com/王小明）
+- [x] 本機驗證全過：退訂頁正確/壞 token、one-click 200/400/冪等、cron 過濾退訂者（excluded=1、快照不含）、草稿不被 cron 撈、webhook 七情境（雙 shape/重放冪等/bounce 進退訂表/壞簽 401/過期 401/無 tags 忽略）
+- ⚠️ **部署後手動步驟（退訂+成效追蹤要生效必做）**：
+  1. Vercel env 加 `UNSUBSCRIBE_SECRET`（本機 .env 已產，同值複製）→ 沒設信件就不含退訂連結（不炸）
+  2. Resend Dashboard → Domains → 開 **Open/Click Tracking**
+  3. Resend Dashboard → Webhooks → Add `https://course.huangxi.info/api/webhooks/resend`，勾 delivered/opened/clicked/bounced/complained → 複製 signing secret → Vercel env `RESEND_WEBHOOK_SECRET` → redeploy
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）

@@ -104,8 +104,29 @@ model EmailBroadcast {
 
   failedRecipients Json? // 逐筆失敗名單 [{email,name?,reason}]；補寄後更新為「仍失敗子集」，全成功設 null
   resendOfId       String? // 此紀錄若為「補寄失敗者」，記來源群發紀錄 id（軟連結不加 FK，與 groupId 慣例一致）
+  excludedCount    Int     @default(0) // 本次寄送因退訂被排除的人數（明細頁顯示用）
 
   createdAt DateTime @default(now())
+}
+
+// 電子報退訂名單：寄送前統一過濾（resolveRecipients），測試信不過濾
+model MailUnsubscribe {
+  email     String   @id // 存入前一律 toLowerCase().trim()
+  reason    String?
+  source    String   @default("USER") // USER（自行退訂）| BOUNCE（退信）| COMPLAINT（投訴）
+  createdAt DateTime @default(now())
+}
+
+// 群發成效事件（Resend webhook 回流）；唯一鍵 = 同一群發同一人同一事件只記一次（唯一開信/點擊計數）
+model BroadcastEvent {
+  id          String   @id @default(cuid())
+  broadcastId String // 軟連結（與 groupId/resendOfId 慣例一致，不加 FK）
+  email       String
+  type        String // DELIVERED | OPENED | CLICKED | BOUNCED | COMPLAINED
+  createdAt   DateTime @default(now())
+
+  @@unique([broadcastId, email, type])
+  @@index([broadcastId])
 }
 
 // 電子報名單群組
