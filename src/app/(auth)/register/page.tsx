@@ -94,14 +94,17 @@ function RegisterForm() {
         {invite && (
           <div>
             <label className="mb-1 block text-sm font-medium">專區邀請碼</label>
+            {/* 防呆：連結帶入的邀請碼鎖定唯讀——曾有學員誤改/清空欄位，註冊後進不了專區 */}
             <input
               name="invite"
               type="text"
-              defaultValue={invite}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono uppercase tracking-widest outline-none focus:border-black"
+              value={invite.trim().toUpperCase()}
+              readOnly
+              tabIndex={-1}
+              className="w-full cursor-default rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono uppercase tracking-widest text-gray-600 outline-none"
             />
             <p className="mt-1 text-xs text-gray-400">
-              邀請連結已自動帶入，無需修改
+              🔒 邀請碼已由連結自動帶入並鎖定，直接完成註冊即可
             </p>
           </div>
         )}
