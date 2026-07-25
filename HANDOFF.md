@@ -148,6 +148,8 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
   2. Resend Domains **Open/Click Tracking**：Jason 操作 Resend Dashboard（webhook 已建，tracking 開關若未開請順手確認）
   3. ~~`RESEND_WEBHOOK_SECRET`~~ Jason 建好 webhook 後提供 secret，已設進 Vercel + 本機 .env + redeploy，**正式站實測**：無簽章 POST → 401、真 secret 簽章 → 200（無 tags 不寫庫）
   → 下一封群發信起：footer 退訂連結生效、開信/點擊/退信數據開始回流明細頁
+  4. Click Tracking CNAME（`service68.huibang.com.tw → links1.resend-dns.com`，cyberdns.tw 後台）：初次驗證 failed 是 Resend 在 DNS 生效前搶跑，重按 Verify 即過
+  5. ✅ **2026-07-25 Jason 實測確認：明細頁已看到開信、點擊數據**——退訂/補寄/成效追蹤全鏈路正式驗收完畢，470 筆世華會群發基礎設施就緒
 
 **2026-07-25 深夜（Phase B：全站追蹤碼設定）**
 - [x] **追蹤碼三欄位**（GA4 / Meta Pixel / GTM）：存 SiteSetting（`tracking:*` keys，零 migration）；後台「分頁管理」下方新增設定區（僅 admin，`saveTrackingSettingsAction` 格式嚴格驗證——ID 會內插進 inline script，防呆防注入；清空=停用）
