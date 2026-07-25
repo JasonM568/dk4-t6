@@ -41,16 +41,29 @@ export default async function AdminMembersPage({
       }),
     ]);
 
-  // 邀請碼註冊來源：email → 專區名稱（source=INVITE 才算，取最早一筆＝註冊當下兌換的）
-  const inviteRows = await prisma.courseGroupMember.findMany({
-    where: { source: "INVITE" },
+  // 企業專區會籍：email → 所屬專區（含來源：邀請碼註冊 / 手動加入）
+  const zoneMemberRows = await prisma.courseGroupMember.findMany({
     orderBy: { createdAt: "asc" },
-    select: { email: true, group: { select: { name: true } } },
+    select: {
+      id: true,
+      email: true,
+      source: true,
+      group: { select: { id: true, name: true } },
+    },
   });
-  const inviteSourceByEmail = new Map<string, string>();
-  for (const r of inviteRows) {
-    if (!inviteSourceByEmail.has(r.email))
-      inviteSourceByEmail.set(r.email, r.group.name);
+  const zonesByEmail = new Map<
+    string,
+    { memberId: string; zoneId: string; zoneName: string; byInvite: boolean }[]
+  >();
+  for (const r of zoneMemberRows) {
+    const list = zonesByEmail.get(r.email) ?? [];
+    list.push({
+      memberId: r.id,
+      zoneId: r.group.id,
+      zoneName: r.group.name,
+      byInvite: r.source === "INVITE",
+    });
+    zonesByEmail.set(r.email, list);
   }
 
   // 課程清單：批次開通下拉 + 「查課程觀看名單」捷徑用
@@ -205,8 +218,7 @@ export default async function AdminMembersPage({
           coursesBought: m.coursesBought,
           initialPassword: m.initialPassword,
           lastSignInAt: m.lastSignInAt,
-          registerSource:
-            inviteSourceByEmail.get((m.email ?? "").toLowerCase()) ?? null,
+          zoneMemberships: zonesByEmail.get((m.email ?? "").toLowerCase()) ?? [],
         }))}
         groups={mailGroups.map((g) => ({ id: g.id, name: g.name }))}
       />

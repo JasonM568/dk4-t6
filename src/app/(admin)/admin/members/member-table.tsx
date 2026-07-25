@@ -8,6 +8,7 @@ import {
   addMembersToZoneBulkAction,
   grantCourseToMembersAction,
   resetMemberPasswordAction,
+  removeZoneMember,
   type AddToGroupState,
   type GrantState,
   type ZoneActionState,
@@ -24,7 +25,13 @@ export type MemberRow = {
   coursesBought: number;
   initialPassword: string | null;
   lastSignInAt: string | null;
-  registerSource: string | null; // 邀請碼註冊的來源專區名稱（如 世華會學習專區）
+  // 所屬企業專區（byInvite=true 表示邀請碼註冊取得的會籍）
+  zoneMemberships: {
+    memberId: string;
+    zoneId: string;
+    zoneName: string;
+    byInvite: boolean;
+  }[];
 };
 
 export function MemberTable({
@@ -242,7 +249,7 @@ export function MemberTable({
                 </th>
               )}
               <th className="px-4 py-3">會員</th>
-              <th className="px-4 py-3">註冊來源</th>
+              <th className="px-4 py-3">企業專區</th>
               <th className="px-4 py-3">最後登入</th>
               {showTier && <th className="px-4 py-3">等級</th>}
               <th className="px-4 py-3">累積消費</th>
@@ -294,15 +301,47 @@ export function MemberTable({
                   <div className="text-xs text-gray-400">{m.email}</div>
                 </td>
                 <td className="px-4 py-3">
-                  {m.registerSource ? (
-                    <span
-                      className="inline-block max-w-36 truncate rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
-                      title={`邀請碼註冊：${m.registerSource}`}
-                    >
-                      {m.registerSource}
-                    </span>
-                  ) : (
+                  {m.zoneMemberships.length === 0 ? (
                     <span className="text-gray-300">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {m.zoneMemberships.map((z) => (
+                        <span
+                          key={z.memberId}
+                          title={
+                            z.byInvite
+                              ? `邀請碼註冊：${z.zoneName}`
+                              : `管理員加入：${z.zoneName}`
+                          }
+                          className={`inline-flex max-w-40 items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+                            z.byInvite
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-indigo-100 text-indigo-700"
+                          }`}
+                        >
+                          <span className="truncate">{z.zoneName}</span>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              aria-label={`將 ${m.email} 移出 ${z.zoneName}`}
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    `確定將 ${m.displayName ?? m.email} 移出「${z.zoneName}」？\n移出後將看不到該專區頁面（已開通的課程觀看權限不受影響）。`,
+                                  )
+                                )
+                                  startReset(() =>
+                                    removeZoneMember(z.memberId, z.zoneId),
+                                  );
+                              }}
+                              className="shrink-0 opacity-50 hover:opacity-100"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </td>
                 <td className="px-4 py-3 text-gray-500">

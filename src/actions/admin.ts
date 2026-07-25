@@ -2094,6 +2094,7 @@ export async function removeZoneMember(memberId: string, zoneId: string) {
   await requireEditor();
   await prisma.courseGroupMember.deleteMany({ where: { id: memberId } });
   revalidatePath(`/admin/zones/${zoneId}`);
+  revalidatePath("/admin/members"); // 會員列表的專區徽章也會即時更新
 }
 
 // 邀請碼字元集：去除易混淆的 0/O/1/I
