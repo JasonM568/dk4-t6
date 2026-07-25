@@ -661,7 +661,8 @@ async function resolveBroadcastAudience(
       audienceGroupId = group.id;
       audienceLabel = `群組：${group.name}`;
     }
-  } else if (audience === "manual") {
+  } else if (audience === "manual" || audience === "members") {
+    // members = 從會員清單勾選；名單同樣走 MANUAL 流程（寄送/明細/補寄/存群組共用）
     audienceType = "MANUAL";
     const seen = new Set<string>();
     manualRows = parseRows(manualRaw)
@@ -670,10 +671,13 @@ async function resolveBroadcastAudience(
       .map((r) => (r.name ? { email: r.email, name: r.name } : { email: r.email }));
     if (!lenient && manualRows.length === 0)
       return {
-        error: "手動名單沒有任何合法的 email",
+        error:
+          audience === "members"
+            ? "請至少勾選一位會員"
+            : "手動名單沒有任何合法的 email",
         audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
       };
-    audienceLabel = `手動名單 ${manualRows.length} 筆`;
+    audienceLabel = `${audience === "members" ? "選取會員" : "手動名單"} ${manualRows.length} 筆`;
   }
 
   return {
@@ -700,9 +704,11 @@ export async function sendBroadcastAction(
   const courseId = String(formData.get("courseId") ?? "");
   const mode = String(formData.get("mode") ?? "test");
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
-  const audience = String(formData.get("audience") ?? "all"); // all | group | manual
+  const audience = String(formData.get("audience") ?? "all"); // all | group | manual | members
   const groupId = String(formData.get("groupId") ?? "");
-  const manualRaw = String(formData.get("manualList") ?? "");
+  const manualRaw = String(
+    formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
+  );
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
@@ -872,7 +878,9 @@ export async function updateBroadcastAction(
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const audience = String(formData.get("audience") ?? "all");
   const groupId = String(formData.get("groupId") ?? "");
-  const manualRaw = String(formData.get("manualList") ?? "");
+  const manualRaw = String(
+    formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
+  );
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };

@@ -10,6 +10,7 @@ import {
 import { SubmitButton } from "@/components/admin/submit-button";
 
 type GroupOption = { id: string; name: string; memberCount: number };
+type MemberOption = { email: string; name: string };
 
 export type BroadcastFormDefaults = {
   subject: string;
@@ -25,6 +26,7 @@ type BroadcastFormProps = {
   courses: { id: string; title: string }[];
   groups: GroupOption[];
   memberCount: number;
+  members: MemberOption[]; // 會員清單（「選取會員」勾選用）
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
   defaultValues?: BroadcastFormDefaults; // 編輯排程/草稿時帶入
 };
@@ -34,6 +36,7 @@ export function BroadcastForm({
   courses,
   groups,
   memberCount,
+  members,
   sendAction,
   defaultValues,
 }: BroadcastFormProps) {
@@ -43,9 +46,10 @@ export function BroadcastForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const [audience, setAudience] = useState<"all" | "group" | "manual">(
-    defaultValues?.audience ?? "all",
-  );
+  const [audience, setAudience] = useState<
+    "all" | "group" | "manual" | "members"
+  >(defaultValues?.audience ?? "all");
+  const [picked, setPicked] = useState<Map<string, MemberOption>>(new Map());
 
   // 把變數插入內文游標處（textarea 為非受控，直接改 value 即可送出）
   const insertVar = (token: string) => {
@@ -67,6 +71,7 @@ export function BroadcastForm({
       )?.selectedOptions[0]?.textContent;
       return `名單群組「${sel ?? ""}」`;
     }
+    if (audience === "members") return `勾選的 ${picked.size} 位會員`;
     return "手動貼入的名單";
   };
 
@@ -219,6 +224,22 @@ export function BroadcastForm({
                 </p>
               </div>
             )}
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="audience"
+                value="members"
+                checked={audience === "members"}
+                onChange={() => setAudience("members")}
+              />
+              選取會員
+              <span className="text-xs text-gray-400">
+                （從會員清單搜尋勾選，適合補寄或個案通知）
+              </span>
+            </label>
+            {audience === "members" && (
+              <MemberPicker members={members} picked={picked} setPicked={setPicked} />
+            )}
           </div>
         </fieldset>
 
@@ -304,6 +325,111 @@ export function BroadcastForm({
         />
       )}
     </>
+  );
+}
+
+const PICKER_MAX_SHOWN = 30;
+
+/** 選取會員：搜尋會員清單 → 勾選 → 以隱藏欄位（email,姓名 行格式）隨表單送出 */
+function MemberPicker({
+  members,
+  picked,
+  setPicked,
+}: {
+  members: MemberOption[];
+  picked: Map<string, MemberOption>;
+  setPicked: (next: Map<string, MemberOption>) => void;
+}) {
+  const [q, setQ] = useState("");
+  const keyword = q.trim().toLowerCase();
+  const matched = keyword
+    ? members.filter(
+        (m) =>
+          m.email.toLowerCase().includes(keyword) ||
+          m.name.toLowerCase().includes(keyword),
+      )
+    : members;
+  const shown = matched.slice(0, PICKER_MAX_SHOWN);
+
+  const toggle = (m: MemberOption) => {
+    const next = new Map(picked);
+    if (next.has(m.email)) next.delete(m.email);
+    else next.set(m.email, m);
+    setPicked(next);
+  };
+
+  return (
+    <div className="ml-6 space-y-2">
+      <input
+        type="hidden"
+        name="memberList"
+        value={[...picked.values()]
+          .map((m) => (m.name ? `${m.email},${m.name}` : m.email))
+          .join("\n")}
+      />
+
+      {picked.size > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-gray-500">已勾選 {picked.size} 位：</span>
+          {[...picked.values()].map((m) => (
+            <button
+              key={m.email}
+              type="button"
+              onClick={() => toggle(m)}
+              title="點擊移除"
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700 hover:bg-indigo-100"
+            >
+              {m.name || m.email}
+              <span className="text-indigo-400">✕</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPicked(new Map())}
+            className="text-xs text-gray-400 hover:text-red-600 hover:underline"
+          >
+            全部清除
+          </button>
+        </div>
+      )}
+
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="搜尋 email 或姓名…"
+        className="w-80 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+      />
+
+      <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+        {shown.length === 0 && (
+          <p className="px-3 py-3 text-sm text-gray-400">
+            沒有符合「{q.trim()}」的會員
+          </p>
+        )}
+        {shown.map((m) => (
+          <label
+            key={m.email}
+            className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            <input
+              type="checkbox"
+              checked={picked.has(m.email)}
+              onChange={() => toggle(m)}
+            />
+            <span className="font-mono">{m.email}</span>
+            {m.name && <span className="text-gray-500">{m.name}</span>}
+          </label>
+        ))}
+        {matched.length > PICKER_MAX_SHOWN && (
+          <p className="px-3 py-2 text-xs text-gray-400">
+            還有 {matched.length - PICKER_MAX_SHOWN} 筆未顯示，輸入關鍵字縮小範圍
+          </p>
+        )}
+      </div>
+      <p className="text-xs text-gray-400">
+        名單來源＝已註冊會員（同會員管理頁）；寄出後同樣可存成群組
+      </p>
+    </div>
   );
 }
 

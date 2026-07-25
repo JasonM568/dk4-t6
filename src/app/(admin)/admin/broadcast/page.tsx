@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
-import { countProfiles } from "@/lib/supabase/admin";
+import { countProfiles, listProfiles } from "@/lib/supabase/admin";
 import {
   sendBroadcastAction,
   cancelScheduledBroadcast,
@@ -38,7 +38,8 @@ export default async function BroadcastPage({
   const { page: pageRaw } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
-  const [courses, memberCount, history, totalCount, groups] = await Promise.all([
+  const [courses, memberCount, history, totalCount, groups, profiles] =
+    await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true },
@@ -54,8 +55,17 @@ export default async function BroadcastPage({
       include: { _count: { select: { members: true } } },
       orderBy: { createdAt: "desc" },
     }),
+    listProfiles(),
   ]);
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // 「選取會員」勾選用的會員清單
+  const memberOptions = profiles
+    .filter((p) => p.email)
+    .map((p) => ({
+      email: p.email!,
+      name: p.display_name ?? p.nickname ?? "",
+    }));
 
   // 本頁紀錄的開信/點擊統計（一次 groupBy 防 N+1）
   const eventGroups = await prisma.broadcastEvent.groupBy({
@@ -100,6 +110,7 @@ export default async function BroadcastPage({
         courses={courses}
         groups={groupOptions}
         memberCount={memberCount}
+        members={memberOptions}
         sendAction={sendBroadcastAction}
       />
 

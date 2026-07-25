@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
-import { countProfiles } from "@/lib/supabase/admin";
+import { countProfiles, listProfiles } from "@/lib/supabase/admin";
 import { updateBroadcastAction } from "@/actions/admin";
 import {
   BroadcastForm,
@@ -43,7 +43,7 @@ export default async function BroadcastEditPage({
     redirect(`/admin/broadcast/${id}`);
   }
 
-  const [courses, memberCount, groups] = await Promise.all([
+  const [courses, memberCount, groups, profiles] = await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true },
@@ -53,6 +53,7 @@ export default async function BroadcastEditPage({
       include: { _count: { select: { members: true } } },
       orderBy: { createdAt: "desc" },
     }),
+    listProfiles(),
   ]);
 
   // manualRows 還原成一行一筆「email,姓名」文字
@@ -98,6 +99,12 @@ export default async function BroadcastEditPage({
           memberCount: g._count.members,
         }))}
         memberCount={memberCount}
+        members={profiles
+          .filter((p) => p.email)
+          .map((p) => ({
+            email: p.email!,
+            name: p.display_name ?? p.nickname ?? "",
+          }))}
         sendAction={updateBroadcastAction.bind(null, id)}
         defaultValues={defaults}
       />
