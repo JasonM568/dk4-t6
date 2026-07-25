@@ -32,11 +32,20 @@ const PAGE_SIZE = 20;
 export default async function BroadcastPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; from?: string }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw } = await searchParams;
+  const { page: pageRaw, from } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
+
+  // 範本帶入：?from=<broadcastId> 把該封信的主旨/內文/關聯課程帶進表單
+  // （收件對象不帶，重寄時自行選擇，避免誤發整批名單）
+  const template = from
+    ? await prisma.emailBroadcast.findUnique({
+        where: { id: from },
+        select: { subject: true, body: true, courseId: true },
+      })
+    : null;
 
   const [courses, memberCount, history, totalCount, groups, profiles] =
     await Promise.all([
@@ -106,12 +115,36 @@ export default async function BroadcastPage({
         流程：填好內容 → 先寄測試信給自己確認版面 → 再正式群發（可設定預設發送時間）。
       </p>
 
+      {template && (
+        <div className="mb-4 rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+          📄 已帶入範本「{template.subject}」——主旨、內文、關聯課程已填好，
+          選擇發送對象即可寄出（
+          <Link href="/admin/broadcast" className="underline">
+            清除範本
+          </Link>
+          ）
+        </div>
+      )}
       <BroadcastForm
+        key={from ?? "blank"}
         courses={courses}
         groups={groupOptions}
         memberCount={memberCount}
         members={memberOptions}
         sendAction={sendBroadcastAction}
+        defaultValues={
+          template
+            ? {
+                subject: template.subject,
+                body: template.body,
+                courseId: template.courseId ?? "",
+                audience: "all",
+                groupId: "",
+                manualList: "",
+                scheduledAt: "",
+              }
+            : undefined
+        }
       />
 
       {/* 寄送紀錄（含排程） */}
@@ -236,7 +269,16 @@ export default async function BroadcastPage({
                             </SubmitButton>
                           </form>
                         </span>
-                      ) : listCount > 0 ? (
+                      ) : (
+                        <span className="flex flex-col gap-1">
+                          <Link
+                            href={`/admin/broadcast?from=${h.id}`}
+                            className="text-sm text-indigo-600 hover:underline"
+                            title="把這封信的主旨/內文/關聯課程帶入上方表單，選對象即可重寄"
+                          >
+                            📄 以此為範本
+                          </Link>
+                          {listCount > 0 && (
                         <details>
                           <summary className="cursor-pointer text-sm text-indigo-600 hover:underline">
                             存入群組（{listCount}）
@@ -275,8 +317,8 @@ export default async function BroadcastPage({
                             </SubmitButton>
                           </form>
                         </details>
-                      ) : (
-                        "—"
+                          )}
+                        </span>
                       )}
                     </td>
                   </tr>
