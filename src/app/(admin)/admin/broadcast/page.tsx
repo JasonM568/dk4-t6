@@ -10,6 +10,9 @@ import {
 } from "@/actions/admin";
 import { BroadcastForm } from "./broadcast-form";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { buildFollowUpProp } from "./followup-stats";
+import { toDatetimeLocal } from "./datetime";
+import { isFollowUpFilter } from "@/lib/email/followup";
 
 export const metadata = { title: "Email群發 — 管理後台" };
 
@@ -32,10 +35,15 @@ const PAGE_SIZE = 20;
 export default async function BroadcastPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; from?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    from?: string;
+    followUp?: string;
+    filter?: string;
+  }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw, from } = await searchParams;
+  const { page: pageRaw, from, followUp: followUpId, filter } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
   // 範本帶入：?from=<broadcastId> 把該封信的主旨/內文/關聯課程帶進表單
@@ -46,6 +54,19 @@ export default async function BroadcastPage({
         select: { subject: true, body: true, courseId: true },
       })
     : null;
+
+  // 跟進信模式：?followUp=<broadcastId>&filter=OPENED|NOT_OPENED|CLICKED
+  // 來源必須是已寄出（SENT）的群發，否則忽略參數
+  let followUpProp = null;
+  if (followUpId && filter && isFollowUpFilter(filter)) {
+    const src = await prisma.emailBroadcast.findUnique({
+      where: { id: followUpId },
+      select: { status: true },
+    });
+    if (src?.status === "SENT") {
+      followUpProp = await buildFollowUpProp(followUpId, filter);
+    }
+  }
 
   const [courses, memberCount, history, totalCount, groups, profiles] =
     await Promise.all([
@@ -125,13 +146,26 @@ export default async function BroadcastPage({
           ）
         </div>
       )}
+      {followUpProp && (
+        <div className="mb-4 rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
+          📬 正在建立跟進信——寄給「{followUpProp.sourceSubject}」的
+          <span className="font-medium">{followUpProp.filterLabel}</span>
+          （目前約 {followUpProp.estimatedCount} 人，名單於寄出當下解析）。
+          寫好內容後建議用排程寄出（
+          <Link href="/admin/broadcast" className="underline">
+            離開跟進模式
+          </Link>
+          ）
+        </div>
+      )}
       <BroadcastForm
-        key={from ?? "blank"}
+        key={from ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
         courses={courses}
         groups={groupOptions}
         memberCount={memberCount}
         members={memberOptions}
         sendAction={sendBroadcastAction}
+        followUp={followUpProp ?? undefined}
         defaultValues={
           template
             ? {
@@ -143,7 +177,20 @@ export default async function BroadcastPage({
                 manualList: "",
                 scheduledAt: "",
               }
-            : undefined
+            : followUpProp
+              ? {
+                  subject: "",
+                  body: "",
+                  courseId: "",
+                  audience: "all",
+                  groupId: "",
+                  manualList: "",
+                  // 跟進信預設隔天同時段寄出（可自行調整）
+                  scheduledAt: toDatetimeLocal(
+                    new Date(Date.now() + 24 * 60 * 60 * 1000),
+                  ),
+                }
+              : undefined
         }
       />
 

@@ -22,6 +22,15 @@ export type BroadcastFormDefaults = {
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
 };
 
+/** 跟進信模式：發送對象鎖定為來源群發的開信/未開信/點擊名單，寄出當下才解析 */
+export type BroadcastFollowUp = {
+  sourceId: string;
+  sourceSubject: string;
+  filter: "OPENED" | "NOT_OPENED" | "CLICKED";
+  filterLabel: string; // 開信者 / 未開信者 / 點擊者
+  estimatedCount: number; // 目前符合人數（僅供參考，實際以寄出當下為準）
+};
+
 type BroadcastFormProps = {
   courses: { id: string; title: string }[];
   groups: GroupOption[];
@@ -29,6 +38,7 @@ type BroadcastFormProps = {
   members: MemberOption[]; // 會員清單（「選取會員」勾選用）
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
   defaultValues?: BroadcastFormDefaults; // 編輯排程/草稿時帶入
+  followUp?: BroadcastFollowUp; // 跟進信模式：取代發送對象區塊
 };
 
 /** 電子報群發表單：選發送對象（全部會員/名單群組/手動名單）→ 寄測試信 → 正式群發/排程/存草稿 */
@@ -39,6 +49,7 @@ export function BroadcastForm({
   members,
   sendAction,
   defaultValues,
+  followUp,
 }: BroadcastFormProps) {
   const [state, formAction, pending] = useActionState<BroadcastState, FormData>(
     sendAction,
@@ -64,6 +75,8 @@ export function BroadcastForm({
   };
 
   const audienceDesc = () => {
+    if (followUp)
+      return `跟進：${followUp.filterLabel}（來源：${followUp.sourceSubject}）`;
     if (audience === "all") return `全部 ${memberCount} 位會員`;
     if (audience === "group") {
       const sel = (
@@ -146,7 +159,26 @@ export function BroadcastForm({
           </select>
         </div>
 
-        {/* 發送對象 */}
+        {/* 發送對象：跟進信模式鎖定為來源群發的成效名單，不顯示 radio */}
+        {followUp ? (
+          <fieldset className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
+            <legend className="px-1 text-sm font-medium text-cyan-800">
+              發送對象（跟進信）
+            </legend>
+            <input type="hidden" name="audience" value="followup" />
+            <input type="hidden" name="sourceBroadcastId" value={followUp.sourceId} />
+            <input type="hidden" name="followUpFilter" value={followUp.filter} />
+            <p className="text-sm text-cyan-900">
+              📬 跟進對象：<span className="font-medium">{followUp.filterLabel}</span>
+              （來源：{followUp.sourceSubject}）
+            </p>
+            <p className="mt-1 text-xs text-cyan-700">
+              目前約 {followUp.estimatedCount} 人符合；名單在「寄出當下」才解析，
+              晚{followUp.filter === "NOT_OPENED" ? "開信的人會自動排除" : "開信/點擊的人也會自動納入"}，
+              退訂與退信者一律不寄。
+            </p>
+          </fieldset>
+        ) : (
         <fieldset className="rounded-xl border border-gray-200 p-4">
           <legend className="px-1 text-sm font-medium">發送對象</legend>
           <div className="space-y-2 text-sm">
@@ -242,6 +274,7 @@ export function BroadcastForm({
             )}
           </div>
         </fieldset>
+        )}
 
         <div>
           <label className="mb-1 block text-sm font-medium">
@@ -254,7 +287,9 @@ export function BroadcastForm({
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
           <p className="mt-1 text-xs text-gray-400">
-            台灣時間；到點後 5 分鐘內寄出。排程後可在下方紀錄取消；全部會員/群組名單以寄出當下為準
+            {followUp
+              ? "台灣時間；到點後 5 分鐘內寄出。跟進名單於寄出當下解析，越晚寄涵蓋越多晚開信者；排程後可在下方紀錄取消"
+              : "台灣時間；到點後 5 分鐘內寄出。排程後可在下方紀錄取消；全部會員/群組名單以寄出當下為準"}
           </p>
         </div>
 

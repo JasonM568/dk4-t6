@@ -206,7 +206,71 @@ export default async function BroadcastDetailPage({
             </dd>
           </>
         )}
+
+        {record.audienceType === "FOLLOWUP" && record.sourceBroadcastId && (
+          <>
+            <dt className="text-gray-500">跟進來源</dt>
+            <dd>
+              <Link
+                href={`/admin/broadcast/${record.sourceBroadcastId}`}
+                className="text-indigo-600 hover:underline"
+              >
+                查看來源群發 →
+              </Link>
+            </dd>
+          </>
+        )}
       </dl>
+
+      {/* 建立跟進信：對此群發的開信/未開信/點擊名單再寄一封（名單於寄出當下解析） */}
+      {record.status === "SENT" && record.sentCount > 0 && (
+        <div className="mb-6 rounded-xl border border-cyan-200 bg-cyan-50/50 p-4">
+          <h2 className="mb-1 text-sm font-bold text-cyan-800">📬 建立跟進信</h2>
+          <p className="mb-3 text-xs text-cyan-700">
+            對這封信的特定名單再寄一封（例如隔天提醒未開信者）。名單在「寄出當下」才解析，
+            現在建立排程也不會漏掉晚開信的人。
+          </p>
+          <div className="flex flex-wrap gap-2 text-sm">
+            {(
+              [
+                { filter: "OPENED", label: "開信者", count: stats.OPENED ?? 0 },
+                {
+                  filter: "NOT_OPENED",
+                  label: "未開信者",
+                  count:
+                    record.recipients.length > 0
+                      ? Math.max(
+                          0,
+                          record.recipients.length -
+                            (stats.OPENED ?? 0) -
+                            (stats.BOUNCED ?? 0),
+                        )
+                      : null, // 舊紀錄無名單快照 → 不提供未開信者跟進
+                },
+                { filter: "CLICKED", label: "點擊者", count: stats.CLICKED ?? 0 },
+              ] as const
+            ).map((opt) =>
+              opt.count === null ? null : opt.count > 0 ? (
+                <Link
+                  key={opt.filter}
+                  href={`/admin/broadcast?followUp=${record.id}&filter=${opt.filter}`}
+                  className="rounded-lg border border-cyan-300 bg-white px-3 py-1.5 font-medium text-cyan-800 transition hover:bg-cyan-100"
+                >
+                  跟進{opt.label}（{opt.count}）
+                </Link>
+              ) : (
+                <span
+                  key={opt.filter}
+                  className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-gray-400"
+                  title="目前沒有符合的收件人"
+                >
+                  跟進{opt.label}（0）
+                </span>
+              ),
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 失敗名單＋補寄 */}
       {failedList.length > 0 && (

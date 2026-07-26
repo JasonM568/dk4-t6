@@ -23,6 +23,7 @@ import {
   type FailedRecipient,
 } from "@/lib/email/broadcast";
 import { executeBroadcast } from "@/lib/email/dispatch";
+import { FOLLOWUP_FILTER_LABEL, isFollowUpFilter } from "@/lib/email/followup";
 import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
@@ -622,6 +623,8 @@ type BroadcastAudience = {
     groupId: string | null;
     audienceLabel: string;
     manualRows: { email: string; name?: string }[] | undefined;
+    sourceBroadcastId: string | null;
+    followUpFilter: string | null;
   };
 };
 
@@ -632,13 +635,54 @@ async function resolveBroadcastAudience(
   groupId: string,
   manualRaw: string,
   lenient = false,
+  followUp?: { sourceBroadcastId: string; filter: string },
 ): Promise<BroadcastAudience> {
   let audienceType = "ALL";
   let audienceLabel = "全部會員";
   let audienceGroupId: string | null = null;
   let manualRows: { email: string; name?: string }[] | undefined;
+  let sourceBroadcastId: string | null = null;
+  let followUpFilter: string | null = null;
+  const emptyAudience = {
+    audienceType,
+    groupId: null,
+    audienceLabel: "",
+    manualRows,
+    sourceBroadcastId: null,
+    followUpFilter: null,
+  };
 
-  if (audience === "group") {
+  if (audience === "followup") {
+    // 跟進信：名單於寄出當下從來源群發的成效事件解析（dispatch.ts resolveRecipients）
+    audienceType = "FOLLOWUP";
+    sourceBroadcastId = followUp?.sourceBroadcastId || null;
+    followUpFilter = followUp?.filter || null;
+    if (!sourceBroadcastId || !followUpFilter || !isFollowUpFilter(followUpFilter)) {
+      if (!lenient)
+        return { error: "跟進信缺少來源群發或跟進條件", audienceData: emptyAudience };
+      audienceLabel = "跟進：未驗證來源";
+    } else {
+      const src = await prisma.emailBroadcast.findUnique({
+        where: { id: sourceBroadcastId },
+        select: { subject: true, status: true, recipients: true },
+      });
+      if (!lenient) {
+        if (!src)
+          return { error: "跟進來源群發不存在", audienceData: emptyAudience };
+        if (src.status !== "SENT")
+          return {
+            error: "只能對已寄出（SENT）的群發建立跟進信",
+            audienceData: emptyAudience,
+          };
+        if (followUpFilter === "NOT_OPENED" && src.recipients.length === 0)
+          return {
+            error: "來源群發沒有收件名單快照（舊紀錄），無法建立未開信者跟進",
+            audienceData: emptyAudience,
+          };
+      }
+      audienceLabel = `跟進：${FOLLOWUP_FILTER_LABEL[followUpFilter]}（來源：${src?.subject ?? "（已不存在）"}）`;
+    }
+  } else if (audience === "group") {
     audienceType = "GROUP";
     const group = groupId
       ? await prisma.mailGroup.findUnique({
@@ -650,14 +694,14 @@ async function resolveBroadcastAudience(
       if (!lenient)
         return {
           error: "請選擇名單群組",
-          audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
+          audienceData: { ...emptyAudience, audienceType },
         };
       audienceLabel = "群組：未選擇";
     } else {
       if (!lenient && group._count.members === 0)
         return {
           error: `群組「${group.name}」沒有成員，請先到名單群組加入名單`,
-          audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
+          audienceData: { ...emptyAudience, audienceType },
         };
       audienceGroupId = group.id;
       audienceLabel = `群組：${group.name}`;
@@ -676,7 +720,7 @@ async function resolveBroadcastAudience(
           audience === "members"
             ? "請至少勾選一位會員"
             : "手動名單沒有任何合法的 email",
-        audienceData: { audienceType, groupId: null, audienceLabel: "", manualRows },
+        audienceData: { ...emptyAudience, audienceType, manualRows },
       };
     audienceLabel = `${audience === "members" ? "選取會員" : "手動名單"} ${manualRows.length} 筆`;
   }
@@ -687,6 +731,8 @@ async function resolveBroadcastAudience(
       groupId: audienceGroupId,
       audienceLabel,
       manualRows: manualRows ?? undefined,
+      sourceBroadcastId,
+      followUpFilter,
     },
   };
 }
@@ -705,11 +751,18 @@ export async function sendBroadcastAction(
   const courseId = String(formData.get("courseId") ?? "");
   const mode = String(formData.get("mode") ?? "test");
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
-  const audience = String(formData.get("audience") ?? "all"); // all | group | manual | members
+  const audience = String(formData.get("audience") ?? "all"); // all | group | manual | members | followup
   const groupId = String(formData.get("groupId") ?? "");
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
+  const followUp =
+    audience === "followup"
+      ? {
+          sourceBroadcastId: String(formData.get("sourceBroadcastId") ?? ""),
+          filter: String(formData.get("followUpFilter") ?? ""),
+        }
+      : undefined;
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
@@ -721,6 +774,7 @@ export async function sendBroadcastAction(
       groupId,
       manualRaw,
       true,
+      followUp,
     );
     const scheduledAt = scheduledAtRaw
       ? new Date(`${scheduledAtRaw}:00+08:00`)
@@ -773,7 +827,13 @@ export async function sendBroadcastAction(
   }
 
   // ── 解析發送對象 ──
-  const resolved = await resolveBroadcastAudience(audience, groupId, manualRaw);
+  const resolved = await resolveBroadcastAudience(
+    audience,
+    groupId,
+    manualRaw,
+    false,
+    followUp,
+  );
   if (resolved.error) return { error: resolved.error };
   const { audienceData } = resolved;
   const audienceLabel = audienceData.audienceLabel;
@@ -803,7 +863,11 @@ export async function sendBroadcastAction(
       hour12: false,
     });
     return {
-      success: `已排程：${shown} 寄給「${audienceLabel}」（實際寄出最多晚 5 分鐘；全部會員/群組名單以寄出當下為準）`,
+      success: `已排程：${shown} 寄給「${audienceLabel}」（實際寄出最多晚 5 分鐘；${
+        audience === "followup"
+          ? "跟進名單以寄出當下的開信/點擊狀態為準，越晚寄涵蓋越完整"
+          : "全部會員/群組名單以寄出當下為準"
+      }）`,
       broadcastId: record.id,
       manualCount: manualRows?.length,
     };
@@ -882,6 +946,13 @@ export async function updateBroadcastAction(
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
+  const followUp =
+    audience === "followup"
+      ? {
+          sourceBroadcastId: String(formData.get("sourceBroadcastId") ?? ""),
+          filter: String(formData.get("followUpFilter") ?? ""),
+        }
+      : undefined;
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
@@ -919,6 +990,7 @@ export async function updateBroadcastAction(
       groupId,
       manualRaw,
       true,
+      followUp,
     );
     const scheduledAt = scheduledAtRaw
       ? new Date(`${scheduledAtRaw}:00+08:00`)
@@ -941,7 +1013,13 @@ export async function updateBroadcastAction(
   }
 
   // 正式：解析發送對象（嚴格）
-  const resolved = await resolveBroadcastAudience(audience, groupId, manualRaw);
+  const resolved = await resolveBroadcastAudience(
+    audience,
+    groupId,
+    manualRaw,
+    false,
+    followUp,
+  );
   if (resolved.error) return { error: resolved.error };
   const { audienceData } = resolved;
 

@@ -95,10 +95,13 @@ model EmailBroadcast {
   status        String    @default("SENT")
   scheduledAt   DateTime? // 預設發送時間（null = 立即寄出）
   sentAt        DateTime? // 實際寄出時間
-  audienceType  String    @default("ALL")
+  audienceType  String    @default("ALL") // ALL / GROUP / MANUAL / FOLLOWUP（跟進信）
   groupId       String? // audienceType=GROUP 時的群組（寄出當下取最新成員）
-  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 手動名單 N 筆
+  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 手動名單 N 筆 / 跟進：開信者（來源：xxx）
   manualRows    Json? // audienceType=MANUAL 時的名單 [{email,name}]
+
+  sourceBroadcastId String? // audienceType=FOLLOWUP 時的來源群發 id（軟連結不加 FK，與 resendOfId 慣例一致）
+  followUpFilter    String? // 跟進條件：OPENED（開信者）/ NOT_OPENED（未開信者）/ CLICKED（點擊者）；名單於寄出當下解析
   recipients    String[]  @default([]) // 實際寄出名單快照（供事後存成群組）
   claimedAt     DateTime? // 進入 SENDING（cron 認領）的時間；用於回收逾時卡死的寄送
 

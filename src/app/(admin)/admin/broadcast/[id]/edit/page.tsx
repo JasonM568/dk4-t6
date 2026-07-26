@@ -8,26 +8,14 @@ import {
   BroadcastForm,
   type BroadcastFormDefaults,
 } from "../../broadcast-form";
+import { toDatetimeLocal } from "../../datetime";
+import { buildFollowUpProp } from "../../followup-stats";
+import { isFollowUpFilter } from "@/lib/email/followup";
 
 export const metadata = { title: "編輯群發 — Email群發" };
 
 // 編輯頁可直接立即寄出（沿用本 segment 設定），數百封也要跑得完
 export const maxDuration = 300;
-
-/** Date → datetime-local 值（台北時間 YYYY-MM-DDTHH:mm）；sv-SE locale 天然輸出 ISO 樣式 */
-function toDatetimeLocal(d: Date | null): string {
-  if (!d) return "";
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-    .format(d)
-    .replace(" ", "T");
-}
 
 export default async function BroadcastEditPage({
   params,
@@ -55,6 +43,15 @@ export default async function BroadcastEditPage({
     }),
     listProfiles(),
   ]);
+
+  // 跟進信：來源與條件唯讀（要換條件請取消排程後從來源明細頁重建）
+  const followUp =
+    record.audienceType === "FOLLOWUP" &&
+    record.sourceBroadcastId &&
+    record.followUpFilter &&
+    isFollowUpFilter(record.followUpFilter)
+      ? await buildFollowUpProp(record.sourceBroadcastId, record.followUpFilter)
+      : undefined;
 
   // manualRows 還原成一行一筆「email,姓名」文字
   const manualRows = Array.isArray(record.manualRows)
@@ -107,6 +104,7 @@ export default async function BroadcastEditPage({
           }))}
         sendAction={updateBroadcastAction.bind(null, id)}
         defaultValues={defaults}
+        followUp={followUp}
       />
     </div>
   );
