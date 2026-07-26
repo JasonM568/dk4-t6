@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/course-access";
+import { autoEnrollGroupCourses } from "@/lib/zone-enroll";
 
 // 邀請碼驗證與兌換：registerAction（帶碼註冊）與 redeemInviteAction（既有帳號輸碼）共用。
 
@@ -40,7 +41,7 @@ export async function validateInviteCode(
   };
 }
 
-/** 兌換邀請碼：寫入專區會籍（冪等）＋ usedCount 累計 */
+/** 兌換邀請碼：寫入專區會籍（冪等）＋ usedCount 累計 ＋ 期限內課程自動開通 */
 export async function redeemInvite(
   invite: ValidInvite,
   email: string,
@@ -66,4 +67,7 @@ export async function redeemInvite(
       data: { usedCount: { increment: 1 } },
     }),
   ]);
+  if (opts.userId) {
+    await autoEnrollGroupCourses(invite.groupId, [{ userId: opts.userId }]);
+  }
 }

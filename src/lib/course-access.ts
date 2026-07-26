@@ -33,7 +33,11 @@ export async function isGroupMember(
   return !!member;
 }
 
-/** 專區限時免開通觀看是否生效中（openToGroupUntil 未過期） */
+/**
+ * 專區自動開通期是否生效中（openToGroupUntil 未過期）。
+ * 期限內加入專區即寫入 Enrollment（見 zone-enroll.ts）；此分支同時作為
+ * 期限內的觀看安全網（Enrollment 寫入失敗也不擋人），期限後僅認 Enrollment。
+ */
 export function groupOpenAccessActive(course: {
   groupId: string | null;
   openToGroupUntil: Date | null;

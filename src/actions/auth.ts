@@ -4,6 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateInviteCode, redeemInvite } from "@/lib/zone-invite";
+import { autoEnrollOnRegister } from "@/lib/zone-enroll";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/course-access";
 
@@ -166,6 +167,16 @@ export async function registerAction(
       });
     } catch (e) {
       console.error("[register] 邀請碼會籍寫入失敗", { email, code: invite.code, e });
+    }
+  }
+
+  // 不帶邀請碼但 email 已在專區名單（後台先匯入）：回填 userId ＋ 期限內課程自動開通。
+  // 失敗不影響註冊結果，記 log 供後台補救。
+  if (data.user) {
+    try {
+      await autoEnrollOnRegister(email, data.user.id);
+    } catch (e) {
+      console.error("[register] 專區自動開通失敗", { email, e });
     }
   }
 

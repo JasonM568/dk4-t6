@@ -14,7 +14,7 @@ export function formatDate(date: Date | string): string {
   });
 }
 
-/** 開通來源標籤：購買(有訂單) / 批次 / 匯入 / 手動；null 視為手動（歷史資料無法細分） */
+/** 開通來源標籤：購買(有訂單) / 批次 / 匯入 / 專區 / 手動；null 視為手動（歷史資料無法細分） */
 export function enrollmentSource(
   source: string | null | undefined,
   orderId: string | null | undefined,
@@ -26,6 +26,8 @@ export function enrollmentSource(
       return { text: "批次開通", className: "bg-amber-50 text-amber-700" };
     case "IMPORT":
       return { text: "匯入開通", className: "bg-purple-50 text-purple-700" };
+    case "ZONE":
+      return { text: "專區開通", className: "bg-cyan-50 text-cyan-700" };
     case "MANUAL":
     default:
       return { text: "手動開通", className: "bg-blue-50 text-blue-700" };

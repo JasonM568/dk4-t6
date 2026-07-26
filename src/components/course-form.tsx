@@ -196,7 +196,7 @@ export function CourseForm({
         </Field>
       )}
       {allZones.length > 0 && groupId && (
-        <Field label="專區會員免開通觀看至（選填）">
+        <Field label="專區會員自動開通截止日（選填）">
           <input
             type="date"
             name="openToGroupUntil"
@@ -209,8 +209,9 @@ export function CourseForm({
             className="input"
           />
           <p className="mt-1 text-xs text-gray-500">
-            設定後，此日期（含當天）前專區會員「不需逐課開通」即可觀看本課程；
-            到期自動恢復「僅手動開通者可看」。留空 = 一律需手動開通。
+            此日期（含當天）前加入專區的會員，自動取得本課程觀看權限（開通紀錄標示「專區開通」，
+            截止後仍可繼續觀看）；截止後才加入的會員不再自動開通，需手動開通。留空 =
+            一律需手動開通。
           </p>
         </Field>
       )}

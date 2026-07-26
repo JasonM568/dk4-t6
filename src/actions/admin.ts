@@ -30,6 +30,7 @@ import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
 import { TRACKING_KEYS } from "@/lib/tracking";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
+import { autoEnrollGroupCourses } from "@/lib/zone-enroll";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門分三級（定義見 src/lib/auth/staff.ts）：
@@ -2039,6 +2040,10 @@ export async function addZoneMemberAction(
       addedBy: admin?.email ?? null,
     },
   });
+  // 已註冊會員：期限內課程自動開通（未註冊者於註冊時由 autoEnrollOnRegister 補上）
+  if (profile?.id) {
+    await autoEnrollGroupCourses(zoneId, [{ userId: profile.id }]);
+  }
   revalidatePath(`/admin/zones/${zoneId}`);
   return { success: `已加入 ${email}` };
 }
@@ -2079,6 +2084,15 @@ export async function importZoneMembersAction(
     })),
     skipDuplicates: true,
   });
+
+  // 已註冊會員：期限內課程自動開通（未註冊者於註冊時由 autoEnrollOnRegister 補上）
+  await autoEnrollGroupCourses(
+    zoneId,
+    valid
+      .map((r) => profileMap.get(r.email)?.id)
+      .filter((id): id is string => !!id)
+      .map((userId) => ({ userId })),
+  );
 
   revalidatePath(`/admin/zones/${zoneId}`);
   const dup = valid.length - created.count;
@@ -2188,6 +2202,14 @@ export async function addMembersToZoneBulkAction(
     })),
     skipDuplicates: true,
   });
+
+  // 會員列表勾選的都是已註冊會員：期限內課程自動開通
+  await autoEnrollGroupCourses(
+    zone.id,
+    valid
+      .filter((r): r is typeof r & { userId: string } => !!r.userId)
+      .map((r) => ({ userId: r.userId })),
+  );
 
   revalidatePath(`/admin/zones/${zone.id}`);
   const dup = valid.length - created.count;
