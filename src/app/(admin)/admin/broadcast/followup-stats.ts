@@ -32,10 +32,12 @@ export async function buildFollowUpProp(
       ? count("OPENED")
       : filter === "CLICKED"
         ? count("CLICKED")
-        : Math.max(
-            0,
-            (source?.recipients.length ?? 0) - count("OPENED") - count("BOUNCED"),
-          );
+        : filter === "OPENED_NOT_CLICKED"
+          ? Math.max(0, count("OPENED") - count("CLICKED"))
+          : Math.max(
+              0,
+              (source?.recipients.length ?? 0) - count("OPENED") - count("BOUNCED"),
+            );
   return {
     sourceId,
     sourceSubject: source?.subject ?? "（來源已不存在）",

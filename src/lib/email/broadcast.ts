@@ -43,7 +43,41 @@ function esc(s: string): string {
     .replaceAll('"', "&quot;");
 }
 
-/** 希望學院品牌信 HTML（與重置密碼信同視覺）；內文純文字自動分段。
+const FONT_STACK =
+  "-apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif";
+
+// 內文 CTA 按鈕語法：[按鈕文字](https://網址)；只接受 http(s)，樣式與課程卡按鈕一致
+const BUTTON_RE = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+/** 段落原文 → 段落內 HTML：
+ *  ① 先抽出按鈕語法存 placeholder（\u0000BTNn\u0000，esc 不會動到）
+ *  ② 其餘文字 esc() 轉義（防注入的唯一入口，順序不可調換）
+ *  ③ 已轉義文字上把明文網址轉 <a>（href 用轉義後字串即合法 HTML attr；
+ *     結尾中英文標點不納入網址）
+ *  ④ 回填按鈕 HTML；換行轉 <br />
+ *  明文網址與按鈕都是真 <a> 標籤 → Resend 點擊追蹤可改寫、點擊事件可回流 */
+function renderParagraph(p: string): string {
+  const buttons: string[] = [];
+  const withPlaceholders = p.replace(BUTTON_RE, (_m, label: string, url: string) => {
+    const idx =
+      buttons.push(
+        `<a href="${esc(url)}" target="_blank" style="display: inline-block; margin: 4px 0; padding: 12px 36px; background: linear-gradient(135deg, #b71c1c, #d32f2f); background-color: #d32f2f; font-family: ${FONT_STACK}; font-size: 15px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 8px;">${esc(label.trim())}</a>`,
+      ) - 1;
+    return `\u0000BTN${idx}\u0000`;
+  });
+  let html = esc(withPlaceholders);
+  // 網址遇到空白/CJK 字元（中文、全形標點——實務網址不含）即截斷，結尾半形標點不納入
+  html = html.replace(/https?:\/\/[^\s<\u0000\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]+/g, (m) => {
+    const url = m.replace(/[).,;:!?]+$/, "");
+    const trail = m.slice(url.length);
+    return `<a href="${url}" target="_blank" style="color: #b71c1c; word-break: break-all;">${url}</a>${trail}`;
+  });
+  html = html.replace(/\u0000BTN(\d+)\u0000/g, (_m, i: string) => buttons[Number(i)] ?? "");
+  return html.replaceAll("\n", "<br />");
+}
+
+/** 希望學院品牌信 HTML（與重置密碼信同視覺）；內文純文字自動分段，
+ *  支援明文網址自動轉連結與 [按鈕文字](網址) CTA 按鈕。
  *  unsubscribeUrl 有值時 footer 加「取消訂閱」連結 */
 export function buildBroadcastHtml(
   bodyText: string,
@@ -55,7 +89,7 @@ export function buildBroadcastHtml(
     .split(/\n{2,}/)
     .map(
       (p) =>
-        `<p style="margin: 0 0 16px; font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; font-size: 15px; line-height: 1.9; color: #444444;">${esc(p.trim()).replaceAll("\n", "<br />")}</p>`,
+        `<p style="margin: 0 0 16px; font-family: ${FONT_STACK}; font-size: 15px; line-height: 1.9; color: #444444;">${renderParagraph(p.trim())}</p>`,
     )
     .join("");
 

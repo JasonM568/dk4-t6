@@ -22,12 +22,12 @@ export type BroadcastFormDefaults = {
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
 };
 
-/** 跟進信模式：發送對象鎖定為來源群發的開信/未開信/點擊名單，寄出當下才解析 */
+/** 跟進信模式：發送對象鎖定為來源群發的成效名單（開信/未開信/點擊/開信未點擊），寄出當下才解析 */
 export type BroadcastFollowUp = {
   sourceId: string;
   sourceSubject: string;
-  filter: "OPENED" | "NOT_OPENED" | "CLICKED";
-  filterLabel: string; // 開信者 / 未開信者 / 點擊者
+  filter: import("@/lib/email/followup").FollowUpFilter;
+  filterLabel: string; // 開信者 / 未開信者 / 點擊者 / 開信未點擊
   estimatedCount: number; // 目前符合人數（僅供參考，實際以寄出當下為準）
 };
 
@@ -138,6 +138,10 @@ export function BroadcastForm({
             可用變數：<span className="font-mono">{"{email}"}</span>＝收件人 email、
             <span className="font-mono">{"{name}"}</span>＝姓名，寄出時自動帶入每位收件人
             （沒有姓名的人 <span className="font-mono">{"{name}"}</span> 會留空）。
+            <br />
+            放連結：直接貼網址（自動變可點）；做 CTA 按鈕：
+            <span className="font-mono">[立即報名](https://…)</span>
+            ——兩者都會計入點擊統計。
           </p>
         </div>
 

@@ -248,6 +248,11 @@ export default async function BroadcastDetailPage({
                       : null, // 舊紀錄無名單快照 → 不提供未開信者跟進
                 },
                 { filter: "CLICKED", label: "點擊者", count: stats.CLICKED ?? 0 },
+                {
+                  filter: "OPENED_NOT_CLICKED",
+                  label: "開信未點擊",
+                  count: Math.max(0, (stats.OPENED ?? 0) - (stats.CLICKED ?? 0)),
+                },
               ] as const
             ).map((opt) =>
               opt.count === null ? null : opt.count > 0 ? (

@@ -76,6 +76,10 @@ async function resolveFollowUpRecipients(record: {
   } else if (record.followUpFilter === "CLICKED") {
     emails = [...byType("CLICKED")];
     emptyError = "來源信目前沒有任何點擊者";
+  } else if (record.followUpFilter === "OPENED_NOT_CLICKED") {
+    const clicked = byType("CLICKED");
+    emails = [...byType("OPENED")].filter((e) => !clicked.has(e));
+    emptyError = "來源信的開信者全都點擊過了（或尚無開信者）";
   } else if (record.followUpFilter === "NOT_OPENED") {
     if (source.recipients.length === 0) {
       return { error: "來源群發沒有收件名單快照（舊紀錄），無法計算未開信者" };
