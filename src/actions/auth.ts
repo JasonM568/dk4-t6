@@ -48,7 +48,7 @@ function mapAuthError(code: string | undefined, status?: number): string {
     case "invalid_credentials":
       return "Email 或密碼錯誤";
     case "email_not_confirmed":
-      return "此帳號尚未完成 Email 驗證，請先到信箱收取確認信";
+      return "此帳號尚未完成 Email 驗證，請先點擊認證信中的連結完成驗證（找不到信請檢查垃圾信件匣）";
     case "user_banned":
       return "此帳號已被停用，請聯繫客服";
     case "over_request_rate_limit":
