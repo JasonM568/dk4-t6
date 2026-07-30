@@ -6,6 +6,7 @@ import {
   sendBroadcastAction,
   cancelScheduledBroadcast,
   deleteDraftBroadcastAction,
+  deleteMailTemplateAction,
   saveBroadcastListToGroupAction,
 } from "@/actions/admin";
 import { BroadcastForm } from "./broadcast-form";
@@ -38,21 +39,27 @@ export default async function BroadcastPage({
   searchParams: Promise<{
     page?: string;
     from?: string;
+    tpl?: string;
     followUp?: string;
     filter?: string;
   }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw, from, followUp: followUpId, filter } = await searchParams;
+  const { page: pageRaw, from, tpl, followUp: followUpId, filter } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
-  // 範本帶入：?from=<broadcastId> 把該封信的主旨/內文/關聯課程帶進表單
+  // 舊信帶入：?from=<broadcastId> 把該封信的主旨/內文/關聯課程帶進表單
   // （收件對象不帶，重寄時自行選擇，避免誤發整批名單）
   const template = from
     ? await prisma.emailBroadcast.findUnique({
         where: { id: from },
         select: { subject: true, body: true, courseId: true },
       })
+    : null;
+
+  // 範本庫帶入：?tpl=<templateId>（與 ?from 同款流程，內容來源改為 MailTemplate）
+  const savedTemplate = !template && tpl
+    ? await prisma.mailTemplate.findUnique({ where: { id: tpl } })
     : null;
 
   // 跟進信模式：?followUp=<broadcastId>&filter=OPENED|NOT_OPENED|CLICKED
@@ -68,7 +75,7 @@ export default async function BroadcastPage({
     }
   }
 
-  const [courses, memberCount, history, totalCount, groups, profiles] =
+  const [courses, memberCount, history, totalCount, groups, profiles, templates] =
     await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -86,6 +93,8 @@ export default async function BroadcastPage({
       orderBy: { createdAt: "desc" },
     }),
     listProfiles(),
+    // 範本庫：最近更新在前
+    prisma.mailTemplate.findMany({ orderBy: { updatedAt: "desc" } }),
   ]);
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -136,10 +145,62 @@ export default async function BroadcastPage({
         流程：填好內容 → 先寄測試信給自己確認版面 → 再正式群發（可設定預設發送時間）。
       </p>
 
+      {/* 常用範本：點名稱帶入表單；「存成範本」按鈕在表單下方 */}
+      {templates.length > 0 && !followUpProp && (
+        <section className="mb-4 rounded-xl border border-gray-200 p-4">
+          <h2 className="mb-2 text-sm font-medium">
+            📄 常用範本（{templates.length}）
+          </h2>
+          <ul className="divide-y divide-gray-100">
+            {templates.map((t) => (
+              <li key={t.id} className="flex items-center gap-3 py-1.5 text-sm">
+                <Link
+                  href={`/admin/broadcast?tpl=${t.id}`}
+                  className={`font-medium hover:underline ${
+                    savedTemplate?.id === t.id
+                      ? "text-indigo-800"
+                      : "text-indigo-600"
+                  }`}
+                  title="帶入此範本的主旨／內文／關聯課程"
+                >
+                  {savedTemplate?.id === t.id ? "▸ " : ""}
+                  {t.name}
+                </Link>
+                <span className="min-w-0 flex-1 truncate text-xs text-gray-400">
+                  {t.subject}
+                </span>
+                <form action={deleteMailTemplateAction.bind(null, t.id)}>
+                  <SubmitButton
+                    pendingText="刪除中…"
+                    className="text-xs text-gray-400 hover:text-red-600 hover:underline"
+                  >
+                    刪除
+                  </SubmitButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-gray-400">
+            點範本名稱帶入表單，小幅修改後即可寄出；範本只存內容（主旨／內文／關聯課程），發送對象每次自行選擇。
+            要新增範本：在下方表單填好內容後按「存成範本」。
+          </p>
+        </section>
+      )}
+
       {template && (
         <div className="mb-4 rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
           📄 已帶入範本「{template.subject}」——主旨、內文、關聯課程已填好，
           選擇發送對象即可寄出（
+          <Link href="/admin/broadcast" className="underline">
+            清除範本
+          </Link>
+          ）
+        </div>
+      )}
+      {savedTemplate && (
+        <div className="mb-4 rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+          📄 已帶入範本「{savedTemplate.name}」——主旨、內文、關聯課程已填好，
+          修改後選擇發送對象即可寄出（
           <Link href="/admin/broadcast" className="underline">
             清除範本
           </Link>
@@ -159,7 +220,7 @@ export default async function BroadcastPage({
         </div>
       )}
       <BroadcastForm
-        key={from ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
+        key={from ?? tpl ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
         courses={courses}
         groups={groupOptions}
         memberCount={memberCount}
@@ -167,11 +228,11 @@ export default async function BroadcastPage({
         sendAction={sendBroadcastAction}
         followUp={followUpProp ?? undefined}
         defaultValues={
-          template
+          template || savedTemplate
             ? {
-                subject: template.subject,
-                body: template.body,
-                courseId: template.courseId ?? "",
+                subject: (template ?? savedTemplate)!.subject,
+                body: (template ?? savedTemplate)!.body,
+                courseId: (template ?? savedTemplate)!.courseId ?? "",
                 audience: "all",
                 groupId: "",
                 manualList: "",

@@ -737,7 +737,41 @@ async function resolveBroadcastAudience(
   };
 }
 
+/** 存成範本（mode=template，sendBroadcastAction / updateBroadcastAction 共用）：
+ *  只存內容（主旨/內文/關聯課程），發送對象不存；同名範本覆蓋更新 */
+async function saveMailTemplateFromForm(
+  formData: FormData,
+  adminEmail: string | null,
+): Promise<BroadcastState> {
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const courseId = String(formData.get("courseId") ?? "");
+  const name = String(formData.get("templateName") ?? "").trim() || subject;
+  if (!name) return { error: "請填寫範本名稱" };
+
+  const existing = await prisma.mailTemplate.findUnique({ where: { name } });
+  await prisma.mailTemplate.upsert({
+    where: { name },
+    update: { subject, body, courseId: courseId || null, createdBy: adminEmail },
+    create: { name, subject, body, courseId: courseId || null, createdBy: adminEmail },
+  });
+  revalidatePath("/admin/broadcast");
+  return {
+    success: existing
+      ? `已更新範本「${name}」（同名覆蓋）`
+      : `已存成範本「${name}」，之後可在群發頁「常用範本」一鍵帶入`,
+  };
+}
+
+/** 刪除 EDM 範本 */
+export async function deleteMailTemplateAction(id: string) {
+  await requireEditor();
+  await prisma.mailTemplate.deleteMany({ where: { id } });
+  revalidatePath("/admin/broadcast");
+}
+
 /** 群發通知：mode=test 只寄給操作的管理員本人；mode=draft 存草稿；mode=all 正式群發並留紀錄。
+ *  mode=template 把主旨/內文/關聯課程存成範本（不寄信、不留群發紀錄）。
  *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
 export async function sendBroadcastAction(
   _prev: BroadcastState,
@@ -766,6 +800,11 @@ export async function sendBroadcastAction(
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
+
+  // 存成範本：只存內容，不寄信、不留群發紀錄
+  if (mode === "template") {
+    return saveMailTemplateFromForm(formData, admin?.email ?? null);
+  }
 
   // 存草稿：只驗主旨，發送對象寬鬆解析（之後編輯再補）
   if (mode === "draft") {
@@ -956,6 +995,11 @@ export async function updateBroadcastAction(
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
+
+  // 存成範本：只存內容，不動這筆草稿/排程紀錄
+  if (mode === "template") {
+    return saveMailTemplateFromForm(formData, admin?.email ?? null);
+  }
 
   const course = courseId
     ? await prisma.course.findUnique({

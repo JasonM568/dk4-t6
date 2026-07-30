@@ -57,6 +57,7 @@ export function BroadcastForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const tplNameRef = useRef<HTMLInputElement>(null);
   const [audience, setAudience] = useState<
     "all" | "group" | "manual" | "members"
   >(defaultValues?.audience ?? "all");
@@ -340,6 +341,36 @@ export function BroadcastForm({
             title="只需填主旨即可儲存，之後可在寄送紀錄繼續編輯"
           >
             {pending ? "處理中…" : "存草稿"}
+          </button>
+          {/* 存成範本：把主旨/內文/關聯課程存進範本庫（不寄信），之後可一鍵帶入 */}
+          <input type="hidden" name="templateName" ref={tplNameRef} />
+          <button
+            type="submit"
+            name="mode"
+            value="template"
+            formNoValidate
+            disabled={pending}
+            onClick={(e) => {
+              const subj =
+                (
+                  formRef.current?.elements.namedItem(
+                    "subject",
+                  ) as HTMLInputElement | null
+                )?.value.trim() ?? "";
+              const name = prompt(
+                "範本名稱（同名儲存會覆蓋更新）：",
+                subj,
+              );
+              if (name === null) {
+                e.preventDefault();
+                return;
+              }
+              if (tplNameRef.current) tplNameRef.current.value = name.trim();
+            }}
+            className="rounded-lg border border-indigo-300 px-4 py-2 text-sm text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+            title="把目前的主旨／內文／關聯課程存成範本，之後群發可一鍵帶入"
+          >
+            {pending ? "處理中…" : "📄 存成範本"}
           </button>
         </div>
 

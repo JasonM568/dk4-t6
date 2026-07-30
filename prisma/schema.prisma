@@ -132,6 +132,20 @@ model BroadcastEvent {
   @@index([broadcastId])
 }
 
+// EDM 範本：常用信件內容存檔，群發表單一鍵帶入後小幅修改再寄
+// 只存內容（主旨/內文/關聯課程），發送對象每次寄送時自行選擇
+model MailTemplate {
+  id        String  @id @default(cuid())
+  name      String  @unique // 範本名稱（同名儲存 = 覆蓋更新）
+  subject   String
+  body      String  @db.Text
+  courseId  String? // 關聯課程（軟連結不加 FK，與 EmailBroadcast.courseId 慣例一致）
+  createdBy String? // 最後儲存的管理員 email
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // 電子報名單群組
 model MailGroup {
   id      String            @id @default(cuid())
