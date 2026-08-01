@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getProfile } from "@/lib/supabase/admin";
-import { formatNT } from "@/lib/format";
+import { formatNT, formatDuration, formatDate } from "@/lib/format";
 import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
 import { currentCanEdit } from "@/lib/auth/staff";
 import { EnrollmentEditor } from "./enrollment-editor";
@@ -25,28 +25,56 @@ export default async function MemberDetailPage({
   const { id } = await params;
 
   // 會員身分在 public.profiles（唯讀），課程資料在 course schema，應用層拼裝
-  const [profile, stats, enrollments, orders, allCourses] = await Promise.all([
-    getProfile(id),
-    prisma.memberStats.findUnique({ where: { userId: id } }),
-    prisma.enrollment.findMany({
-      where: { userId: id },
-      include: { course: { select: { title: true, slug: true } } },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.order.findMany({
-      where: { userId: id },
-      include: {
-        items: { include: { course: { select: { title: true } } } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.course.findMany({
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-      select: { id: true, title: true, isPublished: true },
-    }),
-  ]);
+  const [profile, stats, enrollments, orders, allCourses, progress] =
+    await Promise.all([
+      getProfile(id),
+      prisma.memberStats.findUnique({ where: { userId: id } }),
+      prisma.enrollment.findMany({
+        where: { userId: id },
+        include: { course: { select: { title: true, slug: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.order.findMany({
+        where: { userId: id },
+        include: {
+          items: { include: { course: { select: { title: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.course.findMany({
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+        select: { id: true, title: true, isPublished: true },
+      }),
+      prisma.lessonProgress.findMany({
+        where: { userId: id },
+        include: { lesson: { select: { title: true, courseId: true } } },
+        orderBy: { updatedAt: "desc" },
+      }),
+    ]);
   const canEditNow = await currentCanEdit();
   if (!profile) notFound();
+
+  // 觀看時長：依課程彙總（章節層級 watchedSec 加總），課程標題取自 allCourses
+  const courseTitle = new Map(allCourses.map((c) => [c.id, c.title]));
+  const watchByCourse = new Map<
+    string,
+    { totalSec: number; lessons: number; lastWatchedAt: Date }
+  >();
+  for (const p of progress) {
+    const cid = p.lesson.courseId;
+    const row = watchByCourse.get(cid) ?? {
+      totalSec: 0,
+      lessons: 0,
+      lastWatchedAt: p.updatedAt,
+    };
+    row.totalSec += p.watchedSec;
+    if (p.watchedSec > 0) row.lessons += 1;
+    if (p.updatedAt > row.lastWatchedAt) row.lastWatchedAt = p.updatedAt;
+    watchByCourse.set(cid, row);
+  }
+  const watchRows = [...watchByCourse.entries()]
+    .map(([cid, v]) => ({ courseId: cid, ...v }))
+    .sort((a, b) => b.totalSec - a.totalSec);
 
   // 方案 A：已開通清單 + 尚未開通的課程（給下拉選單）
   const enrolledRows = enrollments.map((e) => ({
@@ -114,6 +142,48 @@ export default async function MemberDetailPage({
             ]),
           )}
         />
+      </section>
+
+      {/* 課程觀看時長 */}
+      <section className="mt-8">
+        <h2 className="mb-3 text-lg font-bold">
+          課程觀看時長（{watchRows.length} 門有紀錄）
+        </h2>
+        <div className="overflow-hidden rounded-xl border border-gray-200">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-left text-gray-500">
+              <tr>
+                <th className="px-4 py-3">課程</th>
+                <th className="px-4 py-3">累積觀看時長</th>
+                <th className="px-4 py-3">已看章節</th>
+                <th className="px-4 py-3">最後觀看</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {watchRows.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-4 text-gray-400">
+                    尚無觀看紀錄
+                  </td>
+                </tr>
+              )}
+              {watchRows.map((r) => (
+                <tr key={r.courseId}>
+                  <td className="px-4 py-3">
+                    {courseTitle.get(r.courseId) ?? r.courseId}
+                  </td>
+                  <td className="px-4 py-3 font-medium">
+                    {formatDuration(r.totalSec)}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{r.lessons} 章</td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {formatDate(r.lastWatchedAt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {/* 訂單清單 */}
