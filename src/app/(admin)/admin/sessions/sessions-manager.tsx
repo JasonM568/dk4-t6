@@ -109,9 +109,12 @@ export function UploadOrdersForm({
   );
   // 原生 file input 長得跟一般文字一樣，改成明顯的點擊區塊＋選檔後回饋
   const [picked, setPicked] = useState<{ name: string; size: number } | null>(null);
+  // 注意：匯入報告（含各組歸類表單）必須放在上傳 <form> 外面——
+  // HTML 不允許巢狀 form，包在裡面會讓「歸入」按鈕誤觸發外層的重新上傳
   return (
-    <form action={action} className="space-y-2">
-      <label
+    <div className="space-y-2">
+      <form action={action} className="space-y-2">
+        <label
         className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed px-4 py-3 transition ${
           picked
             ? "border-indigo-300 bg-indigo-50"
@@ -164,6 +167,7 @@ export function UploadOrdersForm({
       >
         {pending ? "匯入中，請勿關閉頁面…" : "上傳並歸類"}
       </button>
+      </form>
       {state?.error && (
         <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</div>
       )}
@@ -194,7 +198,7 @@ export function UploadOrdersForm({
           )}
         </div>
       )}
-    </form>
+    </div>
   );
 }
 
