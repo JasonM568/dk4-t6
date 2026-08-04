@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
 import { getPageStates } from "@/lib/site-pages";
+import { prisma } from "@/lib/db";
 import { LogoutButton } from "./logout-button";
 
 export async function Navbar() {
@@ -11,6 +12,14 @@ export async function Navbar() {
   const isAdmin = user ? isAdminRole(await getProfileRole(user.id)) : false;
   // 前台分頁（量子講師群/知識專區/講座邀約）：後台「分頁管理」可開關
   const sitePages = (await getPageStates()).filter((p) => p.enabled);
+  // 自訂分頁（分頁管理自建）：navbar 在 root layout，查詢失敗降級為不顯示、不炸整站
+  const customPages = await prisma.customPage
+    .findMany({
+      where: { isPublished: true, showInNav: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { id: true, slug: true, title: true },
+    })
+    .catch(() => []);
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
@@ -35,6 +44,15 @@ export async function Navbar() {
             <Link
               key={p.key}
               href={p.path}
+              className="text-sm text-gray-600 transition hover:text-black"
+            >
+              {p.title}
+            </Link>
+          ))}
+          {customPages.map((p) => (
+            <Link
+              key={p.id}
+              href={`/p/${p.slug}`}
               className="text-sm text-gray-600 transition hover:text-black"
             >
               {p.title}

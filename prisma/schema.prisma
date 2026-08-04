@@ -262,6 +262,24 @@ model Course {
   @@index([groupId])
 }
 
+// ── 自訂分頁 ──
+// 後台「分頁管理」自建的前台頁面（/p/[slug]）：標題＋內文（換行分段、
+// 網址自動連結、[按鈕文字](網址) CTA）＋圖片（直傳 Storage）。
+// showInNav 控制是否出現在導覽列；isPublished 關閉即 404。
+model CustomPage {
+  id          String   @id @default(cuid())
+  slug        String   @unique // 前台網址 /p/[slug]
+  title       String
+  content     String   @db.Text
+  images      String[] @default([]) // 內文下方依序顯示
+  isPublished Boolean  @default(true)
+  showInNav   Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ── 講座報名頁 ──
 // 訪客到 /webinar/[slug] 輸入 email → 寄含講座連結的品牌信，
 // 並自動加入指定 EDM 名單群組（groupId 軟連結，慣例同 EmailBroadcast）。

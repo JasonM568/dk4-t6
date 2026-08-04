@@ -2,15 +2,20 @@ import { getPageStates } from "@/lib/site-pages";
 import { getTrackingSettings } from "@/lib/tracking";
 import { togglePageAction } from "@/actions/admin";
 import { pageGuardFullAdmin } from "@/lib/auth/staff";
+import { prisma } from "@/lib/db";
 import { TrackingForm } from "./tracking-form";
+import { CreateCustomPageForm, CustomPageCard } from "./custom-pages-manager";
 
 export const metadata = { title: "分頁管理 — 管理後台" };
 
 export default async function AdminSettingsPage() {
   await pageGuardFullAdmin(); // 僅管理員
-  const [pages, tracking] = await Promise.all([
+  const [pages, tracking, customPages] = await Promise.all([
     getPageStates(),
     getTrackingSettings(),
+    prisma.customPage.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
   ]);
 
   return (
@@ -50,6 +55,35 @@ export default async function AdminSettingsPage() {
           </li>
         ))}
       </ul>
+
+      {/* 自訂分頁：後台自建的前台頁面 */}
+      <section className="mt-10">
+        <h2 className="mb-1 text-lg font-bold">自訂分頁</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          自建前台頁面（網址 /p/代稱），可放文字與圖片；「顯示於導覽列」開啟後出現在頂端導覽。
+          內文語法與 EDM 相同：空行分段、網址自動連結、[按鈕文字](網址) 變紅色按鈕。
+        </p>
+        <div className="mb-4 space-y-3">
+          {customPages.map((p) => (
+            <CustomPageCard
+              key={p.id}
+              page={{
+                id: p.id,
+                slug: p.slug,
+                title: p.title,
+                content: p.content,
+                images: p.images,
+                isPublished: p.isPublished,
+                showInNav: p.showInNav,
+              }}
+            />
+          ))}
+        </div>
+        <div className="rounded-xl border border-dashed border-gray-300 p-4">
+          <h3 className="mb-2 text-sm font-medium">新增頁面</h3>
+          <CreateCustomPageForm />
+        </div>
+      </section>
 
       {/* 追蹤碼設定 */}
       <section className="mt-10">
