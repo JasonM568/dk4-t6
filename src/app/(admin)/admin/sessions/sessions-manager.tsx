@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState } from "react";
 import {
   createSessionAction,
   updateSessionAction,
@@ -107,23 +107,63 @@ export function UploadOrdersForm({
     uploadOrdersAction,
     null,
   );
+  // 原生 file input 長得跟一般文字一樣，改成明顯的點擊區塊＋選檔後回饋
+  const [picked, setPicked] = useState<{ name: string; size: number } | null>(null);
   return (
     <form action={action} className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <label
+        className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed px-4 py-3 transition ${
+          picked
+            ? "border-indigo-300 bg-indigo-50"
+            : "border-gray-300 bg-gray-50 hover:border-indigo-400 hover:bg-indigo-50/50"
+        }`}
+      >
+        <span className="text-2xl">📄</span>
+        <span className="min-w-0 flex-1">
+          {picked ? (
+            <>
+              <span className="block truncate text-sm font-medium text-indigo-800">
+                {picked.name}
+              </span>
+              <span className="block text-xs text-indigo-500">
+                {(picked.size / 1024).toFixed(0)} KB · 點擊可重新選擇
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="block text-sm font-medium text-gray-700">
+                點擊這裡選擇訂單檔
+              </span>
+              <span className="block text-xs text-gray-400">
+                1shop 匯出的 .xlsx 或 .csv
+              </span>
+            </>
+          )}
+        </span>
+        {!picked && (
+          <span className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700">
+            選擇檔案
+          </span>
+        )}
         <input
           type="file"
           name="file"
           accept=".xlsx,.xls,.csv"
           required
-          className="text-sm"
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            setPicked(f ? { name: f.name, size: f.size } : null);
+          }}
         />
-        <button
-          disabled={pending}
-          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
-        >
-          {pending ? "匯入中，請勿關閉頁面…" : "上傳並歸類"}
-        </button>
-      </div>
+      </label>
+      <button
+        disabled={pending || !picked}
+        title={picked ? undefined : "請先選擇訂單檔"}
+        className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+      >
+        {pending ? "匯入中，請勿關閉頁面…" : "上傳並歸類"}
+      </button>
       {state?.error && (
         <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</div>
       )}
