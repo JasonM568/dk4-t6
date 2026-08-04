@@ -21,10 +21,15 @@ export default async function BoardPage() {
     where: { isVisible: true },
     orderBy: [{ sortOrder: "asc" }, { eventDate: "desc" }, { createdAt: "desc" }],
     include: {
-      signups: { orderBy: { orderedAt: "asc" }, select: { id: true, name: true } },
+      signups: {
+        orderBy: { orderedAt: "asc" },
+        select: { id: true, name: true, product: true },
+      },
     },
   });
   const now = new Date();
+  // 舊生 = 報名複訓方案（1shop 產品名含「複訓」）；其餘為新生
+  const isRetrain = (product: string | null) => !!product?.includes("複訓");
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -49,35 +54,57 @@ export default async function BoardPage() {
       )}
 
       <div className="space-y-6">
-        {sessions.map((s) => (
-          <section key={s.id} className="rounded-2xl border border-gray-200 p-5">
-            <div className="mb-3 flex flex-wrap items-center gap-3">
-              <h2 className="text-lg font-bold">{s.title}</h2>
-              {s.eventDate && (
-                <span className="text-sm text-gray-400">
-                  {s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}
-                </span>
-              )}
-              <span className="ml-auto rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
-                {s.signups.length} 人報名
-              </span>
-            </div>
-            {s.signups.length === 0 ? (
-              <p className="text-sm text-gray-400">尚無報名</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {s.signups.map((g) => (
-                  <span
-                    key={g.id}
-                    className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
-                  >
-                    {g.name}
+        {sessions.map((s) => {
+          const retrain = s.signups.filter((g) => isRetrain(g.product));
+          const fresh = s.signups.length - retrain.length;
+          return (
+            <section key={s.id} className="rounded-2xl border border-gray-200 p-5">
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <h2 className="text-lg font-bold">{s.title}</h2>
+                {s.eventDate && (
+                  <span className="text-sm text-gray-400">
+                    {s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}
                   </span>
-                ))}
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
+                    {s.signups.length} 人
+                  </span>
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-sm font-medium text-emerald-800">
+                    新生 {fresh}
+                  </span>
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-medium text-amber-800">
+                    舊生 {retrain.length}
+                  </span>
+                </div>
               </div>
-            )}
-          </section>
-        ))}
+              {s.signups.length === 0 ? (
+                <p className="text-sm text-gray-400">尚無報名</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {s.signups.map((g) =>
+                    isRetrain(g.product) ? (
+                      <span
+                        key={g.id}
+                        className="rounded-full bg-amber-50 px-2.5 py-1 text-sm text-amber-800 ring-1 ring-amber-200"
+                      >
+                        {g.name}
+                        <span className="ml-1 text-xs text-amber-500">複訓</span>
+                      </span>
+                    ) : (
+                      <span
+                        key={g.id}
+                        className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
+                      >
+                        {g.name}
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </main>
   );

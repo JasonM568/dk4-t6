@@ -217,6 +217,8 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
     updateSessionAction.bind(null, session.id),
     null,
   );
+  // 舊生 = 報名複訓方案（產品名含「複訓」）；與 /board 同一判別規則
+  const retrainCount = session.signups.filter((s) => s.product?.includes("複訓")).length;
   return (
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
@@ -226,6 +228,9 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
         )}
         <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-sm font-bold">
           {session.signups.length} 人
+        </span>
+        <span className="text-xs text-gray-400">
+          新生 {session.signups.length - retrainCount}｜舊生 {retrainCount}
         </span>
         {!session.isVisible && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
