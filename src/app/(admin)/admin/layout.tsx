@@ -28,67 +28,37 @@ export default async function AdminLayout({
             {STAFF_ROLE_LABEL[role] ?? role}
           </span>
         )}
+        {/* 頂層只放「分組」，組內頁面由第二層子分頁列（AdminSubNav）承接——
+            以後加功能一律進第二層，頂列不再變長 */}
         <nav className="flex flex-wrap gap-4 text-sm">
-          {/* 查看類：三種角色皆可 */}
           <Link href="/admin" className="text-gray-600 hover:text-black">
             總覽
           </Link>
+          {/* 課程與會員：課程上架/分類、會員、批次開通、訂單、企業專區 */}
           <Link href="/admin/courses" className="text-gray-600 hover:text-black">
-            課程管理
+            課程與會員
           </Link>
-          <Link href="/admin/members" className="text-gray-600 hover:text-black">
-            會員管理
-          </Link>
-          {/* 企業專區（包班）：自成一區——專區課程/會員/邀請碼都在這裡管 */}
-          {editor && (
-            <Link href="/admin/zones" className="text-gray-600 hover:text-black">
-              企業專區
-            </Link>
-          )}
-          <Link href="/admin/orders" className="text-gray-600 hover:text-black">
-            訂單查詢
-          </Link>
-          {/* 編輯/操作類：admin|operator */}
+          {/* 行銷推播：Email群發、名單群組、講座報名、簡訊發送——皆為編輯/操作類 */}
           {editor && (
             <Link
               href="/admin/broadcast"
               className="text-gray-600 hover:text-black"
             >
-              Email群發
-            </Link>
-          )}
-          {/* 簡訊發送：上課提醒（場次報名者）；未接簡訊商時為測試模式，不會實際送出 */}
-          {editor && (
-            <Link href="/admin/sms" className="text-gray-600 hover:text-black">
-              簡訊發送
+              行銷推播
             </Link>
           )}
           {/* 場次看板：實體開課報名狀況（1shop 訂單匯入），三種角色皆可看 */}
           <Link href="/admin/sessions" className="text-gray-600 hover:text-black">
             場次看板
           </Link>
-          {/* 講座報名頁：訪客留 email 索取講座連結 */}
-          {editor && (
-            <Link href="/admin/webinars" className="text-gray-600 hover:text-black">
-              講座報名
-            </Link>
-          )}
-          {/* 僅管理員 */}
+          {/* 系統設定：分頁管理、權限管理，僅管理員 */}
           {admin && (
-            <>
-              <Link
-                href="/admin/settings"
-                className="text-gray-600 hover:text-black"
-              >
-                分頁管理
-              </Link>
-              <Link
-                href="/admin/staff"
-                className="font-medium text-indigo-600 hover:text-indigo-800"
-              >
-                權限管理
-              </Link>
-            </>
+            <Link
+              href="/admin/settings"
+              className="font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              系統設定
+            </Link>
           )}
         </nav>
       </div>
