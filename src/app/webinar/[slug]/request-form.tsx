@@ -66,6 +66,7 @@ export function WebinarRequestForm({
     null,
   );
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [cooldown, setCooldown] = useState(0);
 
   const suggestion = suggestFix(email.trim());
@@ -110,6 +111,7 @@ export function WebinarRequestForm({
 
         <form action={action} className="flex items-center gap-2">
           <input type="hidden" name="email" value={email} />
+          <input type="hidden" name="name" value={name} />
           <button
             disabled={pending || cooldown > 0}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
@@ -140,12 +142,23 @@ export function WebinarRequestForm({
         aria-hidden="true"
       />
       <input
+        type="text"
+        name="name"
+        required
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="你的姓名"
+        autoComplete="name"
+        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base focus:border-black focus:outline-none"
+      />
+      <input
         type="email"
         name="email"
         required
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="輸入你的 Email"
+        autoComplete="email"
         className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base focus:border-black focus:outline-none"
       />
       {suggestion && (

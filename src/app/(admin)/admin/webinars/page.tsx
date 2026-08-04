@@ -60,6 +60,7 @@ export default async function AdminWebinarsPage() {
               requests: w.requests.map((r) => ({
                 id: r.id,
                 email: r.email,
+                name: r.name,
                 sentCount: r.sentCount,
                 lastSentAt: r.lastSentAt?.toISOString() ?? null,
                 createdAt: r.createdAt.toISOString(),

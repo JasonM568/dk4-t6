@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
-import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
+import { applyMergeTags, buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
 
@@ -139,6 +139,8 @@ export async function requestWebinarLinkAction(
     return { success: "確認信已寄出，請到信箱查收！" };
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "請填寫姓名" };
   if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確，請再確認" };
 
   const webinar = await prisma.webinar.findUnique({ where: { slug } });
@@ -176,9 +178,13 @@ export async function requestWebinarLinkAction(
     body += `\n\n──────────\n📌 會議資訊\n\n${infoLines.join("\n")}\n\n若點按鈕無法直接進入，請開啟會議程式後手動輸入上方 ID 與密碼。`;
   }
 
+  // {name}/{email} 合併變數（先替換再轉 HTML，esc 在 build 內處理防注入）
+  body = applyMergeTags(body, { email, name });
+  const subject = applyMergeTags(webinar.emailSubject, { email, name });
+
   const result = await sendBroadcast(
-    [{ email }],
-    webinar.emailSubject,
+    [{ email, name }],
+    subject,
     () => buildBroadcastHtml(body, null),
   );
   if (result.sent === 0) {
@@ -190,10 +196,11 @@ export async function requestWebinarLinkAction(
   try {
     await prisma.webinarRequest.upsert({
       where: { webinarId_email: { webinarId: webinar.id, email } },
-      update: { sentCount: { increment: 1 }, lastSentAt: new Date() },
+      update: { name, sentCount: { increment: 1 }, lastSentAt: new Date() },
       create: {
         webinarId: webinar.id,
         email,
+        name,
         sentCount: 1,
         lastSentAt: new Date(),
       },
@@ -201,8 +208,8 @@ export async function requestWebinarLinkAction(
     if (webinar.groupId) {
       await prisma.mailGroupMember.upsert({
         where: { groupId_email: { groupId: webinar.groupId, email } },
-        update: {},
-        create: { groupId: webinar.groupId, email },
+        update: { name },
+        create: { groupId: webinar.groupId, email, name },
       });
     }
   } catch (e) {

@@ -36,6 +36,7 @@ export type WebinarGroupOption = { id: string; name: string };
 export type WebinarRequestRow = {
   id: string;
   email: string;
+  name: string | null;
   sentCount: number;
   lastSentAt: string | null;
   createdAt: string;
@@ -339,6 +340,7 @@ export function WebinarCard({
             <thead className="text-left text-xs text-gray-400">
               <tr>
                 <th className="px-2 py-1.5">#</th>
+                <th className="px-2 py-1.5">姓名</th>
                 <th className="px-2 py-1.5">Email</th>
                 <th className="px-2 py-1.5">寄送次數</th>
                 <th className="px-2 py-1.5">首次索取</th>
@@ -349,6 +351,7 @@ export function WebinarCard({
               {webinar.requests.map((r, i) => (
                 <tr key={r.id}>
                   <td className="px-2 py-1.5 font-mono text-gray-400">{i + 1}</td>
+                  <td className="px-2 py-1.5">{r.name ?? "—"}</td>
                   <td className="px-2 py-1.5">{r.email}</td>
                   <td className="px-2 py-1.5 text-gray-500">{r.sentCount}</td>
                   <td className="px-2 py-1.5 text-gray-400">{formatDate(r.createdAt)}</td>

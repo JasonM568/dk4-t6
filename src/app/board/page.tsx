@@ -39,7 +39,7 @@ export default async function BoardPage() {
         title: true,
         requests: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, email: true },
+          select: { id: true, email: true, name: true },
         },
       },
     }),
@@ -164,7 +164,10 @@ export default async function BoardPage() {
                         key={r.id}
                         className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
                       >
-                        {r.email}
+                        {r.name ?? r.email}
+                        {r.name && (
+                          <span className="ml-1 text-xs text-gray-400">{r.email}</span>
+                        )}
                       </span>
                     ))}
                   </div>

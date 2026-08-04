@@ -292,6 +292,7 @@ model WebinarRequest {
   webinarId  String
   webinar    Webinar   @relation(fields: [webinarId], references: [id], onDelete: Cascade)
   email      String // 一律小寫正規化
+  name       String? // 訪客填的姓名（重複索取以最新為準）
   sentCount  Int       @default(0)
   lastSentAt DateTime?
 
