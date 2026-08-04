@@ -22,7 +22,11 @@ import {
   applyMergeTags,
   type FailedRecipient,
 } from "@/lib/email/broadcast";
-import { executeBroadcast } from "@/lib/email/dispatch";
+import { executeBroadcast, previewGroupAudience } from "@/lib/email/dispatch";
+import {
+  EMPTY_GROUP_AUDIENCE_PREVIEW,
+  type GroupAudiencePreview,
+} from "@/lib/email/audience";
 import { FOLLOWUP_FILTER_LABEL, isFollowUpFilter } from "@/lib/email/followup";
 import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
 import { isAdminRole } from "@/lib/auth/role";
@@ -635,6 +639,7 @@ type BroadcastAudience = {
   audienceData: {
     audienceType: string;
     groupId: string | null;
+    groupIds: string[];
     audienceLabel: string;
     manualRows: { email: string; name?: string }[] | undefined;
     sourceBroadcastId: string | null;
@@ -646,7 +651,7 @@ type BroadcastAudience = {
  *  lenient = 草稿模式：群組不存在/名單空也照存，之後編輯再補 */
 async function resolveBroadcastAudience(
   audience: string,
-  groupId: string,
+  groupIds: string[],
   manualRaw: string,
   lenient = false,
   followUp?: { sourceBroadcastId: string; filter: string },
@@ -654,12 +659,14 @@ async function resolveBroadcastAudience(
   let audienceType = "ALL";
   let audienceLabel = "全部會員";
   let audienceGroupId: string | null = null;
+  let audienceGroupIds: string[] = [];
   let manualRows: { email: string; name?: string }[] | undefined;
   let sourceBroadcastId: string | null = null;
   let followUpFilter: string | null = null;
   const emptyAudience = {
     audienceType,
     groupId: null,
+    groupIds: [],
     audienceLabel: "",
     manualRows,
     sourceBroadcastId: null,
@@ -697,28 +704,49 @@ async function resolveBroadcastAudience(
       audienceLabel = `跟進：${FOLLOWUP_FILTER_LABEL[followUpFilter]}（來源：${src?.subject ?? "（已不存在）"}）`;
     }
   } else if (audience === "group") {
+    // 可複選：寄出當下取所選群組的成員聯集並以 email 去重（dispatch.ts resolveRecipients）
     audienceType = "GROUP";
-    const group = groupId
-      ? await prisma.mailGroup.findUnique({
-          where: { id: groupId },
-          include: { _count: { select: { members: true } } },
+    const ids = [...new Set(groupIds.filter(Boolean))];
+    const found = ids.length
+      ? await prisma.mailGroup.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, _count: { select: { members: true } } },
         })
-      : null;
-    if (!group) {
+      : [];
+    // findMany 不保證順序：一律照勾選順序排，標籤文字與去重的姓名優先序才對得起來
+    const byId = new Map(found.map((g) => [g.id, g]));
+    const picked = ids.map((id) => byId.get(id)).filter((g) => !!g);
+
+    if (picked.length === 0) {
       if (!lenient)
         return {
-          error: "請選擇名單群組",
+          error: "請至少勾選一個名單群組",
           audienceData: { ...emptyAudience, audienceType },
         };
       audienceLabel = "群組：未選擇";
     } else {
-      if (!lenient && group._count.members === 0)
+      // 勾選後群組被刪掉：寧可擋下重選，也不要默默少寄一整批人
+      if (!lenient && picked.length < ids.length)
         return {
-          error: `群組「${group.name}」沒有成員，請先到名單群組加入名單`,
+          error: `有 ${ids.length - picked.length} 個群組已不存在（可能剛被刪除），請重新勾選`,
           audienceData: { ...emptyAudience, audienceType },
         };
-      audienceGroupId = group.id;
-      audienceLabel = `群組：${group.name}`;
+      // 成員數判總和而非逐組：五組裡有一組是空的，不該擋住整批寄送
+      const total = picked.reduce((n, g) => n + g._count.members, 0);
+      if (!lenient && total === 0)
+        return {
+          error: `所選群組（${picked.map((g) => g.name).join("、")}）都沒有成員，請先到名單群組加入名單`,
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      audienceGroupIds = picked.map((g) => g.id);
+      audienceGroupId = audienceGroupIds[0]; // 舊欄位鏡射，未遷移的讀取端仍拿得到值
+      const names = picked.map((g) => g.name);
+      audienceLabel =
+        names.length === 1
+          ? `群組：${names[0]}` // 單選文案與改版前一字不差，歷史紀錄看起來才一致
+          : `群組 ${names.length} 組（已去重）：${names.slice(0, 3).join("、")}${
+              names.length > 3 ? ` 等${names.length}組` : ""
+            }`;
     }
   } else if (audience === "manual" || audience === "members") {
     // members = 從會員清單勾選；名單同樣走 MANUAL 流程（寄送/明細/補寄/存群組共用）
@@ -743,6 +771,7 @@ async function resolveBroadcastAudience(
     audienceData: {
       audienceType,
       groupId: audienceGroupId,
+      groupIds: audienceGroupIds,
       audienceLabel,
       manualRows: manualRows ?? undefined,
       sourceBroadcastId,
@@ -784,6 +813,18 @@ export async function deleteMailTemplateAction(id: string) {
   revalidatePath("/admin/broadcast");
 }
 
+/** 複選名單群組的收件人數預覽（後台勾選當下即時試算）。
+ *  刻意呼叫 dispatch 的 previewGroupAudience——與寄出走同一套去重與退訂過濾，
+ *  預覽的「實際可寄 N 人」就是寄出後的 sentCount。 */
+export async function previewGroupAudienceAction(
+  groupIds: string[],
+): Promise<GroupAudiencePreview> {
+  await requireEditor();
+  const ids = [...new Set((groupIds ?? []).map(String).filter(Boolean))].slice(0, 50);
+  if (ids.length === 0) return EMPTY_GROUP_AUDIENCE_PREVIEW;
+  return previewGroupAudience(ids);
+}
+
 /** 群發通知：mode=test 只寄給操作的管理員本人；mode=draft 存草稿；mode=all 正式群發並留紀錄。
  *  mode=template 把主旨/內文/關聯課程存成範本（不寄信、不留群發紀錄）。
  *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
@@ -800,7 +841,8 @@ export async function sendBroadcastAction(
   const mode = String(formData.get("mode") ?? "test");
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const audience = String(formData.get("audience") ?? "all"); // all | group | manual | members | followup
-  const groupId = String(formData.get("groupId") ?? "");
+  // 名單群組可複選（checkbox 同名多值）；勾選順序即姓名優先序
+  const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
@@ -824,7 +866,7 @@ export async function sendBroadcastAction(
   if (mode === "draft") {
     const { audienceData } = await resolveBroadcastAudience(
       audience,
-      groupId,
+      groupIds,
       manualRaw,
       true,
       followUp,
@@ -882,7 +924,7 @@ export async function sendBroadcastAction(
   // ── 解析發送對象 ──
   const resolved = await resolveBroadcastAudience(
     audience,
-    groupId,
+    groupIds,
     manualRaw,
     false,
     followUp,
@@ -995,7 +1037,7 @@ export async function updateBroadcastAction(
   const mode = String(formData.get("mode") ?? "test");
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const audience = String(formData.get("audience") ?? "all");
-  const groupId = String(formData.get("groupId") ?? "");
+  const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
@@ -1045,7 +1087,7 @@ export async function updateBroadcastAction(
   if (mode === "draft") {
     const { audienceData } = await resolveBroadcastAudience(
       audience,
-      groupId,
+      groupIds,
       manualRaw,
       true,
       followUp,
@@ -1073,7 +1115,7 @@ export async function updateBroadcastAction(
   // 正式：解析發送對象（嚴格）
   const resolved = await resolveBroadcastAudience(
     audience,
-    groupId,
+    groupIds,
     manualRaw,
     false,
     followUp,

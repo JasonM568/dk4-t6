@@ -11,6 +11,7 @@ import {
 import { toDatetimeLocal } from "../../datetime";
 import { buildFollowUpProp } from "../../followup-stats";
 import { isFollowUpFilter } from "@/lib/email/followup";
+import { broadcastGroupIds } from "@/lib/email/audience";
 
 export const metadata = { title: "編輯群發 — Email群發" };
 
@@ -67,7 +68,7 @@ export default async function BroadcastEditPage({
         : record.audienceType === "MANUAL"
           ? "manual"
           : "all",
-    groupId: record.groupId ?? "",
+    groupIds: broadcastGroupIds(record), // 改版前的單選紀錄會回填成一個勾選
     manualList: manualRows
       .map((r) => (r.name ? `${r.email},${r.name}` : r.email))
       .join("\n"),

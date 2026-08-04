@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useActionState } from "react";
 import Link from "next/link";
 import {
+  previewGroupAudienceAction,
   saveBroadcastListToGroupAction,
   type BroadcastState,
 } from "@/actions/admin";
+import type { GroupAudiencePreview } from "@/lib/email/audience";
 import { SubmitButton } from "@/components/admin/submit-button";
 
 type GroupOption = { id: string; name: string; memberCount: number };
@@ -17,7 +19,7 @@ export type BroadcastFormDefaults = {
   body: string;
   courseId: string;
   audience: "all" | "group" | "manual";
-  groupId: string;
+  groupIds: string[]; // 名單群組可複選
   manualList: string;
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
 };
@@ -62,6 +64,40 @@ export function BroadcastForm({
     "all" | "group" | "manual" | "members"
   >(defaultValues?.audience ?? "all");
   const [picked, setPicked] = useState<Map<string, MemberOption>>(new Map());
+  // 勾選的名單群組；用 append 保留勾選順序——與伺服器端去重的姓名優先序一致
+  const [pickedGroups, setPickedGroups] = useState<string[]>(
+    defaultValues?.groupIds ?? [],
+  );
+  // 連同「這份試算屬於哪組勾選」一起存：勾選一變動，舊結果的 key 就對不上而自動失效，
+  // 不需要在 effect 裡 setState 清空（也就不會出現一瞬間的過期數字）
+  const [preview, setPreview] = useState<{
+    key: string;
+    data: GroupAudiencePreview;
+  } | null>(null);
+  const [previewing, startPreview] = useTransition();
+  const previewKey = pickedGroups.join(",");
+  const groupPreview = preview?.key === previewKey ? preview.data : null;
+
+  const toggleGroup = (id: string) =>
+    setPickedGroups((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+
+  // 勾選變動時試算人數（debounce 300ms；server action 是循序 POST，需擋過期回應）
+  useEffect(() => {
+    if (audience !== "group" || pickedGroups.length === 0) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      startPreview(async () => {
+        const result = await previewGroupAudienceAction(pickedGroups);
+        if (alive) setPreview({ key: previewKey, data: result });
+      });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [audience, pickedGroups, previewKey]);
 
   // 把變數插入內文游標處（textarea 為非受控，直接改 value 即可送出）
   const insertVar = (token: string) => {
@@ -80,10 +116,16 @@ export function BroadcastForm({
       return `跟進：${followUp.filterLabel}（來源：${followUp.sourceSubject}）`;
     if (audience === "all") return `全部 ${memberCount} 位會員`;
     if (audience === "group") {
-      const sel = (
-        formRef.current?.elements.namedItem("groupId") as HTMLSelectElement | null
-      )?.selectedOptions[0]?.textContent;
-      return `名單群組「${sel ?? ""}」`;
+      const names = pickedGroups
+        .map((id) => groups.find((g) => g.id === id)?.name)
+        .filter((n): n is string => !!n);
+      if (names.length === 0) return "（尚未勾選名單群組）";
+      const dedup = groupPreview
+        ? `，去重後 ${groupPreview.sendableCount} 人`
+        : "";
+      return names.length === 1
+        ? `名單群組「${names[0]}」${dedup}`
+        : `${names.length} 個名單群組（${names.join("、")}）${dedup}`;
     }
     if (audience === "members") return `勾選的 ${picked.size} 位會員`;
     return "手動貼入的名單";
@@ -206,6 +248,9 @@ export function BroadcastForm({
                 onChange={() => setAudience("group")}
               />
               名單群組
+              <span className="text-xs text-gray-400">
+                （可複選，重複的 Email 只會寄一次）
+              </span>
               {groups.length === 0 && (
                 <span className="text-xs text-gray-400">
                   （尚無群組，先到
@@ -220,21 +265,58 @@ export function BroadcastForm({
               )}
             </label>
             {audience === "group" && groups.length > 0 && (
-              <select
-                name="groupId"
-                required
-                defaultValue={defaultValues?.groupId ?? ""}
-                className="ml-6 w-80 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-              >
-                <option value="" disabled>
-                  選擇群組
-                </option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}（{g.memberCount} 筆）
-                  </option>
-                ))}
-              </select>
+              <div className="ml-6 space-y-2">
+                <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
+                  {groups.map((g) => (
+                    <label
+                      key={g.id}
+                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        name="groupIds"
+                        value={g.id}
+                        checked={pickedGroups.includes(g.id)}
+                        onChange={() => toggleGroup(g.id)}
+                      />
+                      {g.name}
+                      <span className="text-xs text-gray-400">
+                        （{g.memberCount} 筆）
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {/* 名單試算：讓管理員在送出前親眼看到重疊被扣掉；與寄出走同一套解析 */}
+                {pickedGroups.length > 0 && (
+                  <div className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+                    {previewing || !groupPreview ? (
+                      "計算名單中…"
+                    ) : (
+                      <>
+                        已選 {groupPreview.groups.length} 組，合計{" "}
+                        {groupPreview.totalRows} 筆 → 去重後{" "}
+                        <span className="font-bold">
+                          {groupPreview.uniqueCount} 人
+                        </span>
+                        （重複／不合法 {groupPreview.duplicateCount} 筆）
+                        {groupPreview.unsubscribedCount > 0 &&
+                          `，扣除退訂 ${groupPreview.unsubscribedCount} 人`}
+                        {" → "}實際可寄{" "}
+                        <span className="font-bold">
+                          {groupPreview.sendableCount} 人
+                        </span>
+                        <span className="mt-0.5 block text-indigo-600">
+                          {groupPreview.groups
+                            .map((g) => `${g.name} ${g.rowCount}`)
+                            .join("・")}
+                          {groupPreview.missingCount > 0 &&
+                            `（有 ${groupPreview.missingCount} 組已被刪除）`}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
             <label className="flex items-center gap-2">
               <input
@@ -314,6 +396,12 @@ export function BroadcastForm({
             value="all"
             disabled={pending}
             onClick={(e) => {
+              // checkbox 清單無法用 required 擋，自己攔下來才不會白跑一趟伺服器
+              if (!followUp && audience === "group" && pickedGroups.length === 0) {
+                e.preventDefault();
+                alert("請至少勾選一個名單群組");
+                return;
+              }
               const when = (
                 formRef.current?.elements.namedItem(
                   "scheduledAt",

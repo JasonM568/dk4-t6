@@ -234,7 +234,7 @@ export default async function BroadcastPage({
                 body: (template ?? savedTemplate)!.body,
                 courseId: (template ?? savedTemplate)!.courseId ?? "",
                 audience: "all",
-                groupId: "",
+                groupIds: [],
                 manualList: "",
                 scheduledAt: "",
               }
@@ -244,7 +244,7 @@ export default async function BroadcastPage({
                   body: "",
                   courseId: "",
                   audience: "all",
-                  groupId: "",
+                  groupIds: [],
                   manualList: "",
                   // 跟進信預設隔天同時段寄出（可自行調整）
                   scheduledAt: toDatetimeLocal(
