@@ -5,11 +5,25 @@ import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { publicCourseWhere } from "@/lib/course-access";
 
 export default async function HomePage() {
-  const courses = await prisma.course.findMany({
-    where: publicCourseWhere(),
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-    take: 3,
-  });
+  const [courses, webinars] = await Promise.all([
+    prisma.course.findMany({
+      where: publicCourseWhere(),
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      take: 3,
+    }),
+    // 進行中的講座報名頁：首頁曝光導流（關閉報名即自動下架）
+    prisma.webinar.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        description: true,
+        dmImage: true,
+      },
+    }),
+  ]);
 
   return (
     <div>
@@ -40,6 +54,50 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* 近期講座：進行中的講座報名頁（後台關閉報名即自動消失） */}
+      {webinars.length > 0 && (
+        <section className="mx-auto max-w-6xl px-4 py-12">
+          <h2 className="mb-6 text-center text-2xl font-bold">🎤 近期講座</h2>
+          <div
+            className={`grid gap-6 ${
+              webinars.length === 1
+                ? "mx-auto max-w-xl"
+                : "sm:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
+            {webinars.map((w) => (
+              <Link
+                key={w.id}
+                href={`/webinar/${w.slug}`}
+                className="group overflow-hidden rounded-2xl border border-gray-200 transition hover:border-gray-400 hover:shadow-md"
+              >
+                {w.dmImage && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={w.dmImage}
+                    alt={`${w.title} 講座 DM`}
+                    className="w-full object-cover"
+                  />
+                )}
+                <div className="p-5">
+                  <div className="text-lg font-bold group-hover:underline">
+                    {w.title}
+                  </div>
+                  {w.description && (
+                    <p className="mt-2 line-clamp-3 whitespace-pre-line text-sm text-gray-600">
+                      {w.description}
+                    </p>
+                  )}
+                  <div className="mt-4 inline-block rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition group-hover:bg-gray-800">
+                    留 Email 索取講座連結 →
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 會員等級說明（分級制度停用時整段隱藏） */}
       {TIER_SYSTEM_ENABLED && (
