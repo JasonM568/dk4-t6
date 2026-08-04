@@ -262,6 +262,43 @@ model Course {
   @@index([groupId])
 }
 
+// ── 課程場次看板 ──
+// 實體/直播開課「場次」，獨立於 Course（平台觀看權限）體系。
+// 後台手動上架場次＋定期上傳 1shop 訂單檔 → 依產品關鍵字歸入場次；
+// /board 憑 4 位碼（SiteSetting boardCode）唯讀查看報名人數與姓名。
+model CourseSession {
+  id        String    @id @default(cuid())
+  title     String // 場次名稱（例：8/20 AI初階 台北場）
+  eventDate DateTime? // 開課日期（看板排序/顯示用，可空）
+  keywords  String[]  @default([]) // 訂單「產品」欄含任一關鍵字 → 歸入本場次
+  isVisible Boolean   @default(true) // 顯示於 /board 看板
+  sortOrder Int       @default(0)
+
+  signups SessionSignup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 場次報名（來源：1shop 訂單匯入）。只收金流狀態=已付款的列。
+model SessionSignup {
+  id        String        @id @default(cuid())
+  sessionId String
+  session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  orderNo   String // 1shop 訂單編號
+  name      String // 顧客姓名（看板顯示）
+  email     String?
+  phone     String?
+  product   String? // 原始產品欄（追溯歸類依據）
+  amount    Int? // 該列小計（新台幣整數）
+  orderedAt DateTime? // 訂單建立日期
+
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, orderNo]) // 重複上傳冪等（同單同場次只算一筆）
+  @@index([sessionId])
+}
+
 // 待開通名單：批次開通遇「查無會員」時存底（以 email 為鍵），
 // 學員之後註冊（或管理員建帳號）當下自動認領 → 寫入 Enrollment。
 // claimedAt 有值 = 已認領（留存稽核，不重複觸發）；待註冊人數 = claimedAt IS NULL。

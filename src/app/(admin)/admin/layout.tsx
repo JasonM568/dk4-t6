@@ -57,6 +57,10 @@ export default async function AdminLayout({
               Email群發
             </Link>
           )}
+          {/* 場次看板：實體開課報名狀況（1shop 訂單匯入），三種角色皆可看 */}
+          <Link href="/admin/sessions" className="text-gray-600 hover:text-black">
+            場次看板
+          </Link>
           {/* 僅管理員 */}
           {admin && (
             <>
