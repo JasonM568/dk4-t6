@@ -200,7 +200,7 @@ export type SignedUploadResult =
 // server action body，徹底避開上限；server 端只回一個簽名 token（極小封包）。
 export async function createCourseImageSignedUpload(
   fileType: string,
-  prefix: "cover" | "intro" = "intro",
+  prefix: "cover" | "intro" | "webinar" = "intro",
 ): Promise<SignedUploadResult> {
   if (!ALLOWED_IMAGE_TYPES.includes(fileType)) {
     return { ok: false, error: "格式不支援（限 JPG/PNG/WebP/GIF）" };

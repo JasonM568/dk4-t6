@@ -24,21 +24,36 @@ const DEFAULT_EMAIL_BODY = `您好，感謝索取講座連結！
 
 希望學院 敬上`;
 
-function parseWebinarForm(formData: FormData) {
+async function parseWebinarForm(formData: FormData) {
   const slug = String(formData.get("slug") ?? "").trim().toLowerCase();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const lectureUrl = String(formData.get("lectureUrl") ?? "").trim();
+  // DM 圖：瀏覽器已直傳 Storage，這裡只收公開網址字串（同課程封面模式）
+  const dmImage = String(formData.get("dmImage") ?? "").trim() || null;
   const emailSubject = String(formData.get("emailSubject") ?? "").trim();
   const emailBody = String(formData.get("emailBody") ?? "").trim() || DEFAULT_EMAIL_BODY;
-  const groupId = String(formData.get("groupId") ?? "").trim() || null;
   const isActive = formData.get("isActive") === "on";
 
   if (!SLUG_RE.test(slug)) return { error: "網址代稱只能用小寫英數與連字號（例：ai-webinar-0815）" as const };
   if (!title) return { error: "請填寫講座標題" as const };
   if (!/^https?:\/\//.test(lectureUrl)) return { error: "講座連結須為 http(s) 網址" as const };
+  if (dmImage && !/^https?:\/\//.test(dmImage)) return { error: "DM 圖網址格式錯誤" as const };
   if (!emailSubject) return { error: "請填寫信件主旨" as const };
-  return { slug, title, description, lectureUrl, emailSubject, emailBody, groupId, isActive };
+
+  // 名單群組：填了新群組名稱就建立（或沿用同名既有群組）並優先使用
+  const newGroupName = String(formData.get("newGroupName") ?? "").trim();
+  let groupId = String(formData.get("groupId") ?? "").trim() || null;
+  if (newGroupName) {
+    const group = await prisma.mailGroup.upsert({
+      where: { name: newGroupName },
+      update: {},
+      create: { name: newGroupName },
+    });
+    groupId = group.id;
+  }
+
+  return { slug, title, description, lectureUrl, dmImage, emailSubject, emailBody, groupId, isActive };
 }
 
 export async function createWebinarAction(
@@ -46,7 +61,7 @@ export async function createWebinarAction(
   formData: FormData,
 ): Promise<WebinarFormState> {
   await requireEditor();
-  const parsed = parseWebinarForm(formData);
+  const parsed = await parseWebinarForm(formData);
   if ("error" in parsed) return { error: parsed.error };
   try {
     await prisma.webinar.create({ data: parsed });
@@ -63,7 +78,7 @@ export async function updateWebinarAction(
   formData: FormData,
 ): Promise<WebinarFormState> {
   await requireEditor();
-  const parsed = parseWebinarForm(formData);
+  const parsed = await parseWebinarForm(formData);
   if ("error" in parsed) return { error: parsed.error };
   try {
     await prisma.webinar.update({ where: { id }, data: parsed });

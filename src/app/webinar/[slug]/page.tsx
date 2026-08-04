@@ -31,6 +31,14 @@ export default async function WebinarPage({
   return (
     <main className="mx-auto flex min-h-[80vh] max-w-lg flex-col justify-center px-6 py-12">
       <div className="rounded-2xl border border-gray-200 p-6 sm:p-8">
+        {webinar.dmImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={webinar.dmImage}
+            alt={`${webinar.title} 講座 DM`}
+            className="mb-5 w-full rounded-xl"
+          />
+        )}
         <h1 className="mb-3 text-2xl font-bold">{webinar.title}</h1>
         {webinar.description && (
           <p className="mb-6 whitespace-pre-line text-sm leading-relaxed text-gray-600">

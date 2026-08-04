@@ -1,13 +1,36 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   createWebinarAction,
   updateWebinarAction,
   deleteWebinarAction,
   type WebinarFormState,
 } from "@/actions/webinar";
+import { requestCourseImageUploadUrl } from "@/actions/admin";
+import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
+
+// 圖片限制（與課程封面上傳一致；bytes 直傳 Storage 不經 server action body）
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
+
+async function uploadDmImage(
+  file: File,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type))
+    return { ok: false, error: "格式不支援（限 JPG/PNG/WebP/GIF）" };
+  if (file.size > MAX_IMAGE_BYTES)
+    return { ok: false, error: "圖片超過 5MB，請壓縮後再上傳" };
+  const signed = await requestCourseImageUploadUrl(file.type, "webinar");
+  if (!signed.ok) return { ok: false, error: signed.error };
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from(signed.bucket)
+    .uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type });
+  if (error) return { ok: false, error: `上傳失敗：${error.message}` };
+  return { ok: true, url: signed.publicUrl };
+}
 
 export type WebinarGroupOption = { id: string; name: string };
 export type WebinarRequestRow = {
@@ -23,6 +46,7 @@ export type WebinarRow = {
   title: string;
   description: string;
   lectureUrl: string;
+  dmImage: string | null;
   emailSubject: string;
   emailBody: string;
   groupId: string | null;
@@ -56,6 +80,20 @@ function WebinarFields({
   groups: WebinarGroupOption[];
   initial?: WebinarRow;
 }) {
+  const [dmImage, setDmImage] = useState(initial?.dmImage ?? "");
+  const [dmError, setDmError] = useState("");
+  const [dmUploading, setDmUploading] = useState(false);
+
+  const onDmFile = async (file: File | undefined) => {
+    if (!file) return;
+    setDmError("");
+    setDmUploading(true);
+    const res = await uploadDmImage(file);
+    setDmUploading(false);
+    if (res.ok) setDmImage(res.url);
+    else setDmError(res.error);
+  };
+
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -85,14 +123,53 @@ function WebinarFields({
         placeholder="頁面說明（講座時間、講者、內容簡介…）"
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
-      <div className="flex flex-wrap gap-2">
-        <input
-          name="lectureUrl"
-          required
-          defaultValue={initial?.lectureUrl ?? ""}
-          placeholder="講座連結（https://…，只出現在信裡不露出在頁面）"
-          className="w-96 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-        />
+      <input
+        name="lectureUrl"
+        required
+        defaultValue={initial?.lectureUrl ?? ""}
+        placeholder="講座連結（https://…，只出現在信裡不露出在頁面）"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+      />
+
+      {/* 講座 DM 圖：瀏覽器直傳 Storage（同課程封面），存公開網址 */}
+      <div className="rounded-lg border border-dashed border-gray-300 p-3">
+        <div className="mb-1.5 text-xs font-medium text-gray-500">
+          講座 DM 圖（選填，顯示在報名頁說明上方；JPG/PNG/WebP，5MB 內）
+        </div>
+        <input type="hidden" name="dmImage" value={dmImage} />
+        <div className="flex flex-wrap items-center gap-3">
+          {dmImage && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={dmImage}
+              alt="講座 DM 預覽"
+              className="max-h-40 rounded-lg border border-gray-200"
+            />
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              accept={ALLOWED_IMAGE_TYPES.join(",")}
+              onChange={(e) => onDmFile(e.target.files?.[0])}
+              className="text-sm"
+            />
+            {dmUploading && <span className="text-xs text-gray-400">上傳中…</span>}
+            {dmImage && !dmUploading && (
+              <button
+                type="button"
+                onClick={() => setDmImage("")}
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+              >
+                移除 DM
+              </button>
+            )}
+          </div>
+        </div>
+        {dmError && <p className="mt-1 text-xs text-red-600">{dmError}</p>}
+      </div>
+
+      {/* 名單群組：選既有，或直接建新群組（填了新名稱優先） */}
+      <div className="flex flex-wrap items-center gap-2">
         <select
           name="groupId"
           defaultValue={initial?.groupId ?? ""}
@@ -105,6 +182,13 @@ function WebinarFields({
             </option>
           ))}
         </select>
+        <span className="text-xs text-gray-400">或</span>
+        <input
+          name="newGroupName"
+          placeholder="建立新群組（例：0815講座名單）"
+          className="w-56 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+        />
+        <span className="text-xs text-gray-400">填了新群組名稱就建立並優先使用</span>
       </div>
       <input
         name="emailSubject"

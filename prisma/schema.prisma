@@ -271,6 +271,7 @@ model Webinar {
   title        String
   description  String  @db.Text // 頁面說明（純文字換行顯示）
   lectureUrl   String // 講座連結（寄信用，不直接露出在頁面）
+  dmImage      String? // 講座 DM 圖（瀏覽器直傳 Storage 的公開網址，頁面說明上方顯示）
   emailSubject String
   emailBody    String  @db.Text // 支援 {link}=講座連結、[按鈕文字](網址) CTA
   groupId      String? // 索取者自動加入的 MailGroup；null = 不加名單

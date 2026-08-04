@@ -49,6 +49,7 @@ export default async function AdminWebinarsPage() {
               title: w.title,
               description: w.description,
               lectureUrl: w.lectureUrl,
+              dmImage: w.dmImage,
               emailSubject: w.emailSubject,
               emailBody: w.emailBody,
               groupId: w.groupId,
