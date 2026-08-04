@@ -133,19 +133,31 @@ export async function uploadOrdersAction(
   }
 }
 
-/** 看板 4 位碼：存 SiteSetting（改碼即讓所有既有看板 cookie 失效） */
+/** 看板設定：4 位碼＋登入時效（存 SiteSetting；改碼即讓所有既有看板 cookie 失效） */
 export async function saveBoardCodeAction(
   _prev: SessionFormState,
   formData: FormData,
 ): Promise<SessionFormState> {
   await requireEditor();
   const code = String(formData.get("code") ?? "").trim();
+  const hours = Math.round(Number(String(formData.get("hours") ?? "").trim()));
   if (!/^\d{4}$/.test(code)) return { error: "登入碼須為 4 位數字" };
-  await prisma.siteSetting.upsert({
-    where: { key: "boardCode" },
-    update: { value: code },
-    create: { key: "boardCode", value: code },
-  });
+  if (!Number.isFinite(hours) || hours < 1 || hours > 720)
+    return { error: "登入時效須為 1–720 小時" };
+  await prisma.$transaction([
+    prisma.siteSetting.upsert({
+      where: { key: "boardCode" },
+      update: { value: code },
+      create: { key: "boardCode", value: code },
+    }),
+    prisma.siteSetting.upsert({
+      where: { key: "boardSessionHours" },
+      update: { value: String(hours) },
+      create: { key: "boardSessionHours", value: String(hours) },
+    }),
+  ]);
   revalidatePath("/admin/sessions");
-  return { success: "看板登入碼已更新（舊碼登入的裝置需重新輸入）" };
+  return {
+    success: `看板設定已更新：登入後 ${hours} 小時自動登出（時效變更只影響之後的登入；改碼則立即全面登出）`,
+  };
 }

@@ -42,8 +42,14 @@ function Feedback({ state }: { state: SessionFormState }) {
   ) : null;
 }
 
-/** 看板 4 位碼設定 */
-export function BoardCodeForm({ current }: { current: string | null }) {
+/** 看板設定：4 位碼＋登入時效 */
+export function BoardCodeForm({
+  current,
+  currentHours,
+}: {
+  current: string | null;
+  currentHours: number;
+}) {
   const [state, action, pending] = useActionState<SessionFormState, FormData>(
     saveBoardCodeAction,
     null,
@@ -59,15 +65,29 @@ export function BoardCodeForm({ current }: { current: string | null }) {
           inputMode="numeric"
           pattern="\d{4}"
           maxLength={4}
+          defaultValue={current ?? ""}
           placeholder="例：2688"
           className="w-32 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs text-gray-500">
+          登入時效（小時，逾時自動登出）
+        </label>
+        <input
+          name="hours"
+          type="number"
+          min={1}
+          max={720}
+          defaultValue={currentHours}
+          className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
         />
       </div>
       <button
         disabled={pending}
         className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
       >
-        {pending ? "儲存中…" : "儲存登入碼"}
+        {pending ? "儲存中…" : "儲存設定"}
       </button>
       <Feedback state={state} />
     </form>

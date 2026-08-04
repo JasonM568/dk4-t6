@@ -2,11 +2,16 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { BOARD_COOKIE, getBoardCode, hashBoardCode } from "@/lib/board-auth";
+import {
+  BOARD_COOKIE,
+  getBoardCode,
+  getBoardSessionHours,
+  signBoardToken,
+} from "@/lib/board-auth";
 
 export type BoardLoginState = { error?: string } | null;
 
-/** 看板 4 位碼登入：對碼成功 → 設 httpOnly cookie（30 天） */
+/** 看板 4 位碼登入：對碼成功 → 設含到期時間戳的簽章 cookie（時效由後台設定） */
 export async function boardLoginAction(
   _prev: BoardLoginState,
   formData: FormData,
@@ -21,14 +26,23 @@ export async function boardLoginAction(
     return { error: "登入碼錯誤" };
   }
 
+  const hours = await getBoardSessionHours();
+  const expMs = Date.now() + hours * 60 * 60 * 1000;
   const jar = await cookies();
-  jar.set(BOARD_COOKIE, hashBoardCode(code), {
+  jar.set(BOARD_COOKIE, signBoardToken(code, expMs), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: hours * 60 * 60,
   });
   revalidatePath("/board");
   return null;
+}
+
+/** 看板手動登出 */
+export async function boardLogoutAction() {
+  const jar = await cookies();
+  jar.delete(BOARD_COOKIE);
+  revalidatePath("/board");
 }

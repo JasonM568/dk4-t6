@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { isBoardAuthed } from "@/lib/board-auth";
+import { boardAuthStatus } from "@/lib/board-auth";
+import { boardLogoutAction } from "@/actions/board";
 import { BoardLoginForm, AutoRefresh } from "./board-client";
 
 export const metadata = { title: "課程報名看板", robots: { index: false } };
@@ -7,9 +8,9 @@ export const metadata = { title: "課程報名看板", robots: { index: false } 
 export const dynamic = "force-dynamic";
 
 export default async function BoardPage() {
-  const authed = await isBoardAuthed();
+  const { expiresAt } = await boardAuthStatus();
 
-  if (!authed) {
+  if (!expiresAt) {
     return (
       <main className="flex min-h-[70vh] items-center justify-center px-6">
         <BoardLoginForm />
@@ -42,8 +43,26 @@ export default async function BoardPage() {
             {now.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false })}
           </p>
         </div>
-        <div className="text-sm text-gray-400">
-          共 {sessions.length} 場次｜{sessions.reduce((n, s) => n + s.signups.length, 0)} 筆報名
+        <div className="flex items-center gap-3 text-sm text-gray-400">
+          <span>
+            共 {sessions.length} 場次｜{sessions.reduce((n, s) => n + s.signups.length, 0)} 筆報名
+          </span>
+          <span>
+            {expiresAt.toLocaleString("zh-TW", {
+              timeZone: "Asia/Taipei",
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            })}{" "}
+            自動登出
+          </span>
+          <form action={boardLogoutAction}>
+            <button className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs text-gray-500 transition hover:bg-gray-50">
+              登出
+            </button>
+          </form>
         </div>
       </header>
 

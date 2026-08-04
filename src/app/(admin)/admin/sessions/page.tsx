@@ -10,14 +10,19 @@ import {
 export const metadata = { title: "場次看板 — 管理後台" };
 
 export default async function AdminSessionsPage() {
-  const [sessions, boardCode, canEditNow] = await Promise.all([
+  const [sessions, boardCode, boardHours, canEditNow] = await Promise.all([
     prisma.courseSession.findMany({
       orderBy: [{ sortOrder: "asc" }, { eventDate: "desc" }, { createdAt: "desc" }],
       include: { signups: { orderBy: { orderedAt: "asc" } } },
     }),
     prisma.siteSetting.findUnique({ where: { key: "boardCode" } }),
+    prisma.siteSetting.findUnique({ where: { key: "boardSessionHours" } }),
     currentCanEdit(),
   ]);
+  const hoursNum = Number(boardHours?.value);
+  const currentHours = Number.isFinite(hoursNum)
+    ? Math.min(720, Math.max(1, Math.round(hoursNum)))
+    : 24;
 
   const totalSignups = sessions.reduce((n, s) => n + s.signups.length, 0);
 
@@ -37,7 +42,7 @@ export default async function AdminSessionsPage() {
               看板網址：<code className="rounded bg-white px-2 py-0.5">course.huangxi.info/board</code>
               （傳給需要看報名情況的人，輸入登入碼即可查看）
             </div>
-            <BoardCodeForm current={boardCode?.value ?? null} />
+            <BoardCodeForm current={boardCode?.value ?? null} currentHours={currentHours} />
           </section>
 
           {/* 上傳訂單 */}
