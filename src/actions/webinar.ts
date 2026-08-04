@@ -134,9 +134,16 @@ export async function requestWebinarLinkAction(
   _prev: WebinarRequestState,
   formData: FormData,
 ): Promise<WebinarRequestState> {
-  // 蜜罐：真人看不到的欄位有值 = 機器人，裝作成功不寄信
-  if (String(formData.get("website") ?? "").trim() !== "")
+  // 蜜罐：真人看不到的欄位有值 = 機器人，裝作成功不寄信。
+  // 欄位名刻意用 autofill 字典外的怪名（曾因取名 website 被瀏覽器自動填入而誤殺真人）；
+  // 觸發時記 log，之後查「沒收到信」先看這裡。
+  if (String(formData.get("hp_extra_note") ?? "").trim() !== "") {
+    console.error("[webinar] 蜜罐觸發（機器人或 autofill 誤填）", {
+      slug,
+      email: String(formData.get("email") ?? ""),
+    });
     return { success: "確認信已寄出，請到信箱查收！" };
+  }
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const name = String(formData.get("name") ?? "").trim();

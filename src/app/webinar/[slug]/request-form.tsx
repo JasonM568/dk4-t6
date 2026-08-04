@@ -132,10 +132,12 @@ export function WebinarRequestForm({
 
   return (
     <form action={action} className="space-y-3">
-      {/* 蜜罐欄位：真人看不到，機器人會填 */}
+      {/* 蜜罐欄位：真人看不到，機器人會填。
+          欄位名不能用 website/url/phone 等 autofill 認得的字（會被瀏覽器
+          自動填入而誤殺真人），一律用字典外怪名 */}
       <input
         type="text"
-        name="website"
+        name="hp_extra_note"
         tabIndex={-1}
         autoComplete="off"
         className="absolute -left-[9999px] h-0 w-0 opacity-0"
