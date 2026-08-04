@@ -20,7 +20,8 @@ export default async function BoardPage() {
 
   const sessions = await prisma.courseSession.findMany({
     where: { isVisible: true },
-    orderBy: [{ sortOrder: "asc" }, { eventDate: "desc" }, { createdAt: "desc" }],
+    // 最近開課日在前（日期近→遠），沒填日期的排最後
+    orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
     include: {
       signups: {
         orderBy: { orderedAt: "asc" },
