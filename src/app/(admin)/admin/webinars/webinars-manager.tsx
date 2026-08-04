@@ -5,6 +5,8 @@ import {
   createWebinarAction,
   updateWebinarAction,
   deleteWebinarAction,
+  updateWebinarRequestAction,
+  deleteWebinarRequestAction,
   type WebinarFormState,
 } from "@/actions/webinar";
 import { requestCourseImageUploadUrl } from "@/actions/admin";
@@ -263,6 +265,93 @@ export function CreateWebinarForm({ groups }: { groups: WebinarGroupOption[] }) 
   );
 }
 
+/** 索取名單單列：顯示模式 ⇄ 原地編輯（姓名/email），可移除 */
+function RequestRow({
+  request,
+  index,
+  canEdit,
+}: {
+  request: WebinarRequestRow;
+  index: number;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [state, action, pending] = useActionState<WebinarFormState, FormData>(
+    updateWebinarRequestAction.bind(null, request.id),
+    null,
+  );
+
+  if (editing) {
+    return (
+      <form action={action} className="flex flex-wrap items-center gap-2 py-1.5">
+        <span className="w-6 font-mono text-sm text-gray-400">{index + 1}</span>
+        <input
+          name="name"
+          defaultValue={request.name ?? ""}
+          placeholder="姓名"
+          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm focus:border-black focus:outline-none"
+        />
+        <input
+          name="email"
+          type="email"
+          required
+          defaultValue={request.email}
+          className="w-64 rounded border border-gray-300 px-2 py-1 text-sm focus:border-black focus:outline-none"
+        />
+        <button
+          disabled={pending}
+          className="rounded bg-black px-2.5 py-1 text-xs font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+        >
+          {pending ? "儲存中…" : "儲存"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="rounded border border-gray-300 px-2.5 py-1 text-xs text-gray-500 transition hover:bg-gray-50"
+        >
+          取消
+        </button>
+        {state?.error && <span className="text-xs text-red-600">{state.error}</span>}
+        {state?.success && <span className="text-xs text-green-700">✓</span>}
+      </form>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 py-1.5 text-sm">
+      <span className="w-6 font-mono text-gray-400">{index + 1}</span>
+      <span className="w-32 truncate">{request.name ?? "—"}</span>
+      <span className="w-64 truncate text-gray-600">{request.email}</span>
+      <span className="text-xs text-gray-400">寄 {request.sentCount} 次</span>
+      <span className="text-xs text-gray-400">首次 {formatDate(request.createdAt)}</span>
+      {request.lastSentAt && (
+        <span className="text-xs text-gray-400">最後 {formatDate(request.lastSentAt)}</span>
+      )}
+      {canEdit && (
+        <span className="ml-auto flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+          >
+            編輯
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm(`移除 ${request.name ?? request.email} 的索取紀錄？\n（已加入名單群組的 email 不受影響）`))
+                deleteWebinarRequestAction(request.id);
+            }}
+            className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-600 transition hover:bg-red-50"
+          >
+            移除
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function WebinarCard({
   webinar,
   groups,
@@ -336,32 +425,11 @@ export function WebinarCard({
         {webinar.requests.length === 0 ? (
           <p className="text-sm text-gray-400">還沒有人索取</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-gray-400">
-              <tr>
-                <th className="px-2 py-1.5">#</th>
-                <th className="px-2 py-1.5">姓名</th>
-                <th className="px-2 py-1.5">Email</th>
-                <th className="px-2 py-1.5">寄送次數</th>
-                <th className="px-2 py-1.5">首次索取</th>
-                <th className="px-2 py-1.5">最後寄送</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {webinar.requests.map((r, i) => (
-                <tr key={r.id}>
-                  <td className="px-2 py-1.5 font-mono text-gray-400">{i + 1}</td>
-                  <td className="px-2 py-1.5">{r.name ?? "—"}</td>
-                  <td className="px-2 py-1.5">{r.email}</td>
-                  <td className="px-2 py-1.5 text-gray-500">{r.sentCount}</td>
-                  <td className="px-2 py-1.5 text-gray-400">{formatDate(r.createdAt)}</td>
-                  <td className="px-2 py-1.5 text-gray-400">
-                    {r.lastSentAt ? formatDate(r.lastSentAt) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="divide-y divide-gray-100">
+            {webinar.requests.map((r, i) => (
+              <RequestRow key={r.id} index={i} request={r} canEdit={canEdit} />
+            ))}
+          </div>
         )}
       </div>
     </details>

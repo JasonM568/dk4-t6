@@ -128,6 +128,34 @@ export async function deleteWebinarAction(id: string) {
   revalidatePath("/admin/webinars");
 }
 
+/** 管理員編輯索取紀錄（姓名/email 打錯修正） */
+export async function updateWebinarRequestAction(
+  id: string,
+  _prev: WebinarFormState,
+  formData: FormData,
+): Promise<WebinarFormState> {
+  await requireEditor();
+  const name = String(formData.get("name") ?? "").trim() || null;
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return { error: "Email 格式錯誤" };
+  try {
+    await prisma.webinarRequest.update({ where: { id }, data: { name, email } });
+  } catch {
+    return { error: `${email} 已在這個講座的索取名單裡` };
+  }
+  revalidatePath("/admin/webinars");
+  revalidatePath("/board");
+  return { success: "已更新" };
+}
+
+/** 管理員移除索取紀錄（客戶端先 confirm；不影響已加入的名單群組） */
+export async function deleteWebinarRequestAction(id: string) {
+  await requireEditor();
+  await prisma.webinarRequest.delete({ where: { id } }).catch(() => undefined);
+  revalidatePath("/admin/webinars");
+  revalidatePath("/board");
+}
+
 /** 訪客索取講座連結：驗證 → 限流 → 記錄 → 進名單群組 → 寄信 */
 export async function requestWebinarLinkAction(
   slug: string,
