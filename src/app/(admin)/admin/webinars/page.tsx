@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { currentCanEdit } from "@/lib/auth/staff";
-import { CreateWebinarForm, WebinarCard } from "./webinars-manager";
+import { WebinarCard } from "./webinars-manager";
 
-export const metadata = { title: "講座報名頁 — 管理後台" };
+export const metadata = { title: "講座場次 — 管理後台" };
 
 export default async function AdminWebinarsPage() {
   const [webinars, mailGroups, canEditNow] = await Promise.all([
@@ -19,23 +20,32 @@ export default async function AdminWebinarsPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-1 text-2xl font-bold">講座報名頁</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        訪客到報名頁輸入 email → 系統寄含講座連結的信，並自動加入指定名單群組。
-        寄信走 huangxi.info 認證網域（SPF/DKIM/DMARC），成功頁附找信與加通訊錄指引。
-      </p>
-
-      {canEditNow && (
-        <section className="mb-6 rounded-xl border border-gray-200 p-4">
-          <h2 className="mb-2 text-sm font-medium">建立講座頁</h2>
-          <CreateWebinarForm groups={mailGroups} />
-        </section>
-      )}
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="mb-1 text-2xl font-bold">
+            講座場次
+            <span className="ml-2 text-base font-normal text-gray-400">
+              共 {webinars.length} 場
+            </span>
+          </h1>
+          <p className="text-sm text-gray-500">
+            點開場次管理設定與索取名單；訪客到 /webinar/網址代稱 留姓名＋email 即寄講座連結信。
+          </p>
+        </div>
+        {canEditNow && (
+          <Link
+            href="/admin/webinars/new"
+            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800"
+          >
+            ＋建立講座
+          </Link>
+        )}
+      </header>
 
       <div className="space-y-3">
         {webinars.length === 0 && (
           <p className="rounded-xl border border-gray-200 px-4 py-6 text-center text-sm text-gray-400">
-            還沒有講座頁
+            還沒有講座——到「建立講座」開第一場
           </p>
         )}
         {webinars.map((w) => (

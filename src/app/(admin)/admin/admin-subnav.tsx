@@ -20,10 +20,15 @@ const BROADCAST_TABS = [
   { href: "/admin/broadcast", label: "群發與紀錄", editorOnly: true },
   { href: "/admin/broadcast/groups", label: "名單群組", editorOnly: true },
 ];
+const WEBINAR_TABS = [
+  { href: "/admin/webinars", label: "查看講座場次" },
+  { href: "/admin/webinars/new", label: "建立講座", editorOnly: true },
+];
 
 const COURSE_PREFIXES = ["/admin/courses", "/admin/categories"];
 const MEMBER_PREFIXES = ["/admin/members", "/admin/enrollments"];
 const BROADCAST_PREFIXES = ["/admin/broadcast"];
+const WEBINAR_PREFIXES = ["/admin/webinars"];
 
 function isUnder(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
@@ -44,6 +49,9 @@ export function AdminSubNav({ canEdit = true }: { canEdit?: boolean }) {
   } else if (isUnder(pathname, BROADCAST_PREFIXES)) {
     tabs = BROADCAST_TABS;
     title = "Email群發";
+  } else if (isUnder(pathname, WEBINAR_PREFIXES)) {
+    tabs = WEBINAR_TABS;
+    title = "講座報名";
   }
   if (!tabs) return null;
   // 總教練（唯讀）隱藏編輯/操作類子分頁

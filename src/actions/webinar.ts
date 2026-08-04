@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { applyMergeTags, buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
@@ -100,7 +101,8 @@ export async function createWebinarAction(
     return { error: `網址代稱「${parsed.slug}」已被使用` };
   }
   revalidatePath("/admin/webinars");
-  return { success: `已建立講座頁：/webinar/${parsed.slug}` };
+  // 建立成功直接回場次列表（新場次排最上面），建立頁只負責建立
+  redirect("/admin/webinars");
 }
 
 export async function updateWebinarAction(
