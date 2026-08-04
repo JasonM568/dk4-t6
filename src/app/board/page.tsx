@@ -18,17 +18,32 @@ export default async function BoardPage() {
     );
   }
 
-  const sessions = await prisma.courseSession.findMany({
-    where: { isVisible: true },
-    // 最近開課日在前（日期近→遠），沒填日期的排最後
-    orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-    include: {
-      signups: {
-        orderBy: { orderedAt: "asc" },
-        select: { id: true, name: true, product: true },
+  const [sessions, webinars] = await Promise.all([
+    prisma.courseSession.findMany({
+      where: { isVisible: true },
+      // 最近開課日在前（日期近→遠），沒填日期的排最後
+      orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+      include: {
+        signups: {
+          orderBy: { orderedAt: "asc" },
+          select: { id: true, name: true, product: true },
+        },
       },
-    },
-  });
+    }),
+    // 進行中講座的索取狀況（講座只收 email，無姓名）
+    prisma.webinar.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        requests: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, email: true },
+        },
+      },
+    }),
+  ]);
   const now = new Date();
   // 舊生 = 報名複訓方案（1shop 產品名含「複訓」）；其餘為新生
   const isRetrain = (product: string | null) => !!product?.includes("複訓");
@@ -67,9 +82,9 @@ export default async function BoardPage() {
         </div>
       </header>
 
-      {sessions.length === 0 && (
+      {sessions.length === 0 && webinars.length === 0 && (
         <p className="rounded-2xl border border-gray-200 px-6 py-12 text-center text-gray-400">
-          目前沒有開放中的場次
+          目前沒有開放中的場次或講座
         </p>
       )}
 
@@ -126,6 +141,39 @@ export default async function BoardPage() {
           );
         })}
       </div>
+
+      {/* 講座索取狀況：訪客留 email 索取講座連結的名單 */}
+      {webinars.length > 0 && (
+        <div className="mt-10">
+          <h2 className="mb-4 text-lg font-bold text-gray-700">🎤 講座報名（Email 索取）</h2>
+          <div className="space-y-6">
+            {webinars.map((w) => (
+              <section key={w.id} className="rounded-2xl border border-gray-200 p-5">
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <h3 className="text-lg font-bold">{w.title}</h3>
+                  <span className="ml-auto rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
+                    {w.requests.length} 人索取
+                  </span>
+                </div>
+                {w.requests.length === 0 ? (
+                  <p className="text-sm text-gray-400">尚無人索取</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {w.requests.map((r) => (
+                      <span
+                        key={r.id}
+                        className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
+                      >
+                        {r.email}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
