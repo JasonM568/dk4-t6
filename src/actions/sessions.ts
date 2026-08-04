@@ -79,11 +79,16 @@ export async function addSignupAction(
   const name = String(formData.get("name") ?? "").trim();
   const orderNoInput = String(formData.get("orderNo") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
+  const isRetrain = String(formData.get("type")) === "retrain";
   if (!name) return { error: "請填寫姓名" };
 
   // 沒填訂單編號就生一組「手動-」流水（orderNo 是場次內冪等鍵，不能留空）
   const orderNo =
     orderNoInput || `手動-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  // 舊生判別全站統一看 product 是否含「複訓」——選舊生就自動補上標記
+  const base = note || "手動新增";
+  const product = isRetrain && !base.includes("複訓") ? `複訓｜${base}` : base;
 
   try {
     await prisma.sessionSignup.create({
@@ -91,7 +96,7 @@ export async function addSignupAction(
         sessionId,
         orderNo,
         name,
-        product: note || "手動新增",
+        product,
         orderedAt: new Date(),
       },
     });

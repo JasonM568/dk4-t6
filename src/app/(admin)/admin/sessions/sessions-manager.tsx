@@ -209,6 +209,14 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           placeholder="姓名（必填）"
           className="w-40 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
+        <select
+          name="type"
+          defaultValue="new"
+          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        >
+          <option value="new">新生</option>
+          <option value="retrain">舊生（複訓）</option>
+        </select>
         <input
           name="orderNo"
           placeholder="訂單編號（選填，留空自動編）"
