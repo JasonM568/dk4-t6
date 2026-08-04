@@ -69,6 +69,40 @@ export async function deleteSessionAction(id: string) {
   revalidatePath("/board");
 }
 
+/** 手動新增報名（電話報名/現金/特殊訂單等，不經訂單檔） */
+export async function addSignupAction(
+  sessionId: string,
+  _prev: SessionFormState,
+  formData: FormData,
+): Promise<SessionFormState> {
+  await requireEditor();
+  const name = String(formData.get("name") ?? "").trim();
+  const orderNoInput = String(formData.get("orderNo") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  if (!name) return { error: "請填寫姓名" };
+
+  // 沒填訂單編號就生一組「手動-」流水（orderNo 是場次內冪等鍵，不能留空）
+  const orderNo =
+    orderNoInput || `手動-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  try {
+    await prisma.sessionSignup.create({
+      data: {
+        sessionId,
+        orderNo,
+        name,
+        product: note || "手動新增",
+        orderedAt: new Date(),
+      },
+    });
+  } catch {
+    return { error: `訂單編號 ${orderNo} 已在這個場次的名單裡` };
+  }
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  return { success: `已加入 ${name}` };
+}
+
 /** 移除單筆報名（誤歸類等，客戶端先 confirm） */
 export async function removeSignupAction(id: string) {
   await requireEditor();

@@ -5,6 +5,7 @@ import {
   createSessionAction,
   updateSessionAction,
   deleteSessionAction,
+  addSignupAction,
   removeSignupAction,
   uploadOrdersAction,
   saveBoardCodeAction,
@@ -170,6 +171,46 @@ export function CreateSessionForm() {
   );
 }
 
+/** 手動新增報名（電話/現金/特殊訂單） */
+function AddSignupForm({ sessionId }: { sessionId: string }) {
+  const [state, action, pending] = useActionState<SessionFormState, FormData>(
+    addSignupAction.bind(null, sessionId),
+    null,
+  );
+  return (
+    <form action={action} className="space-y-2 rounded-lg border border-dashed border-gray-300 p-3">
+      <div className="text-xs font-medium text-gray-500">
+        手動新增報名（電話報名、現金付款、特殊訂單等不經訂單檔的情況）
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input
+          name="name"
+          required
+          placeholder="姓名（必填）"
+          className="w-40 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        />
+        <input
+          name="orderNo"
+          placeholder="訂單編號（選填，留空自動編）"
+          className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        />
+        <input
+          name="note"
+          placeholder="備註（選填，例：現金付款）"
+          className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        />
+        <button
+          disabled={pending}
+          className="rounded-lg bg-black px-3 py-1.5 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+        >
+          {pending ? "加入中…" : "加入名單"}
+        </button>
+      </div>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
 /** 場次卡片：報名名單 + 編輯 + 刪除 */
 export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit: boolean }) {
   const [editState, editAction, editing] = useActionState<SessionFormState, FormData>(
@@ -246,8 +287,10 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
           </form>
         )}
 
+        {canEdit && <AddSignupForm sessionId={session.id} />}
+
         {session.signups.length === 0 ? (
-          <p className="text-sm text-gray-400">還沒有報名資料——上傳訂單檔後自動歸入</p>
+          <p className="text-sm text-gray-400">還沒有報名資料——上傳訂單檔後自動歸入，或用上方手動新增</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-gray-400">
