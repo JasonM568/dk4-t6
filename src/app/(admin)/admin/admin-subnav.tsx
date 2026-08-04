@@ -24,11 +24,16 @@ const WEBINAR_TABS = [
   { href: "/admin/webinars", label: "查看講座場次" },
   { href: "/admin/webinars/new", label: "建立講座", editorOnly: true },
 ];
+const SMS_TABS = [
+  { href: "/admin/sms", label: "發送與紀錄", editorOnly: true },
+  { href: "/admin/sms/optouts", label: "退訂名單", editorOnly: true },
+];
 
 const COURSE_PREFIXES = ["/admin/courses", "/admin/categories"];
 const MEMBER_PREFIXES = ["/admin/members", "/admin/enrollments"];
 const BROADCAST_PREFIXES = ["/admin/broadcast"];
 const WEBINAR_PREFIXES = ["/admin/webinars"];
+const SMS_PREFIXES = ["/admin/sms"];
 
 function isUnder(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
@@ -52,6 +57,9 @@ export function AdminSubNav({ canEdit = true }: { canEdit?: boolean }) {
   } else if (isUnder(pathname, WEBINAR_PREFIXES)) {
     tabs = WEBINAR_TABS;
     title = "講座報名";
+  } else if (isUnder(pathname, SMS_PREFIXES)) {
+    tabs = SMS_TABS;
+    title = "簡訊發送";
   }
   if (!tabs) return null;
   // 總教練（唯讀）隱藏編輯/操作類子分頁

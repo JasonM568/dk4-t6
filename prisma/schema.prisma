@@ -465,3 +465,65 @@ model Enrollment {
   @@unique([userId, courseId]) // 防重複授權，並保證 webhook 冪等
   @@index([userId])
 }
+
+// ── 簡訊模組 ────────────────────────────────────────────────
+// 對照 EmailBroadcast 的設計：發送對象只存描述，名單於「發送當下」才解析
+// （場次取最新報名），關聯一律軟連結不加 FK，場次被刪除時歷史紀錄仍完整保留。
+// status：DRAFT / SCHEDULED（排程待發）/ SENDING（cron 處理中）/ SENT / CANCELED / FAILED
+// audienceType：SESSION（場次報名者，可複選）/ GROUP（名單群組，第二階段）/ MANUAL（手動貼名單）
+// 沒有 ALL：會員資料表沒有手機，且「簡訊轟炸全體會員」本來就不該存在
+model SmsBroadcast {
+  id          String @id @default(cuid())
+  title       String? // 後台識別用，不會出現在簡訊內容裡
+  body        String @db.Text
+  messageType String @default("NOTICE") // NOTICE（履約通知）/ MARKETING（行銷推播，需帶退訂連結）
+
+  audienceType  String   @default("MANUAL")
+  sessionIds    String[] @default([]) // audienceType=SESSION 的場次（可複選，發送當下取最新報名）
+  groupIds      String[] @default([]) // audienceType=GROUP（第二階段：名單群組加手機後才接線）
+  audienceLabel String? // 顯示用：場次：xxx / 場次 N 場（已去重）：… / 手動名單 N 筆
+  manualRows    Json? // audienceType=MANUAL 時的名單 [{mobile,name}]
+
+  sentCount     Int @default(0)
+  failedCount   Int @default(0)
+  excludedCount Int @default(0) // 因退訂/無法送達被排除的人數
+  noMobileCount Int @default(0) // 名單中沒有可用手機的人數（發送前就要讓操作者看到）
+
+  // 成本快照（存「分」不存「元」：簡訊單價低於 NT$1，存整數元會全部變成 0 或 1）
+  segments           Int @default(0) // 單則預估則數
+  actualSegments     Int @default(0) // 實際送出則數總和（{name} 長度不一，逐人計算後加總）
+  unitPriceCents     Int @default(0) // 發送當下的單價快照
+  estimatedCostCents Int @default(0)
+
+  provider String? // dryrun（測試模式，未實際發送）/ 日後的簡訊商代號；列表必須明確標示
+  status   String  @default("SENT")
+
+  scheduledAt DateTime? // 預定發送時間（null = 立即發送）
+  sentAt      DateTime? // 實際發送時間
+  claimedAt   DateTime? // 進入 SENDING（cron 認領）的時間；用於回收逾時卡死的發送
+
+  recipients       String[] @default([]) // 實際送出名單快照（已正規化的 09XXXXXXXX）
+  failedRecipients Json? // 逐筆失敗名單 [{mobile,name?,reason}]；全成功設 null
+  resendOfId       String? // 補發失敗者時記來源紀錄 id（軟連結，與 EmailBroadcast 慣例一致）
+
+  sentBy      String? // 操作的管理員 email
+  noticeAckBy String? // 勾選「這是履約通知，非行銷推播」的管理員 email
+
+  createdAt DateTime @default(now())
+
+  @@index([status, scheduledAt]) // cron 撈到期排程
+  @@index([sentAt]) // 每日則數上限的加總查詢
+}
+
+// 簡訊退訂／無法送達名單。source：
+//   USER     使用者自行退訂（僅過濾行銷簡訊）
+//   MANUAL   客服代為退訂（僅過濾行銷簡訊）
+//   INVALID  空號/停用/業者回報無法送達（行銷與履約通知一律過濾）
+//   PROVIDER 業者主動回報
+// 與 MailUnsubscribe 的差異：行銷退訂不得擋掉已報名學員的上課提醒（那是履約通知）
+model SmsOptOut {
+  mobile    String   @id // 一律存 normalizeMobile 後的 09XXXXXXXX
+  reason    String?
+  source    String   @default("USER")
+  createdAt DateTime @default(now())
+}

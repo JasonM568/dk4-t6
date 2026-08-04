@@ -57,6 +57,12 @@ export default async function AdminLayout({
               Email群發
             </Link>
           )}
+          {/* 簡訊發送：上課提醒（場次報名者）；未接簡訊商時為測試模式，不會實際送出 */}
+          {editor && (
+            <Link href="/admin/sms" className="text-gray-600 hover:text-black">
+              簡訊發送
+            </Link>
+          )}
           {/* 場次看板：實體開課報名狀況（1shop 訂單匯入），三種角色皆可看 */}
           <Link href="/admin/sessions" className="text-gray-600 hover:text-black">
             場次看板

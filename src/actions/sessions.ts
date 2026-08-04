@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
+import { explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 
 // 課程場次看板：後台管理 actions（場次 CRUD / 訂單匯入 / 看板 4 位碼）
 
@@ -79,8 +80,20 @@ export async function addSignupAction(
   const name = String(formData.get("name") ?? "").trim();
   const orderNoInput = String(formData.get("orderNo") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
+  const phoneInput = String(formData.get("phone") ?? "").trim();
   const isRetrain = String(formData.get("type")) === "retrain";
   if (!name) return { error: "請填寫姓名" };
+
+  // 手機選填；但填了就一定要是能收簡訊的號碼——存進去卻發不出簡訊比留空更糟
+  let phone: string | null = null;
+  if (phoneInput) {
+    const { mobile, reject } = explainMobile(phoneInput);
+    if (!mobile)
+      return {
+        error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼，或留空）`,
+      };
+    phone = mobile;
+  }
 
   // 沒填訂單編號就生一組「手動-」流水（orderNo 是場次內冪等鍵，不能留空）
   const orderNo =
@@ -96,6 +109,7 @@ export async function addSignupAction(
         sessionId,
         orderNo,
         name,
+        phone,
         product,
         orderedAt: new Date(),
       },

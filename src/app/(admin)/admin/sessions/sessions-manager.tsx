@@ -13,6 +13,7 @@ import {
   type UploadState,
 } from "@/actions/sessions";
 import { formatDate } from "@/lib/format";
+import { formatMobile } from "@/lib/sms/phone";
 
 export type SignupRow = {
   id: string;
@@ -209,6 +210,13 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           placeholder="姓名（必填）"
           className="w-40 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
+        {/* 手機：這支表單本來就是給電話報名用的，順手留號碼才發得出上課提醒簡訊 */}
+        <input
+          name="phone"
+          inputMode="numeric"
+          placeholder="手機（選填，09xxxxxxxx）"
+          className="w-44 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        />
         <select
           name="type"
           defaultValue="new"
@@ -330,6 +338,7 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
               <tr>
                 <th className="px-2 py-1.5">#</th>
                 <th className="px-2 py-1.5">姓名</th>
+                <th className="px-2 py-1.5">手機</th>
                 <th className="px-2 py-1.5">訂單編號</th>
                 <th className="px-2 py-1.5">產品</th>
                 <th className="px-2 py-1.5">訂單日期</th>
@@ -341,6 +350,14 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
                 <tr key={s.id}>
                   <td className="px-2 py-1.5 font-mono text-gray-400">{i + 1}</td>
                   <td className="px-2 py-1.5">{s.name}</td>
+                  <td
+                    className={`px-2 py-1.5 font-mono text-xs ${
+                      s.phone ? "text-gray-500" : "text-amber-600"
+                    }`}
+                    title={s.phone ? undefined : "沒有手機號碼，收不到上課提醒簡訊"}
+                  >
+                    {s.phone ? formatMobile(s.phone) : "無"}
+                  </td>
                   <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{s.orderNo}</td>
                   <td className="px-2 py-1.5 text-xs text-gray-500">{s.product ?? "—"}</td>
                   <td className="px-2 py-1.5 text-gray-400">

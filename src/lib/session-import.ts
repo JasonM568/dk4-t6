@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/db";
+import { normalizeMobile } from "@/lib/sms/phone";
 
 // 1shop 訂單檔匯入 → 場次報名歸類。
 // 規則：金流狀態含「已付款」的列，依「產品」欄比對場次關鍵字歸入（最長關鍵字優先）；
@@ -169,7 +170,9 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
       orderNo: row.orderNo,
       name: row.name,
       email: row.email || null,
-      phone: row.phone || null,
+      // 正規化成 09XXXXXXXX；市話、分機、格式錯誤一律存 null——
+      // 簡訊模組寧可少一個收件人，也不要一個發不出去的號碼
+      phone: normalizeMobile(row.phone),
       product: row.product,
       amount: row.amount,
       orderedAt: row.orderedAt,
