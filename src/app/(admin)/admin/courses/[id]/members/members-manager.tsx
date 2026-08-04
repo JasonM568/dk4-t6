@@ -30,6 +30,7 @@ export function CourseMembersManager({
   canEdit?: boolean; // 總教練(唯讀)為 false：只看名單，隱藏新增/移除/勾選
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
   const [addState, addAction, adding] = useActionState<BatchState, FormData>(
     batchEnrollAction,
     null,
@@ -39,7 +40,19 @@ export function CourseMembersManager({
     FormData
   >(batchRevokeEnrollmentAction.bind(null, courseId), null);
 
-  const allSelected = members.length > 0 && selected.size === members.length;
+  // 搜尋：姓名/email 子字串即時過濾（名單已全量在前端，不需重新查詢）
+  const query = search.trim().toLowerCase();
+  const visible = query
+    ? members.filter(
+        (m) =>
+          (m.name ?? "").toLowerCase().includes(query) ||
+          (m.email ?? "").toLowerCase().includes(query),
+      )
+    : members;
+
+  // 全選只作用在目前搜尋結果上
+  const allSelected =
+    visible.length > 0 && visible.every((m) => selected.has(m.userId));
   const toggle = (id: string) =>
     setSelected((cur) => {
       const next = new Set(cur);
@@ -47,7 +60,12 @@ export function CourseMembersManager({
       return next;
     });
   const toggleAll = () =>
-    setSelected(allSelected ? new Set() : new Set(members.map((m) => m.userId)));
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (allSelected) visible.forEach((m) => next.delete(m.userId));
+      else visible.forEach((m) => next.add(m.userId));
+      return next;
+    });
 
   return (
     <>
@@ -94,8 +112,40 @@ export function CourseMembersManager({
       </form>
       )}
 
+      {/* 搜尋：即時過濾名單（放在 form 外，避免 Enter 誤觸移除送出） */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="搜尋姓名或 email"
+          className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+        />
+        {query && (
+          <>
+            <span className="text-sm text-gray-500">
+              符合 {visible.length} / 共 {members.length} 位
+            </span>
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-50"
+            >
+              清除
+            </button>
+          </>
+        )}
+      </div>
+
       {/* 名單 + 勾選移除 */}
       <form action={revokeAction}>
+        {/* 被搜尋過濾掉的已勾選列不會渲染 checkbox，補 hidden 欄位讓送出與「已勾選 N 位」一致 */}
+        {canEdit &&
+          [...selected]
+            .filter((id) => !visible.some((m) => m.userId === id))
+            .map((id) => (
+              <input key={id} type="hidden" name="userIds" value={id} />
+            ))}
         {canEdit && (
         <div className="mb-2 flex items-center gap-3">
           <span className="text-sm text-gray-500">已勾選 {selected.size} 位</span>
@@ -145,14 +195,14 @@ export function CourseMembersManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {members.length === 0 && (
+              {visible.length === 0 && (
                 <tr>
                   <td colSpan={canEdit ? 6 : 5} className="px-4 py-6 text-center text-gray-400">
-                    這堂課還沒有任何會員開通
+                    {query ? "沒有符合搜尋的會員" : "這堂課還沒有任何會員開通"}
                   </td>
                 </tr>
               )}
-              {members.map((m, i) => {
+              {visible.map((m, i) => {
                 const src = enrollmentSource(m.source, m.orderId);
                 return (
                   <tr
