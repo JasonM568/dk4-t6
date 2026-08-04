@@ -46,6 +46,9 @@ export type WebinarRow = {
   title: string;
   description: string;
   lectureUrl: string;
+  meetingId: string | null;
+  meetingPassword: string | null;
+  meetingInfo: string | null;
   dmImage: string | null;
   emailSubject: string;
   emailBody: string;
@@ -130,6 +133,32 @@ function WebinarFields({
         placeholder="講座連結（https://…，只出現在信裡不露出在頁面）"
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
+      <div className="flex flex-wrap gap-2">
+        <input
+          name="meetingId"
+          defaultValue={initial?.meetingId ?? ""}
+          placeholder="會議 ID（選填）"
+          className="w-48 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+        />
+        <input
+          name="meetingPassword"
+          defaultValue={initial?.meetingPassword ?? ""}
+          placeholder="會議密碼（選填）"
+          className="w-40 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+        />
+      </div>
+      <textarea
+        name="meetingInfo"
+        rows={2}
+        defaultValue={initial?.meetingInfo ?? ""}
+        placeholder="會議補充資訊（選填，例：8/15（五）19:30 開放進場，請提前 10 分鐘上線）"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+      />
+      <p className="text-xs text-gray-400">
+        有填密碼且講座連結沒帶 pwd 參數時，信裡的連結會自動加上 ?pwd=密碼；
+        ID/密碼/補充資訊會附在信末「會議資訊」區塊（不露出在報名頁）。
+        Zoom 建議直接貼邀請信裡含 pwd 的完整連結最保險。
+      </p>
 
       {/* 講座 DM 圖：瀏覽器直傳 Storage（同課程封面），存公開網址 */}
       <div className="rounded-lg border border-dashed border-gray-300 p-3">

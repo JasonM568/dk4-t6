@@ -29,6 +29,9 @@ async function parseWebinarForm(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const lectureUrl = String(formData.get("lectureUrl") ?? "").trim();
+  const meetingId = String(formData.get("meetingId") ?? "").trim() || null;
+  const meetingPassword = String(formData.get("meetingPassword") ?? "").trim() || null;
+  const meetingInfo = String(formData.get("meetingInfo") ?? "").trim() || null;
   // DM 圖：瀏覽器已直傳 Storage，這裡只收公開網址字串（同課程封面模式）
   const dmImage = String(formData.get("dmImage") ?? "").trim() || null;
   const emailSubject = String(formData.get("emailSubject") ?? "").trim();
@@ -53,7 +56,35 @@ async function parseWebinarForm(formData: FormData) {
     groupId = group.id;
   }
 
-  return { slug, title, description, lectureUrl, dmImage, emailSubject, emailBody, groupId, isActive };
+  return {
+    slug,
+    title,
+    description,
+    lectureUrl,
+    meetingId,
+    meetingPassword,
+    meetingInfo,
+    dmImage,
+    emailSubject,
+    emailBody,
+    groupId,
+    isActive,
+  };
+}
+
+// 進會議連結：有密碼且連結本身沒帶 pwd 參數時，自動附加 ?pwd=（Zoom 慣例）。
+// 若 Zoom 邀請連結原本就含加密 pwd，直接沿用不動。
+// （"use server" 檔案只允許 export async 函式，此為模組內部工具）
+function buildJoinUrl(lectureUrl: string, meetingPassword: string | null): string {
+  if (!meetingPassword) return lectureUrl;
+  try {
+    const url = new URL(lectureUrl);
+    if (url.searchParams.has("pwd")) return lectureUrl;
+    url.searchParams.set("pwd", meetingPassword);
+    return url.toString();
+  } catch {
+    return lectureUrl;
+  }
 }
 
 export async function createWebinarAction(
@@ -127,12 +158,23 @@ export async function requestWebinarLinkAction(
     };
   }
 
-  // 信件內文：{link} 換成講座連結；內文沒提到連結就自動補 CTA 按鈕
+  // 信件內文：{link} 換成「帶密碼的進會議連結」；內文沒提到連結就自動補 CTA 按鈕
+  const joinUrl = buildJoinUrl(webinar.lectureUrl, webinar.meetingPassword);
   let body = webinar.emailBody;
   if (!body.includes("{link}") && !body.includes(webinar.lectureUrl)) {
     body += `\n\n[▶️ 進入講座]({link})`;
   }
-  body = body.replaceAll("{link}", webinar.lectureUrl);
+  body = body.replaceAll("{link}", joinUrl);
+
+  // 信末附完整會議資訊區塊（點連結失敗時可手動輸入 ID/密碼）
+  const infoLines = [
+    webinar.meetingId && `會議 ID：${webinar.meetingId}`,
+    webinar.meetingPassword && `會議密碼：${webinar.meetingPassword}`,
+    webinar.meetingInfo,
+  ].filter(Boolean);
+  if (infoLines.length > 0) {
+    body += `\n\n──────────\n📌 會議資訊\n\n${infoLines.join("\n")}\n\n若點按鈕無法直接進入，請開啟會議程式後手動輸入上方 ID 與密碼。`;
+  }
 
   const result = await sendBroadcast(
     [{ email }],
