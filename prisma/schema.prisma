@@ -254,11 +254,31 @@ model Course {
   categories  Category[]
   orderItems  OrderItem[]
   enrollments Enrollment[]
+  pendingEnrollments PendingEnrollment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([groupId])
+}
+
+// 待開通名單：批次開通遇「查無會員」時存底（以 email 為鍵），
+// 學員之後註冊（或管理員建帳號）當下自動認領 → 寫入 Enrollment。
+// claimedAt 有值 = 已認領（留存稽核，不重複觸發）；待註冊人數 = claimedAt IS NULL。
+model PendingEnrollment {
+  id       String  @id @default(cuid())
+  courseId String
+  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  email    String // 一律小寫正規化（normalizeEmail）
+  name     String? // 名單附的姓名（認領建帳號時備查）
+
+  createdBy String? // 存底的管理員 email（備查）
+  createdAt DateTime  @default(now())
+  claimedAt DateTime? // 認領時間（註冊/建帳號當下）
+  userId    String?   @db.Uuid // 認領人 auth.users.id（無 FK，慣例同 Enrollment）
+
+  @@unique([courseId, email]) // 同課程同 email 只存一筆，重貼名單冪等
+  @@index([email])
 }
 
 model Lesson {

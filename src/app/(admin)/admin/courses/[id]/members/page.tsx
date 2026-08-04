@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { listProfiles } from "@/lib/supabase/admin";
-import { enrollmentSource } from "@/lib/format";
-import { createGroupFromCourseAction } from "@/actions/admin";
+import { enrollmentSource, formatDate } from "@/lib/format";
+import { createGroupFromCourseAction, deletePendingEnrollmentAction } from "@/actions/admin";
 import { currentCanEdit } from "@/lib/auth/staff";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { CourseMembersManager } from "./members-manager";
@@ -22,7 +22,7 @@ export default async function CourseMembersPage({
   });
   if (!course) notFound();
 
-  const [enrollments, profiles, canEditNow, mailGroups] = await Promise.all([
+  const [enrollments, profiles, canEditNow, mailGroups, pendings] = await Promise.all([
     prisma.enrollment.findMany({
       where: { courseId: id },
       orderBy: { createdAt: "desc" },
@@ -32,6 +32,11 @@ export default async function CourseMembersPage({
     prisma.mailGroup.findMany({
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true },
+    }),
+    // 待開通存底（批次開通查無會員）：學員註冊當下自動開通
+    prisma.pendingEnrollment.findMany({
+      where: { courseId: id, claimedAt: null },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
   const profById = new Map(profiles.map((p) => [p.id, p]));
@@ -56,7 +61,61 @@ export default async function CourseMembersPage({
         {course.title}
         {course.courseCode ? `（${course.courseCode}）` : ""} — 共{" "}
         <span className="font-bold text-black">{enrollments.length}</span> 位會員可觀看
+        {pendings.length > 0 && (
+          <>
+            ｜<span className="font-bold text-amber-600">{pendings.length}</span>{" "}
+            位待註冊（註冊後自動開通）
+          </>
+        )}
       </p>
+
+      {/* 待註冊名單：批次開通時查無會員的存底。學員用同一 email 註冊（或管理員建帳號）當下自動開通 */}
+      {pendings.length > 0 && (
+        <details className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-amber-800">
+            待註冊自動開通名單（{pendings.length} 位）— 這些 email 尚未註冊，註冊完成當下自動取得觀看權限
+          </summary>
+          <p className="mt-2 text-xs text-amber-700/80">
+            若學員用<strong>別的信箱</strong>註冊就對不上（雙信箱情況），需在會員管理搜姓名後手動開通；
+            確認不需要的存底可按「移除」。
+          </p>
+          <table className="mt-2 w-full text-sm">
+            <thead className="text-left text-xs text-amber-700/70">
+              <tr>
+                <th className="px-2 py-1.5">#</th>
+                <th className="px-2 py-1.5">Email</th>
+                <th className="px-2 py-1.5">姓名</th>
+                <th className="px-2 py-1.5">存底時間</th>
+                {canEditNow && <th className="px-2 py-1.5" />}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-amber-100">
+              {pendings.map((p, i) => (
+                <tr key={p.id}>
+                  <td className="px-2 py-1.5 font-mono text-amber-700/60">{i + 1}</td>
+                  <td className="px-2 py-1.5">{p.email}</td>
+                  <td className="px-2 py-1.5">{p.name ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-amber-700/60">
+                    {formatDate(p.createdAt.toISOString())}
+                  </td>
+                  {canEditNow && (
+                    <td className="px-2 py-1.5 text-right">
+                      <form action={deletePendingEnrollmentAction.bind(null, course.id, p.id)}>
+                        <SubmitButton
+                          pendingText="移除中…"
+                          className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-700 transition hover:bg-amber-100"
+                        >
+                          移除
+                        </SubmitButton>
+                      </form>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
 
       {/* 同步到電子報名單群組（總教練唯讀時隱藏）。
           名單群組是「寄電子報的名單」，跟課程觀看權限是兩回事；

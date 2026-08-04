@@ -32,6 +32,11 @@ import { TRACKING_KEYS } from "@/lib/tracking";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { autoEnrollGroupCourses } from "@/lib/zone-enroll";
+import {
+  recordPendingEnrollment,
+  claimPendingEnrollments,
+  markPendingClaimed,
+} from "@/lib/pending-enroll";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門分三級（定義見 src/lib/auth/staff.ts）：
@@ -448,6 +453,15 @@ export async function revokeEnrollment(userId: string, courseId: string) {
 }
 
 export type RevokeState = { error?: string; success?: string } | null;
+
+/** 觀看權限名單頁：移除一筆待開通存底（誤貼的 email 等，客戶端先 confirm） */
+export async function deletePendingEnrollmentAction(courseId: string, id: string) {
+  await requireEditor();
+  await prisma.pendingEnrollment
+    .deleteMany({ where: { id, courseId } })
+    .catch(() => undefined);
+  revalidatePath(`/admin/courses/${courseId}/members`);
+}
 
 /** 觀看權限名單頁：批次移除勾選會員的觀看權限 */
 export async function batchRevokeEnrollmentAction(
@@ -1608,9 +1622,13 @@ export async function addMemberAction(
   }
   const admin = await getAuthUser();
   await recordMemberPassword(created.userId, password, admin?.email ?? null);
+  // 帳號出現 → 認領各課程的待開通存底（失敗不影響建立結果）
+  const claimed = await claimPendingEnrollments(email, created.userId).catch(() => 0);
 
   revalidatePath("/admin/members");
-  return { success: `已建立會員 ${name}（${email}）` };
+  return {
+    success: `已建立會員 ${name}（${email}）${claimed > 0 ? `，並自動開通 ${claimed} 門待開通課程` : ""}`,
+  };
 }
 
 /** 會員批次匯入：建立 Supabase Auth 帳號（profiles 由 QBC trigger 自動建立） */
@@ -1677,7 +1695,13 @@ export async function importMembersAction(
 
     if (created.ok) {
       await recordMemberPassword(created.userId, password, adminUser?.email ?? null);
-      results.push({ email: row.email, status: "created" });
+      // 帳號出現 → 認領各課程的待開通存底
+      const claimed = await claimPendingEnrollments(row.email, created.userId).catch(() => 0);
+      results.push({
+        email: row.email,
+        status: "created",
+        detail: claimed > 0 ? `已自動開通 ${claimed} 門待開通課程` : undefined,
+      });
     } else if (created.reason === "exists") {
       results.push({
         email: row.email,
@@ -1719,11 +1743,12 @@ export async function batchEnrollAction(
   if (rows.length > MAX_BATCH_ROWS)
     return { done: true, error: `一次最多 ${MAX_BATCH_ROWS} 筆（目前 ${rows.length} 筆），請分批開通` };
 
-  // 只有要建帳號時才需要管理員身分（記錄初始密碼備查）
-  const admin = defaultPassword ? await getAuthUser() : null;
+  // 管理員身分：記錄初始密碼備查＋待開通存底的 createdBy
+  const admin = await getAuthUser();
 
   const results: BatchRowResult[] = [];
   const seen = new Set<string>();
+  const succeeded: { email: string; userId: string }[] = []; // 收殘留待開通的認領標記用
 
   const validEmails = [...new Set(rows.map((r) => r.email).filter((e) => EMAIL_RE.test(e)))];
   const profileMap = await getProfilesByEmails(validEmails);
@@ -1760,13 +1785,18 @@ export async function batchEnrollAction(
     }
 
     if (!userId) {
-      // 留空密碼：標查無，交給下方二段式面板處理
+      // 查無會員 → 先存底待開通：學員之後註冊（或管理員建帳號）當下自動認領開通。
+      // 存底失敗不阻斷（結果列仍照實回報）。
+      await recordPendingEnrollment(courseId, row, admin?.email ?? null).catch((e) =>
+        console.error("[batchEnroll] 待開通存底失敗", { email: row.email, e }),
+      );
+      // 留空密碼：標查無（已存底），也可用下方二段式面板立即建帳號
       if (!defaultPassword) {
         results.push({
           email: row.email,
           name: row.name || undefined,
           status: "notfound",
-          detail: "查無會員，可在下方一鍵批次新增並開通",
+          detail: "查無會員，已列入待開通：學員註冊後自動開通；急用可在下方一鍵建帳號",
         });
         continue;
       }
@@ -1779,6 +1809,8 @@ export async function batchEnrollAction(
       });
       if (created.ok) {
         await recordMemberPassword(created.userId, usedPassword, admin?.email ?? null);
+        // 帳號出現 → 認領全部待開通（含本課程剛存底那筆與其他課程的）
+        await claimPendingEnrollments(row.email, created.userId).catch(() => 0);
         try {
           await prisma.enrollment.upsert({
             where: { userId_courseId: { userId: created.userId, courseId } },
@@ -1812,6 +1844,7 @@ export async function batchEnrollAction(
     }
     if (enrolled.has(userId)) {
       results.push({ email: row.email, status: "already", detail: "本來就有觀看權限" });
+      succeeded.push({ email: row.email, userId });
       continue;
     }
 
@@ -1823,6 +1856,7 @@ export async function batchEnrollAction(
         create: { userId, courseId, source: "BATCH" },
       });
       results.push({ email: row.email, status: "enrolled" });
+      succeeded.push({ email: row.email, userId });
     } catch (e) {
       results.push({
         email: row.email,
@@ -1831,6 +1865,9 @@ export async function batchEnrollAction(
       });
     }
   }
+
+  // 開通成功者若有先前的待開通存底（例：機制上線前貼過名單、學員後來註冊），標記已認領
+  await markPendingClaimed(courseId, succeeded).catch(() => undefined);
 
   // 選配：把整份名單一併加入寄信名單群組（新建或既有）
   const group = await resolveTargetGroup(formData);
@@ -1876,6 +1913,7 @@ export async function createMissingAndEnrollAction(
 
   const results: BatchRowResult[] = [];
   const seen = new Set<string>();
+  const succeeded: { email: string; userId: string }[] = []; // 收殘留待開通的認領標記用
   const validEmails = [...new Set(rows.map((r) => r.email).filter((e) => EMAIL_RE.test(e)))];
   // 重新查一次會員（避免上一步之後名單已有變化），已註冊的不會動到帳號
   const profileMap = await getProfilesByEmails(validEmails);
@@ -1905,6 +1943,8 @@ export async function createMissingAndEnrollAction(
         userId = created.userId;
         createdNew = true;
         await recordMemberPassword(created.userId, usedPassword, admin?.email ?? null);
+        // 帳號出現 → 認領全部課程的待開通存底
+        await claimPendingEnrollments(row.email, created.userId).catch(() => 0);
       } else if (created.reason === "exists" && created.userId) {
         // B7：profiles 尚未同步但帳號其實已存在，反查到 auth user id 就直接開通。
         // Enrollment.userId = auth.users.id，本就不依賴 profiles，徹底解決漏開。
@@ -1928,6 +1968,7 @@ export async function createMissingAndEnrollAction(
         update: {},
         create: { userId, courseId, source: createdNew ? "IMPORT" : "BATCH" },
       });
+      succeeded.push({ email: row.email, userId });
       results.push({
         email: row.email,
         status: createdNew ? "created" : "enrolled",
@@ -1941,6 +1982,9 @@ export async function createMissingAndEnrollAction(
       });
     }
   }
+
+  // 開通成功者的殘留待開通存底標記已認領（例：批次開通那一步剛存底、這裡隨即建帳號開通）
+  await markPendingClaimed(courseId, succeeded).catch(() => undefined);
 
   const c = (s: BatchRowResult["status"]) => results.filter((r) => r.status === s).length;
   revalidatePath("/admin/members");

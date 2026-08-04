@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateInviteCode, redeemInvite } from "@/lib/zone-invite";
 import { autoEnrollOnRegister } from "@/lib/zone-enroll";
+import { claimPendingEnrollments } from "@/lib/pending-enroll";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/course-access";
 
@@ -177,6 +178,12 @@ export async function registerAction(
       await autoEnrollOnRegister(email, data.user.id);
     } catch (e) {
       console.error("[register] 專區自動開通失敗", { email, e });
+    }
+    // email 在待開通名單（批次開通時查無會員的存底）→ 註冊當下自動認領開通
+    try {
+      await claimPendingEnrollments(email, data.user.id);
+    } catch (e) {
+      console.error("[register] 待開通認領失敗", { email, e });
     }
   }
 
