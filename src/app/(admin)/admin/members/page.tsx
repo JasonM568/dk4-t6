@@ -104,6 +104,47 @@ export default async function AdminMembersPage({
     })
     .sort((a, b) => b.totalSpent - a.totalSpent);
 
+  // 「名單世界」搜尋：帳號搜不到不代表人不存在——email 可能躺在名單群組/專區名單/
+  // 待開通存底裡（未註冊或雙信箱）。搜尋時一併掃出，攤在會員表下方灰色區塊。
+  const registeredEmails = new Set(
+    profiles.map((p) => (p.email ?? "").toLowerCase()).filter(Boolean),
+  );
+  const listTraces = new Map<string, { name: string | null; sources: string[] }>();
+  const addTrace = (email: string, name: string | null, source: string) => {
+    const key = email.toLowerCase();
+    if (registeredEmails.has(key)) return; // 已註冊的主表就搜得到，不重複列
+    const cur = listTraces.get(key) ?? { name: null, sources: [] };
+    cur.name = cur.name ?? name;
+    if (!cur.sources.includes(source)) cur.sources.push(source);
+    listTraces.set(key, cur);
+  };
+  if (query) {
+    const match = {
+      OR: [
+        { email: { contains: query, mode: "insensitive" as const } },
+        { name: { contains: query, mode: "insensitive" as const } },
+      ],
+    };
+    const [mailHits, zoneHits, pendingHits] = await Promise.all([
+      prisma.mailGroupMember.findMany({
+        where: match,
+        select: { email: true, name: true, group: { select: { name: true } } },
+      }),
+      prisma.courseGroupMember.findMany({
+        where: match,
+        select: { email: true, name: true, group: { select: { name: true } } },
+      }),
+      prisma.pendingEnrollment.findMany({
+        where: { claimedAt: null, ...match },
+        select: { email: true, name: true, course: { select: { title: true } } },
+      }),
+    ]);
+    for (const h of mailHits) addTrace(h.email, h.name, `名單群組「${h.group.name}」`);
+    for (const h of zoneHits) addTrace(h.email, h.name, `專區「${h.group.name}」`);
+    for (const h of pendingHits) addTrace(h.email, h.name, `待開通「${h.course.title}」`);
+  }
+  const unregistered = [...listTraces.entries()].map(([email, t]) => ({ email, ...t }));
+
   const hasFilter = !!query || !!groupEmails;
   // 搜尋（姓名/email 子字串）與群組過濾可並用；無條件時顯示全部會員（不再截斷前 100）
   const members = hasFilter
@@ -222,6 +263,37 @@ export default async function AdminMembersPage({
         }))}
         groups={mailGroups.map((g) => ({ id: g.id, name: g.name }))}
       />
+
+      {/* 名單中出現但未註冊：雙信箱/未完成註冊一搜現形 */}
+      {query && unregistered.length > 0 && (
+        <div className="mt-4 rounded-xl border border-gray-300 border-dashed bg-gray-50 p-4">
+          <div className="text-sm font-medium text-gray-600">
+            ⚪ 名單中出現但「未註冊」的 email（{unregistered.length} 筆）
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            這些 email 存在於名單裡但沒有帳號，不是會員。若上方帳號列表有同名的人，
+            很可能是同一人用別的信箱註冊（雙信箱）——觀看權限請開在上方那個「有帳號」的信箱上。
+          </p>
+          <table className="mt-2 w-full text-sm">
+            <thead className="text-left text-xs text-gray-400">
+              <tr>
+                <th className="px-2 py-1.5">姓名（名單登記）</th>
+                <th className="px-2 py-1.5">Email</th>
+                <th className="px-2 py-1.5">出現位置</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {unregistered.map((u) => (
+                <tr key={u.email} className="text-gray-500">
+                  <td className="px-2 py-1.5">{u.name ?? "—"}</td>
+                  <td className="px-2 py-1.5">{u.email}</td>
+                  <td className="px-2 py-1.5 text-xs">{u.sources.join("、")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <p className="mt-2 text-xs text-gray-400">
         「初始密碼」為管理員建帳號／批次重設時設定的密碼備查；學員若自行修改過密碼，此欄不會更新。自行註冊的會員無此紀錄。「重設密碼」會覆蓋該會員密碼並記錄為初始密碼。
       </p>
