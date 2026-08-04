@@ -88,6 +88,45 @@ export default async function BoardPage() {
         </p>
       )}
 
+      {/* 講座索取狀況（第一順位）：訪客留 email 索取講座連結的名單 */}
+      {webinars.length > 0 && (
+        <div className="mb-10">
+          <h2 className="mb-4 text-lg font-bold text-gray-700">🎤 講座報名（Email 索取）</h2>
+          <div className="space-y-6">
+            {webinars.map((w) => (
+              <section key={w.id} className="rounded-2xl border border-gray-200 p-5">
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <h3 className="text-lg font-bold">{w.title}</h3>
+                  <span className="ml-auto rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
+                    {w.requests.length} 人索取
+                  </span>
+                </div>
+                {w.requests.length === 0 ? (
+                  <p className="text-sm text-gray-400">尚無人索取</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {w.requests.map((r) => (
+                      <span
+                        key={r.id}
+                        className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
+                      >
+                        {r.name ?? r.email}
+                        {r.name && (
+                          <span className="ml-1 text-xs text-gray-400">{r.email}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sessions.length > 0 && webinars.length > 0 && (
+        <h2 className="mb-4 text-lg font-bold text-gray-700">📚 課程場次</h2>
+      )}
       <div className="space-y-6">
         {sessions.map((s) => {
           const retrain = s.signups.filter((g) => isRetrain(g.product));
@@ -142,41 +181,6 @@ export default async function BoardPage() {
         })}
       </div>
 
-      {/* 講座索取狀況：訪客留 email 索取講座連結的名單 */}
-      {webinars.length > 0 && (
-        <div className="mt-10">
-          <h2 className="mb-4 text-lg font-bold text-gray-700">🎤 講座報名（Email 索取）</h2>
-          <div className="space-y-6">
-            {webinars.map((w) => (
-              <section key={w.id} className="rounded-2xl border border-gray-200 p-5">
-                <div className="mb-3 flex flex-wrap items-center gap-3">
-                  <h3 className="text-lg font-bold">{w.title}</h3>
-                  <span className="ml-auto rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
-                    {w.requests.length} 人索取
-                  </span>
-                </div>
-                {w.requests.length === 0 ? (
-                  <p className="text-sm text-gray-400">尚無人索取</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {w.requests.map((r) => (
-                      <span
-                        key={r.id}
-                        className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
-                      >
-                        {r.name ?? r.email}
-                        {r.name && (
-                          <span className="ml-1 text-xs text-gray-400">{r.email}</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </section>
-            ))}
-          </div>
-        </div>
-      )}
     </main>
   );
 }
