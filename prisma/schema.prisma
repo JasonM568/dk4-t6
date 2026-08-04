@@ -262,6 +262,41 @@ model Course {
   @@index([groupId])
 }
 
+// ── 講座報名頁 ──
+// 訪客到 /webinar/[slug] 輸入 email → 寄含講座連結的品牌信，
+// 並自動加入指定 EDM 名單群組（groupId 軟連結，慣例同 EmailBroadcast）。
+model Webinar {
+  id           String  @id @default(cuid())
+  slug         String  @unique // 公開網址 /webinar/[slug]
+  title        String
+  description  String  @db.Text // 頁面說明（純文字換行顯示）
+  lectureUrl   String // 講座連結（寄信用，不直接露出在頁面）
+  emailSubject String
+  emailBody    String  @db.Text // 支援 {link}=講座連結、[按鈕文字](網址) CTA
+  groupId      String? // 索取者自動加入的 MailGroup；null = 不加名單
+  isActive     Boolean @default(true) // 關閉後頁面顯示「已結束」不再寄信
+
+  requests WebinarRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 索取紀錄：同講座同 email 一筆，重複索取更新寄送次數（60 秒限流防轟炸）
+model WebinarRequest {
+  id         String    @id @default(cuid())
+  webinarId  String
+  webinar    Webinar   @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  email      String // 一律小寫正規化
+  sentCount  Int       @default(0)
+  lastSentAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([webinarId, email])
+  @@index([webinarId])
+}
+
 // ── 課程場次看板 ──
 // 實體/直播開課「場次」，獨立於 Course（平台觀看權限）體系。
 // 後台手動上架場次＋定期上傳 1shop 訂單檔 → 依產品關鍵字歸入場次；

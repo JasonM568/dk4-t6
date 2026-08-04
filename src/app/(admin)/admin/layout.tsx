@@ -61,6 +61,12 @@ export default async function AdminLayout({
           <Link href="/admin/sessions" className="text-gray-600 hover:text-black">
             場次看板
           </Link>
+          {/* 講座報名頁：訪客留 email 索取講座連結 */}
+          {editor && (
+            <Link href="/admin/webinars" className="text-gray-600 hover:text-black">
+              講座報名
+            </Link>
+          )}
           {/* 僅管理員 */}
           {admin && (
             <>
