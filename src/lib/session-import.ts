@@ -8,13 +8,26 @@ import { normalizeMobile } from "@/lib/sms/phone";
 // 匯入冪等：@@unique(sessionId, orderNo) + skipDuplicates，重複上傳不重複計數。
 // 不 import "server-only"：無機密，保留 tsx 腳本可測性；僅由 server actions 呼叫。
 
+/** 對不到場次關鍵字的已付款列：完整帶回給前端，讓管理員當場指定歸類。
+ *  背景：課程改名（如量子課 3~6 月叫「人生升級」）會讓整批訂單默默被排除，
+ *  以前只能補關鍵字後重傳檔案；現在改為列出來問管理員怎麼歸。
+ *  orderedAt 用 ISO 字串：要跨 server action 邊界來回傳遞。 */
+export type UnmatchedOrderRow = {
+  orderNo: string;
+  name: string;
+  email: string | null;
+  phone: string | null; // 原始字串，歸類寫入時才 normalizeMobile
+  amount: number | null;
+  orderedAt: string | null;
+};
+
 export type ImportReport = {
   totalRows: number;
   imported: number; // 新增報名
   duplicate: number; // 已在名單（冪等略過）
   unpaid: number; // 未付款略過
   canceledRemoved: number; // 取消/退款反向移除
-  unmatched: { product: string; count: number }[]; // 對不到場次的產品（待補關鍵字）
+  unmatched: { product: string; count: number; rows: UnmatchedOrderRow[] }[]; // 待管理員指定歸類
   invalid: number; // 缺訂單編號/顧客的列
 };
 
@@ -133,7 +146,7 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     unmatched: [],
     invalid: 0,
   };
-  const unmatchedCount = new Map<string, number>();
+  const unmatchedRows = new Map<string, UnmatchedOrderRow[]>();
   const toCreate: {
     sessionId: string;
     orderNo: string;
@@ -162,7 +175,17 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     }
     const sessionId = matchSession(row.product);
     if (!sessionId) {
-      unmatchedCount.set(row.product, (unmatchedCount.get(row.product) ?? 0) + 1);
+      // 對不到關鍵字：不再默默丟掉，整列帶回報告讓管理員指定歸類
+      const list = unmatchedRows.get(row.product) ?? [];
+      list.push({
+        orderNo: row.orderNo,
+        name: row.name,
+        email: row.email || null,
+        phone: row.phone || null,
+        amount: row.amount,
+        orderedAt: row.orderedAt?.toISOString() ?? null,
+      });
+      unmatchedRows.set(row.product, list);
       continue;
     }
     toCreate.push({
@@ -193,8 +216,8 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     report.imported = res.count;
     report.duplicate = toCreate.length - res.count;
   }
-  report.unmatched = [...unmatchedCount.entries()]
-    .map(([product, count]) => ({ product, count }))
+  report.unmatched = [...unmatchedRows.entries()]
+    .map(([product, rows]) => ({ product, count: rows.length, rows }))
     .sort((a, b) => b.count - a.count);
   return report;
 }

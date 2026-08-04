@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
-import { explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
+import { explainMobile, normalizeMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 
 // 課程場次看板：後台管理 actions（場次 CRUD / 訂單匯入 / 看板 4 位碼）
 
@@ -120,6 +120,90 @@ export async function addSignupAction(
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
   return { success: `已加入 ${name}` };
+}
+
+/** 把「對不到關鍵字」的訂單列歸入管理員指定的場次。
+ *
+ *  來源是 uploadOrdersAction 回傳報告裡的 unmatched rows（課程改名時
+ *  整批對不到，如量子課 3~6 月叫「人生升級」）。冪等：同單同場次只算一筆，
+ *  重複歸類不會重複計數。可選擇同時把產品名加入場次關鍵字，之後再傳同名
+ *  訂單檔就會自動歸類，不必再問一次。 */
+export async function assignUnmatchedAction(
+  _prev: SessionFormState,
+  formData: FormData,
+): Promise<SessionFormState> {
+  await requireEditor();
+  const sessionId = String(formData.get("sessionId") ?? "");
+  const product = String(formData.get("product") ?? "").trim();
+  const addKeyword = formData.get("addKeyword") === "on";
+  if (!sessionId) return { error: "請選擇要歸入的場次" };
+  if (!product) return { error: "缺少產品名稱" };
+
+  // rows 來自上傳報告經前端 hidden input 帶回，防禦性解析：壞資料擋下不寫入
+  let rows: {
+    orderNo: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    amount: number | null;
+    orderedAt: string | null;
+  }[];
+  try {
+    const parsed: unknown = JSON.parse(String(formData.get("rows") ?? "[]"));
+    if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 2000)
+      return { error: "名單資料不完整，請重新上傳訂單檔" };
+    rows = parsed.filter(
+      (r): r is (typeof rows)[number] =>
+        !!r && typeof r === "object" &&
+        typeof (r as { orderNo?: unknown }).orderNo === "string" &&
+        !!(r as { orderNo: string }).orderNo &&
+        typeof (r as { name?: unknown }).name === "string" &&
+        !!(r as { name: string }).name,
+    );
+    if (rows.length === 0) return { error: "名單資料不完整，請重新上傳訂單檔" };
+  } catch {
+    return { error: "名單資料不完整，請重新上傳訂單檔" };
+  }
+
+  const session = await prisma.courseSession.findUnique({
+    where: { id: sessionId },
+    select: { id: true, title: true, keywords: true },
+  });
+  if (!session) return { error: "場次不存在（可能剛被刪除），請重新選擇" };
+
+  const res = await prisma.sessionSignup.createMany({
+    data: rows.map((r) => {
+      const orderedAt = r.orderedAt ? new Date(r.orderedAt) : null;
+      return {
+        sessionId: session.id,
+        orderNo: r.orderNo,
+        name: r.name,
+        email: r.email || null,
+        phone: normalizeMobile(r.phone), // 與訂單檔匯入同一套正規化
+        product,
+        amount: typeof r.amount === "number" ? r.amount : null,
+        orderedAt: orderedAt && !Number.isNaN(orderedAt.getTime()) ? orderedAt : null,
+      };
+    }),
+    skipDuplicates: true,
+  });
+
+  // 同時補關鍵字：之後上傳同名產品的訂單檔就自動歸類，不必再問
+  if (addKeyword && !session.keywords.includes(product)) {
+    await prisma.courseSession.update({
+      where: { id: session.id },
+      data: { keywords: { push: product } },
+    });
+  }
+
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  const dup = rows.length - res.count;
+  return {
+    success: `已把「${product}」${res.count} 筆歸入「${session.title}」${
+      dup > 0 ? `（${dup} 筆已在名單略過）` : ""
+    }${addKeyword ? "，並已加入場次關鍵字" : ""}`,
+  };
 }
 
 /** 移除單筆報名（誤歸類等，客戶端先 confirm） */

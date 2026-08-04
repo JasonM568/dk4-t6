@@ -52,7 +52,9 @@ export default async function AdminSessionsPage() {
               金流狀態「已付款」的訂單依產品關鍵字歸入場次；重複上傳同一檔案不會重複計數；
               訂單狀態「取消」或退款會自動移除既有報名。
             </p>
-            <UploadOrdersForm />
+            <UploadOrdersForm
+              sessionOptions={sessions.map((s) => ({ id: s.id, title: s.title }))}
+            />
           </section>
 
           {/* 新增場次 */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import {
   createSessionAction,
   updateSessionAction,
@@ -8,10 +8,12 @@ import {
   addSignupAction,
   removeSignupAction,
   uploadOrdersAction,
+  assignUnmatchedAction,
   saveBoardCodeAction,
   type SessionFormState,
   type UploadState,
 } from "@/actions/sessions";
+import type { ImportReport } from "@/lib/session-import";
 import { formatDate } from "@/lib/format";
 import { formatMobile } from "@/lib/sms/phone";
 
@@ -96,7 +98,11 @@ export function BoardCodeForm({
 }
 
 /** 上傳訂單檔 */
-export function UploadOrdersForm() {
+export function UploadOrdersForm({
+  sessionOptions,
+}: {
+  sessionOptions: { id: string; title: string }[];
+}) {
   const [state, action, pending] = useActionState<UploadState, FormData>(
     uploadOrdersAction,
     null,
@@ -132,19 +138,104 @@ export function UploadOrdersForm() {
           {state.report.unmatched.length > 0 && (
             <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
               <div className="font-medium">
-                ⚠️ {state.report.unmatched.length} 種產品對不到場次（未匯入）——請到下方場次補關鍵字後重新上傳同一檔案：
+                ⚠️ {state.report.unmatched.length} 種產品對不到場次關鍵字（尚未匯入）——
+                常見原因是課程改過名（例如量子課曾叫「人生升級」）。請指定要歸入的場次：
               </div>
-              <ul className="mt-1 list-inside list-disc">
+              <div className="mt-2 space-y-2">
                 {state.report.unmatched.map((u) => (
-                  <li key={u.product}>
-                    {u.product}（{u.count} 筆）
-                  </li>
+                  <UnmatchedGroupForm
+                    key={u.product}
+                    group={u}
+                    sessionOptions={sessionOptions}
+                  />
                 ))}
-              </ul>
+              </div>
             </div>
           )}
         </div>
       )}
+    </form>
+  );
+}
+
+/** 單一「對不到關鍵字」產品的歸類表單：選場次 → 歸入（可同時補關鍵字） */
+function UnmatchedGroupForm({
+  group,
+  sessionOptions,
+}: {
+  group: ImportReport["unmatched"][number];
+  sessionOptions: { id: string; title: string }[];
+}) {
+  const [state, action, pending] = useActionState<SessionFormState, FormData>(
+    assignUnmatchedAction,
+    null,
+  );
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  // 歸類成功後這組就收起來，只留結果訊息
+  if (state?.success) {
+    return (
+      <div className="rounded bg-green-50 px-2 py-1.5 text-green-700">✓ {state.success}</div>
+    );
+  }
+
+  const namePreview = group.rows
+    .slice(0, 5)
+    .map((r) => r.name)
+    .join("、");
+
+  return (
+    <form action={action} className="rounded border border-amber-200 bg-white/60 p-2">
+      <div className="font-medium text-gray-700">
+        {group.product}（{group.count} 筆）
+      </div>
+      <div className="mt-0.5 text-gray-500">
+        {namePreview}
+        {group.count > 5 && ` 等 ${group.count} 人`}
+      </div>
+      <input type="hidden" name="product" value={group.product} />
+      <input type="hidden" name="rows" value={JSON.stringify(group.rows)} />
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <select
+          ref={selectRef}
+          name="sessionId"
+          required
+          defaultValue=""
+          className="rounded border border-gray-300 bg-white px-2 py-1 focus:border-black focus:outline-none"
+        >
+          <option value="" disabled>
+            選擇要歸入的場次
+          </option>
+          {sessionOptions.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.title}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1">
+          {/* 預設勾選：補了關鍵字，之後再傳同名訂單檔就自動歸類，不必再問一次 */}
+          <input type="checkbox" name="addKeyword" defaultChecked />
+          同時加入該場次關鍵字
+        </label>
+        <button
+          disabled={pending}
+          onClick={(e) => {
+            const title =
+              selectRef.current?.selectedOptions[0]?.textContent ?? "";
+            if (!selectRef.current?.value) return; // 交給 required 擋
+            if (
+              !confirm(
+                `把「${group.product}」${group.count} 筆報名歸入「${title}」？`,
+              )
+            )
+              e.preventDefault();
+          }}
+          className="rounded bg-black px-3 py-1 font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+        >
+          {pending ? "歸入中…" : "歸入"}
+        </button>
+      </div>
+      {state?.error && <p className="mt-1 text-red-600">{state.error}</p>}
     </form>
   );
 }
