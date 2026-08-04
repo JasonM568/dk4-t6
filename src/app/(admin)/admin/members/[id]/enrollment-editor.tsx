@@ -69,7 +69,9 @@ export function EnrollmentEditor({
               <tr key={e.courseId}>
                 <td className="px-4 py-3 font-medium">{e.title}</td>
                 <td className="px-4 py-3 text-gray-500">
-                  {new Date(e.enrolledAt).toLocaleString("zh-TW")}
+                  {new Date(e.enrolledAt).toLocaleString("zh-TW", {
+                    timeZone: "Asia/Taipei",
+                  })}
                 </td>
                 <td className="px-4 py-3">
                   {(() => {

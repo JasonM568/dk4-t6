@@ -93,7 +93,9 @@ export function PasswordForm({ rows, setAction }: PasswordFormProps) {
                   <div className="text-xs text-gray-400">{r.email}</div>
                 </td>
                 <td className="px-4 py-3 text-gray-500">
-                  {new Date(r.createdAt).toLocaleString("zh-TW")}
+                  {new Date(r.createdAt).toLocaleString("zh-TW", {
+                    timeZone: "Asia/Taipei",
+                  })}
                 </td>
                 <td className="px-4 py-3">
                   {r.enrollmentCount > 0 ? (

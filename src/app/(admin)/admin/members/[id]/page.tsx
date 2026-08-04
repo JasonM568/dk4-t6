@@ -84,7 +84,9 @@ export default async function MemberDetailPage({
             label="加入時間"
             value={
               profile.created_at
-                ? new Date(profile.created_at).toLocaleString("zh-TW")
+                ? new Date(profile.created_at).toLocaleString("zh-TW", {
+                    timeZone: "Asia/Taipei",
+                  })
                 : "—"
             }
           />
@@ -158,7 +160,9 @@ export default async function MemberDetailPage({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500">
-                      {o.createdAt.toLocaleDateString("zh-TW")}
+                      {o.createdAt.toLocaleDateString("zh-TW", {
+                        timeZone: "Asia/Taipei",
+                      })}
                     </td>
                   </tr>
                 );

@@ -42,6 +42,26 @@ const HEADERS = {
   amount: "小計",
 } as const;
 
+/**
+ * 1shop 的「建立日期」是不帶時區的台北牆上時間（"2026-08-03 22:01:16"）。
+ * 直接 new Date() 會用「伺服器時區」解讀——Vercel 是 UTC，會整整差 8 小時。
+ * 台灣自 1980 起無日光節約時間，固定補 +08:00 即可。
+ */
+function parseTaipei(s: string): Date | null {
+  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) {
+    // 認不得的格式：退回原生解析，至少不丟資料
+    const d = new Date(s.replace(" ", "T"));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const [, y, mo, d, h, mi, sec] = m;
+  const iso = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}T${(h ?? "0").padStart(2, "0")}:${
+    mi ?? "00"
+  }:${sec ?? "00"}+08:00`;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function parseOrderFile(buf: ArrayBuffer): ParsedRow[] {
   const wb = XLSX.read(buf, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -65,7 +85,7 @@ export function parseOrderFile(buf: ArrayBuffer): ParsedRow[] {
 
   return rows.slice(1).map((r) => {
     const dateStr = cell(r, col.orderedAt);
-    const parsed = dateStr ? new Date(dateStr.replace(" ", "T")) : null;
+    const parsed = dateStr ? parseTaipei(dateStr) : null;
     const amountStr = cell(r, col.amount);
     const amount = amountStr ? Math.round(Number(amountStr)) : null;
     return {
