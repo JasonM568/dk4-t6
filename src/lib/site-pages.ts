@@ -6,6 +6,7 @@ export const SITE_PAGES = [
   { key: "lecturers", path: "/lecturers", title: "量子講師群" },
   { key: "knowledge", path: "/knowledge", title: "知識專區" },
   { key: "speaking", path: "/speaking", title: "講座邀約" },
+  { key: "corporate", path: "/corporate", title: "企業包班" },
   { key: "shihua", path: "/zone/shihua", title: "世華會學習專區" },
 ] as const;
 

@@ -1,4 +1,9 @@
+import { notFound } from "next/navigation";
+import { isPageEnabled } from "@/lib/site-pages";
 import { CorporateInquiryForm } from "./inquiry-form";
+
+// 分頁開關存 DB（後台「分頁管理」），不能讓 build 時把結果凍結成靜態頁
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "企業包班諮詢 — 希望學院學習平台",
@@ -31,7 +36,9 @@ const STEPS = [
   { step: "4", title: "確認開課", desc: "敲定日期，講師與教材就緒開課" },
 ] as const;
 
-export default function CorporatePage() {
+export default async function CorporatePage() {
+  if (!(await isPageEnabled("corporate"))) notFound();
+
   return (
     <div>
       <section className="bg-gradient-to-b from-indigo-50 to-white">

@@ -3,9 +3,10 @@ import { prisma } from "@/lib/db";
 import { CourseCard } from "@/components/course-card";
 import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { publicCourseWhere } from "@/lib/course-access";
+import { isPageEnabled } from "@/lib/site-pages";
 
 export default async function HomePage() {
-  const [courses, webinars] = await Promise.all([
+  const [courses, webinars, corporateEnabled] = await Promise.all([
     prisma.course.findMany({
       where: publicCourseWhere(),
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -23,6 +24,8 @@ export default async function HomePage() {
         dmImage: true,
       },
     }),
+    // 企業包班區塊跟 /corporate 分頁共用開關（後台「分頁管理」）
+    isPageEnabled("corporate"),
   ]);
 
   return (
@@ -138,6 +141,27 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* 企業包班 CTA（關閉「企業包班」分頁時整段隱藏） */}
+      {corporateEnabled && (
+        <section className="mx-auto max-w-6xl px-4 py-12">
+          <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-10 text-center text-white sm:px-12">
+            <h2 className="text-2xl font-bold sm:text-3xl">
+              🏢 企業包班 AI 培訓
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-indigo-100">
+              為你的團隊量身打造 AI 課程——客製課綱、到府或線上授課、實戰演練導向。
+              留下需求，1–2 個工作天內專人聯繫。
+            </p>
+            <Link
+              href="/corporate"
+              className="mt-6 inline-block rounded-lg bg-white px-6 py-3 font-medium text-indigo-700 transition hover:bg-indigo-50"
+            >
+              了解企業包班 →
+            </Link>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
