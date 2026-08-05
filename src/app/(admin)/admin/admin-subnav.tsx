@@ -20,6 +20,7 @@ const MARKETING_TABS = [
   { href: "/admin/broadcast/groups", label: "名單群組", editorOnly: true },
   { href: "/admin/webinars", label: "講座報名" },
   { href: "/admin/webinars/new", label: "建立講座", editorOnly: true },
+  { href: "/admin/corporate", label: "包班諮詢" },
   { href: "/admin/sms", label: "簡訊發送", editorOnly: true },
   { href: "/admin/sms/optouts", label: "簡訊退訂", editorOnly: true },
 ];
@@ -36,7 +37,7 @@ const PLATFORM_PREFIXES = [
   "/admin/orders",
   "/admin/zones",
 ];
-const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/sms"];
+const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/corporate", "/admin/sms"];
 const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff"];
 
 function isUnder(pathname: string, prefixes: string[]) {

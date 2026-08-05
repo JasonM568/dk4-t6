@@ -321,6 +321,32 @@ model WebinarRequest {
   @@index([webinarId])
 }
 
+// ── 企業包班諮詢 ──
+// /corporate 公開表單：企業留下基本資料與包班需求；
+// 後台 /admin/corporate 名單管理，新單 Email 通知（收件人存 SiteSetting corporateNotifyEmail）。
+model CorporateInquiry {
+  id            String   @id @default(cuid())
+  companyName   String // 公司/單位名稱
+  contactName   String // 聯絡人姓名
+  contactTitle  String? // 職稱
+  email         String // 一律小寫正規化
+  phone         String // 聯絡電話
+  headcount     String? // 預計參訓人數（區間文字）
+  topics        String[] @default([]) // 感興趣的課程主題（複選）
+  trainingType  String? // 上課形式：實體/線上/皆可
+  preferredTime String? // 期望開課時段（自由文字）
+  budget        String? // 預算範圍（區間文字）
+  message       String?  @db.Text // 需求說明
+  status        String   @default("NEW") // NEW 新進 / CONTACTED 洽談中 / WON 已成交 / CLOSED 已結案
+  adminNote     String?  @db.Text // 內部追蹤備註
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
 // ── 課程場次看板 ──
 // 實體/直播開課「場次」，獨立於 Course（平台觀看權限）體系。
 // 後台手動上架場次＋定期上傳 1shop 訂單檔 → 依產品關鍵字歸入場次；
