@@ -127,7 +127,7 @@ function introImagesFromForm(formData: FormData): string[] {
 // 守門 requireEditor，避免被未授權者拿來產生上傳憑證。
 export async function requestCourseImageUploadUrl(
   fileType: string,
-  prefix: "cover" | "intro" | "webinar" | "page" = "intro",
+  prefix: "cover" | "intro" | "webinar" | "page" | "broadcast" = "intro",
 ) {
   await requireEditor();
   return createCourseImageSignedUpload(fileType, prefix);

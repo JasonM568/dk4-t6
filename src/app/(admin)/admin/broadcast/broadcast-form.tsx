@@ -5,11 +5,34 @@ import { useActionState } from "react";
 import Link from "next/link";
 import {
   previewGroupAudienceAction,
+  requestCourseImageUploadUrl,
   saveBroadcastListToGroupAction,
   type BroadcastState,
 } from "@/actions/admin";
 import type { GroupAudiencePreview } from "@/lib/email/audience";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { createClient } from "@/lib/supabase/client";
+import { applyMergeTags, buildContentHtml } from "@/lib/email/render-content";
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** 內文圖片：瀏覽器直傳 Storage（同課程封面／自訂頁那套簽名 URL 流程） */
+async function uploadBodyImage(
+  file: File,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type))
+    return { ok: false, error: "格式不支援（限 JPG/PNG/WebP/GIF）" };
+  if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "圖片超過 5MB" };
+  const signed = await requestCourseImageUploadUrl(file.type, "broadcast");
+  if (!signed.ok) return { ok: false, error: signed.error };
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from(signed.bucket)
+    .uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type });
+  if (error) return { ok: false, error: `上傳失敗：${error.message}` };
+  return { ok: true, url: signed.publicUrl };
+}
 
 type GroupOption = { id: string; name: string; memberCount: number };
 type MemberOption = { email: string; name: string };
@@ -99,16 +122,66 @@ export function BroadcastForm({
     };
   }, [audience, pickedGroups, previewKey]);
 
-  // 把變數插入內文游標處（textarea 為非受控，直接改 value 即可送出）
-  const insertVar = (token: string) => {
+  // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
+  // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
+  const [bodyText, setBodyText] = useState(defaultValues?.body ?? "");
+  const [showPreview, setShowPreview] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const [imgError, setImgError] = useState("");
+  const imgInputRef = useRef<HTMLInputElement>(null);
+
+  // 把片段插入內文游標處（textarea 為非受控，直接改 value 即可送出）；
+  // selInner=true 時選取片段中第一組「佔位文字」讓使用者直接打字取代
+  const insertSnippet = (snippet: string, selectRange?: [number, number]) => {
     const el = bodyRef.current;
     if (!el) return;
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? el.value.length;
-    el.value = el.value.slice(0, start) + token + el.value.slice(end);
-    const pos = start + token.length;
+    el.value = el.value.slice(0, start) + snippet + el.value.slice(end);
     el.focus();
-    el.setSelectionRange(pos, pos);
+    if (selectRange) {
+      el.setSelectionRange(start + selectRange[0], start + selectRange[1]);
+    } else {
+      const pos = start + snippet.length;
+      el.setSelectionRange(pos, pos);
+    }
+    setBodyText(el.value);
+  };
+  const insertVar = (token: string) => insertSnippet(token);
+
+  // 粗體：有選取文字就直接包 **…**，沒有就插佔位字並選取，打字即取代
+  const wrapBold = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    if (end > start) {
+      const sel = el.value.slice(start, end);
+      el.value = `${el.value.slice(0, start)}**${sel}**${el.value.slice(end)}`;
+      el.focus();
+      el.setSelectionRange(end + 4, end + 4);
+      setBodyText(el.value);
+    } else {
+      insertSnippet("**粗體文字**", [2, 6]);
+    }
+  };
+
+  const pickImage = () => {
+    setImgError("");
+    imgInputRef.current?.click();
+  };
+  const onImagePicked = async (file: File | null) => {
+    if (!file) return;
+    setUploadingImg(true);
+    setImgError("");
+    const result = await uploadBodyImage(file);
+    setUploadingImg(false);
+    if (imgInputRef.current) imgInputRef.current.value = "";
+    if (!result.ok) {
+      setImgError(result.error);
+      return;
+    }
+    insertSnippet(`\n\n![圖片說明](${result.url})\n\n`);
   };
 
   const audienceDesc = () => {
@@ -148,11 +221,11 @@ export function BroadcastForm({
         <div>
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <label className="block text-sm font-medium">內文</label>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400">插入變數：</span>
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => insertVar("{email}")}
+                title="插入收件人 email 變數"
                 className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
               >
                 {"{email}"}
@@ -160,21 +233,118 @@ export function BroadcastForm({
               <button
                 type="button"
                 onClick={() => insertVar("{name}")}
+                title="插入收件人姓名變數"
                 className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
               >
                 {"{name}"}
               </button>
+              <span className="mx-0.5 h-4 w-px bg-gray-300" aria-hidden />
+              <button
+                type="button"
+                onClick={wrapBold}
+                title="粗體：選取文字後點擊，或點擊後直接輸入"
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs font-bold hover:bg-gray-50"
+              >
+                B 粗體
+              </button>
+              <button
+                type="button"
+                onClick={() => insertSnippet("\n\n## 標題文字\n\n", [4, 8])}
+                title="插入標題（一行大字）"
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
+              >
+                H 標題
+              </button>
+              <button
+                type="button"
+                onClick={() => insertSnippet("\n\n---\n\n")}
+                title="插入分隔線"
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
+              >
+                ― 分隔線
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  insertSnippet("\n\n[按鈕文字](https://網址)\n\n", [3, 7])
+                }
+                title="插入紅色 CTA 按鈕"
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
+              >
+                🔘 按鈕
+              </button>
+              <button
+                type="button"
+                onClick={pickImage}
+                disabled={uploadingImg}
+                title="上傳圖片並插入內文（JPG/PNG/WebP/GIF，5MB 內）"
+                className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 disabled:opacity-50"
+              >
+                {uploadingImg ? "上傳中…" : "🖼️ 圖片"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPreview((v) => !v)}
+                className={`rounded border px-2 py-0.5 text-xs transition ${
+                  showPreview
+                    ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                    : "border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                👁 {showPreview ? "關閉預覽" : "即時預覽"}
+              </button>
             </div>
           </div>
+          <input
+            ref={imgInputRef}
+            type="file"
+            accept={ALLOWED_IMAGE_TYPES.join(",")}
+            className="hidden"
+            onChange={(e) => onImagePicked(e.target.files?.[0] ?? null)}
+          />
           <textarea
             ref={bodyRef}
             name="body"
             required
             defaultValue={defaultValues?.body}
+            onChange={(e) => setBodyText(e.target.value)}
             rows={8}
             placeholder={"親愛的學員您好：\n\n希望學院推出新課程⋯⋯\n\n您的帳號：{email}\n預設密碼：a12345\n\n（空一行 = 分段）"}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
+          {imgError && (
+            <p className="mt-1 text-xs text-red-600">🖼️ {imgError}</p>
+          )}
+          {showPreview && (
+            <div className="mt-2 overflow-hidden rounded-xl border border-amber-300">
+              <div className="flex items-center justify-between bg-amber-50 px-3 py-1.5">
+                <span className="text-xs font-medium text-amber-800">
+                  即時預覽（與實際寄出走同一套排版；變數以「王小明 / example@example.com」示意）
+                </span>
+              </div>
+              {/* 模擬品牌信：紅底頁首＋白底內文卡（完整版面以「寄測試信」為準） */}
+              <div className="bg-gray-100 px-4 py-4">
+                <div className="mx-auto max-w-[600px] overflow-hidden rounded-xl border border-[#c9a24b] bg-white">
+                  <div className="h-1 bg-gradient-to-r from-[#c9a24b] via-[#f5d77a] to-[#c9a24b]" />
+                  <div className="bg-gradient-to-br from-[#b71c1c] via-[#d32f2f] to-[#e53935] px-6 py-4 text-center text-lg font-bold tracking-widest text-white">
+                    希望學院
+                  </div>
+                  <div
+                    className="px-6 py-6 sm:px-10"
+                    // 內容經 buildContentHtml 內的 esc() 轉義（與寄信同一條防注入路徑）
+                    dangerouslySetInnerHTML={{
+                      __html: buildContentHtml(
+                        applyMergeTags(bodyText, {
+                          email: "example@example.com",
+                          name: "王小明",
+                        }),
+                      ),
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
           <p className="mt-1 text-xs text-gray-400">
             純文字即可，空一行會自動分段；信件會套用希望學院品牌版型（紅底 LOGO 頁首＋金邊卡片）。
             <br />
@@ -182,9 +352,12 @@ export function BroadcastForm({
             <span className="font-mono">{"{name}"}</span>＝姓名，寄出時自動帶入每位收件人
             （沒有姓名的人 <span className="font-mono">{"{name}"}</span> 會留空）。
             <br />
-            放連結：直接貼網址（自動變可點）；做 CTA 按鈕：
+            排版：<span className="font-mono">**粗體**</span>、
+            <span className="font-mono">## 標題</span>（獨立一段）、
+            <span className="font-mono">---</span>（獨立一段＝分隔線）、
+            工具列上傳圖片自動插入；放連結：直接貼網址（自動變可點）；做 CTA 按鈕：
             <span className="font-mono">[立即報名](https://…)</span>
-            ——兩者都會計入點擊統計。
+            ——連結與按鈕都會計入點擊統計。
           </p>
         </div>
 

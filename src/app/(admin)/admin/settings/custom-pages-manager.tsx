@@ -95,7 +95,7 @@ function PageFields({ initial }: { initial?: CustomPageRow }) {
         name="content"
         rows={8}
         defaultValue={initial?.content ?? ""}
-        placeholder={"頁面內文\n\n空一行分段；網址自動變連結；[按鈕文字](https://網址) 變紅色按鈕（與 EDM 內文同語法）"}
+        placeholder={"頁面內文\n\n空一行分段；網址自動變連結；[按鈕文字](https://網址) 變紅色按鈕；\n**粗體**；## 標題（獨立一段）；---（獨立一段＝分隔線）；![說明](https://圖片網址)（與 EDM 內文同語法）"}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
       <div className="rounded-lg border border-dashed border-gray-300 p-3">
