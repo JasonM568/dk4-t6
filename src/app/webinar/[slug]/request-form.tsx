@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useActionState } from "react";
 import {
+  getWebinarDeliveryStatusAction,
   requestWebinarLinkAction,
+  type WebinarDeliveryStatus,
   type WebinarRequestState,
 } from "@/actions/webinar";
 
@@ -68,6 +70,7 @@ export function WebinarRequestForm({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  const [delivery, setDelivery] = useState<WebinarDeliveryStatus>(null);
 
   const suggestion = suggestFix(email.trim());
 
@@ -81,6 +84,33 @@ export function WebinarRequestForm({
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  // 寄出後輪詢寄送狀態（每 5 秒、最多 2 分鐘）：
+  // 退信/失敗即時提醒改地址；確認送達就顯示綠勾，減少「沒收到」焦慮
+  useEffect(() => {
+    if (!state?.success) return;
+    const target = email.trim().toLowerCase();
+    let stopped = false;
+    let tries = 0;
+    const poll = async () => {
+      if (stopped || tries >= 24) return;
+      tries += 1;
+      try {
+        const status = await getWebinarDeliveryStatusAction(slug, target);
+        if (stopped) return;
+        setDelivery(status);
+        if (status === "DELIVERED" || status === "BOUNCED" || status === "FAILED") return;
+      } catch {
+        // 查詢失敗不影響頁面，下一輪再試
+      }
+      setTimeout(poll, 5000);
+    };
+    const t = setTimeout(poll, 5000);
+    return () => {
+      stopped = true;
+      clearTimeout(t);
+    };
+  }, [state, slug, email]);
+
   if (state?.success) {
     return (
       <div className="space-y-4 text-left">
@@ -90,6 +120,25 @@ export function WebinarRequestForm({
             寄送至：<span className="font-mono font-bold">{email}</span>
           </div>
         </div>
+
+        {delivery === "DELIVERED" && (
+          <div className="rounded-xl bg-green-100 px-4 py-3 text-sm text-green-800">
+            ✅ <strong>信件已確認送達你的信箱服務商</strong>
+            ——如果收件匣沒看到，一定是被歸到垃圾郵件或促銷分頁，照下方步驟找得到。
+          </div>
+        )}
+        {(delivery === "BOUNCED" || delivery === "FAILED") && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">
+            ❌{" "}
+            <strong>
+              {delivery === "BOUNCED"
+                ? "這個信箱地址退信了，信寄不進去"
+                : "信件寄送失敗"}
+            </strong>
+            ——最常見的原因是信箱打錯字。請點下方「打錯信箱？重新輸入」再確認一次；
+            若地址確定沒錯，請稍後再重寄或聯繫我們。
+          </div>
+        )}
 
         <div className="rounded-xl border border-gray-200 p-4 text-sm leading-relaxed text-gray-700">
           <div className="mb-2 font-bold">📬 找不到信？照這三步：</div>

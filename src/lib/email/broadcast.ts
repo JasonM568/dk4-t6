@@ -224,6 +224,7 @@ async function postBatchWithRetry(
 
 export type SendOptions = {
   broadcastId?: string; // 有值時每封帶 tag，供 Resend webhook 事件回流對應群發紀錄
+  webinarId?: string; // 有值時每封帶 tag，供 webhook 回流更新講座索取的寄送狀態
   withUnsubscribe?: boolean; // 有值時每封帶 List-Unsubscribe one-click headers（RFC 8058）
 };
 
@@ -289,8 +290,17 @@ export async function sendBroadcast(
                   },
                 }
               : {}),
-            ...(options?.broadcastId
-              ? { tags: [{ name: "broadcast_id", value: options.broadcastId }] }
+            ...(options?.broadcastId || options?.webinarId
+              ? {
+                  tags: [
+                    ...(options.broadcastId
+                      ? [{ name: "broadcast_id", value: options.broadcastId }]
+                      : []),
+                    ...(options.webinarId
+                      ? [{ name: "webinar_id", value: options.webinarId }]
+                      : []),
+                  ],
+                }
               : {}),
           };
         }),

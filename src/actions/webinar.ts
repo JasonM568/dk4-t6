@@ -219,13 +219,35 @@ export async function requestWebinarLinkAction(
   body = applyMergeTags(body, { email, name });
   const subject = applyMergeTags(webinar.emailSubject, { email, name });
 
+  // 帶 webinar_id tag：Resend webhook 事件回流 → 更新這筆索取的寄送狀態
   const result = await sendBroadcast(
     [{ email, name }],
     subject,
     () => buildBroadcastHtml(body, null),
+    { webinarId: webinar.id },
   );
   if (result.sent === 0) {
     console.error("[webinar] 寄信失敗", { slug, email, error: result.error });
+    // 寄失敗也留下索取紀錄（名單不能丟）標 FAILED；不動 lastSentAt，訪客可立即重試
+    await prisma.webinarRequest
+      .upsert({
+        where: { webinarId_email: { webinarId: webinar.id, email } },
+        update: {
+          name,
+          deliveryStatus: "FAILED",
+          deliveryDetail: (result.error ?? "寄送失敗").slice(0, 500),
+          deliveryAt: new Date(),
+        },
+        create: {
+          webinarId: webinar.id,
+          email,
+          name,
+          deliveryStatus: "FAILED",
+          deliveryDetail: (result.error ?? "寄送失敗").slice(0, 500),
+          deliveryAt: new Date(),
+        },
+      })
+      .catch((e) => console.error("[webinar] FAILED 紀錄寫入失敗", { slug, email, e }));
     return { error: "寄送失敗，請稍後再試；若持續失敗請聯繫我們" };
   }
 
@@ -233,13 +255,23 @@ export async function requestWebinarLinkAction(
   try {
     await prisma.webinarRequest.upsert({
       where: { webinarId_email: { webinarId: webinar.id, email } },
-      update: { name, sentCount: { increment: 1 }, lastSentAt: new Date() },
+      update: {
+        name,
+        sentCount: { increment: 1 },
+        lastSentAt: new Date(),
+        // 重寄 = 新一輪追蹤：狀態重置回 SENT，等 webhook 回報這一封的下場
+        deliveryStatus: "SENT",
+        deliveryDetail: null,
+        deliveryAt: new Date(),
+      },
       create: {
         webinarId: webinar.id,
         email,
         name,
         sentCount: 1,
         lastSentAt: new Date(),
+        deliveryStatus: "SENT",
+        deliveryAt: new Date(),
       },
     });
     if (webinar.groupId) {
@@ -254,4 +286,53 @@ export async function requestWebinarLinkAction(
   }
 
   return { success: "確認信已寄出，請到信箱查收（也請檢查垃圾郵件夾）！" };
+}
+
+export type WebinarDeliveryStatus =
+  | "PENDING" // 已寄出，還沒收到 webhook 回報
+  | "DELIVERED" // 已送達對方信箱服務商（含已開信/點擊）
+  | "BOUNCED" // 退信（地址不存在或被拒收）
+  | "FAILED" // 寄送失敗（API 層）
+  | null; // 查不到或超出查詢時窗
+
+const STATUS_QUERY_WINDOW_MS = 15 * 60 * 1000;
+
+/** 報名成功頁輪詢寄送狀態：退信/失敗即時提示訪客改地址。
+ *  公開端點防列舉：只回報「最近 15 分鐘內有寄送動作」的紀錄，其餘一律 null。 */
+export async function getWebinarDeliveryStatusAction(
+  slug: string,
+  email: string,
+): Promise<WebinarDeliveryStatus> {
+  const normalized = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(normalized)) return null;
+  const webinar = await prisma.webinar.findUnique({
+    where: { slug },
+    select: { id: true },
+  });
+  if (!webinar) return null;
+  const req = await prisma.webinarRequest.findUnique({
+    where: { webinarId_email: { webinarId: webinar.id, email: normalized } },
+    select: { deliveryStatus: true, lastSentAt: true, deliveryAt: true },
+  });
+  if (!req) return null;
+  const lastActivity = Math.max(
+    req.lastSentAt?.getTime() ?? 0,
+    req.deliveryAt?.getTime() ?? 0,
+  );
+  if (Date.now() - lastActivity > STATUS_QUERY_WINDOW_MS) return null;
+  switch (req.deliveryStatus) {
+    case "DELIVERED":
+    case "OPENED":
+    case "CLICKED":
+      return "DELIVERED";
+    case "BOUNCED":
+    case "COMPLAINED":
+      return "BOUNCED";
+    case "FAILED":
+      return "FAILED";
+    case "SENT":
+      return "PENDING";
+    default:
+      return null;
+  }
 }

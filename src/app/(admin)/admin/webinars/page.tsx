@@ -74,6 +74,8 @@ export default async function AdminWebinarsPage() {
                 sentCount: r.sentCount,
                 lastSentAt: r.lastSentAt?.toISOString() ?? null,
                 createdAt: r.createdAt.toISOString(),
+                deliveryStatus: r.deliveryStatus,
+                deliveryDetail: r.deliveryDetail,
               })),
             }}
           />

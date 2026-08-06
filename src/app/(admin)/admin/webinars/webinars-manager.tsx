@@ -42,7 +42,35 @@ export type WebinarRequestRow = {
   sentCount: number;
   lastSentAt: string | null;
   createdAt: string;
+  deliveryStatus: string | null; // SENT/DELIVERED/OPENED/CLICKED/BOUNCED/COMPLAINED/FAILED；null = 舊資料
+  deliveryDetail: string | null; // 退信/失敗原因
 };
+
+// 寄送狀態標籤（null = 追蹤功能上線前的舊資料，不顯示）
+const DELIVERY_BADGES: Record<string, { label: string; className: string }> = {
+  SENT: { label: "已寄出", className: "bg-gray-100 text-gray-500" },
+  DELIVERED: { label: "已送達", className: "bg-green-50 text-green-700" },
+  OPENED: { label: "已開信", className: "bg-green-100 text-green-800" },
+  CLICKED: { label: "已點擊", className: "bg-emerald-100 text-emerald-800" },
+  BOUNCED: { label: "退信", className: "bg-red-100 text-red-700" },
+  COMPLAINED: { label: "檢舉垃圾信", className: "bg-red-100 text-red-700" },
+  FAILED: { label: "寄送失敗", className: "bg-red-50 text-red-600" },
+};
+
+function DeliveryBadge({ request }: { request: WebinarRequestRow }) {
+  const badge = request.deliveryStatus
+    ? DELIVERY_BADGES[request.deliveryStatus]
+    : null;
+  if (!badge) return null;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs ${badge.className}`}
+      title={request.deliveryDetail ?? undefined}
+    >
+      {badge.label}
+    </span>
+  );
+}
 export type WebinarRow = {
   id: string;
   slug: string;
@@ -322,6 +350,7 @@ function RequestRow({
       <span className="w-6 font-mono text-gray-400">{index + 1}</span>
       <span className="w-32 truncate">{request.name ?? "—"}</span>
       <span className="w-64 truncate text-gray-600">{request.email}</span>
+      <DeliveryBadge request={request} />
       <span className="text-xs text-gray-400">寄 {request.sentCount} 次</span>
       <span className="text-xs text-gray-400">首次 {formatDate(request.createdAt)}</span>
       {request.lastSentAt && (
@@ -366,6 +395,12 @@ export function WebinarCard({
     null,
   );
   const url = `https://course.huangxi.info/webinar/${webinar.slug}`;
+  const problemCount = webinar.requests.filter(
+    (r) =>
+      r.deliveryStatus === "BOUNCED" ||
+      r.deliveryStatus === "COMPLAINED" ||
+      r.deliveryStatus === "FAILED",
+  ).length;
   return (
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
@@ -374,6 +409,11 @@ export function WebinarCard({
         <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-sm font-bold">
           {webinar.requests.length} 人索取
         </span>
+        {problemCount > 0 && (
+          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700">
+            {problemCount} 筆退信/失敗
+          </span>
+        )}
         {!webinar.isActive && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
             已關閉

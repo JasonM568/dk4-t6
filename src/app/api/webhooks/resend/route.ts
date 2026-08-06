@@ -46,19 +46,31 @@ function verifySvixSignature(
 }
 
 /** tags 兩種 shape 都要吃：寄送時是 [{name,value}]，webhook 回來多為物件 map */
-function extractBroadcastId(tags: unknown): string | null {
+function extractTag(tags: unknown, name: string): string | null {
   if (Array.isArray(tags)) {
     const hit = (tags as { name?: string; value?: string }[]).find(
-      (t) => t?.name === "broadcast_id",
+      (t) => t?.name === name,
     );
     return hit?.value ?? null;
   }
   if (tags && typeof tags === "object") {
-    const v = (tags as Record<string, unknown>).broadcast_id;
+    const v = (tags as Record<string, unknown>)[name];
     return typeof v === "string" ? v : null;
   }
   return null;
 }
+
+// 講座索取寄送狀態：依嚴重度只升不降（晚到的 DELIVERED 不能蓋掉 BOUNCED；
+// OPENED/CLICKED 比 DELIVERED 資訊多所以較高；退信/投訴為終態）
+const DELIVERY_RANK: Record<string, number> = {
+  SENT: 0,
+  FAILED: 0,
+  DELIVERED: 1,
+  OPENED: 2,
+  CLICKED: 3,
+  BOUNCED: 9,
+  COMPLAINED: 9,
+};
 
 export async function POST(request: NextRequest) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
@@ -101,7 +113,7 @@ export async function POST(request: NextRequest) {
       : null;
   if (!email) return NextResponse.json({ ignored: true });
 
-  const broadcastId = extractBroadcastId(event.data?.tags);
+  const broadcastId = extractTag(event.data?.tags, "broadcast_id");
 
   // 無 broadcast_id（Auth 信等非群發信）不記事件；但退信/投訴仍要進退訂名單
   if (broadcastId) {
@@ -109,6 +121,31 @@ export async function POST(request: NextRequest) {
       data: [{ broadcastId, email, type }],
       skipDuplicates: true, // 唯一鍵 (broadcastId,email,type) → webhook 重送冪等
     });
+  }
+
+  // 講座信事件回流：更新該筆索取的寄送狀態（只升不降；紀錄已被刪就靜默略過）
+  const webinarId = extractTag(event.data?.tags, "webinar_id");
+  if (webinarId) {
+    const req = await prisma.webinarRequest.findUnique({
+      where: { webinarId_email: { webinarId, email } },
+      select: { id: true, deliveryStatus: true },
+    });
+    const currentRank = DELIVERY_RANK[req?.deliveryStatus ?? ""] ?? -1;
+    if (req && DELIVERY_RANK[type] >= currentRank) {
+      await prisma.webinarRequest.update({
+        where: { id: req.id },
+        data: {
+          deliveryStatus: type,
+          deliveryDetail:
+            type === "BOUNCED"
+              ? (event.data?.bounce?.message ?? "退信").slice(0, 500)
+              : type === "COMPLAINED"
+                ? "收件人檢舉為垃圾信"
+                : null,
+          deliveryAt: new Date(),
+        },
+      });
+    }
   }
 
   if (type === "BOUNCED" || type === "COMPLAINED") {

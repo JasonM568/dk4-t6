@@ -314,6 +314,11 @@ model WebinarRequest {
   name       String? // 訪客填的姓名（重複索取以最新為準）
   sentCount  Int       @default(0)
   lastSentAt DateTime?
+  // 講座信寄送狀態（Resend webhook 回流，依嚴重度只升不降）：
+  // SENT | DELIVERED | OPENED | CLICKED | BOUNCED | COMPLAINED | FAILED；null = 追蹤上線前的舊資料
+  deliveryStatus String?
+  deliveryDetail String? // 退信/寄送失敗原因（訊息前 500 字）
+  deliveryAt     DateTime? // 最後一次狀態更新時間
 
   createdAt DateTime @default(now())
 
