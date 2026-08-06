@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-07-25（session 逾時、專區限時免開通觀看 openToGroupUntil、世華會 500 人上線計畫）**
+> 最後更新：**2026-08-06（EDM 圖文編輯器升級；8/4〜8/6 講座/看板/簡訊/企業包班等 36 commit 補記）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
 > 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
@@ -165,6 +165,32 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] **註冊完成轉換事件**：register 成功畫面 `TrackSignUpOnce`（gtag sign_up / fbq CompleteRegistration / dataLayer push）；Confirm email 關閉時的 redirect 路徑不埋（正式環境 Confirm 開啟不會走到）
 - [x] headless browser 實測：gtag/fbq 函式存在、dataLayer 有 config+event、SPA 路由切換 page_view 正確 +1；本機測試 ID 已清
 - 📋 **啟用方式**：後台 /admin/settings 填入正式 GA4（G-…）/ Pixel（數字）/ GTM（GTM-…）ID 即生效，不用重新部署
+
+**2026-08-04〜05（三個工作日夜的大批功能，HANDOFF 當時未記，此為 git log 補記，全數已部署）**
+- [x] **課程場次報名看板**（`/board` 憑 4 位碼唯讀、60 秒自動更新、登入時效 N 小時強制過期）：後台上架場次＋上傳 1shop 訂單自動歸類；對不到關鍵字改詢問管理員歸類（不再默默排除，`b78bc64`）；手動新增報名（電話/現金單，新生/舊生標記）；新生/舊生人數（產品名含「複訓」判別）
+- [x] **講座報名系統**（`/webinar/[slug]`）：訪客留姓名+email 索取講座連結信、自動進 EDM 名單群組；DM 圖直傳、會議 ID/密碼/補充資訊自動入信、{name}/{link} 變數；首頁「近期講座」區塊導流；防呆三層（網域打錯偵測/蜜罐/60 秒限流）——⚠️ 蜜罐欄位曾因名為 website 被 autofill 誤殺真人（jyuli780 個案），已改名 `hp_extra_note`
+- [x] **簡訊模組第一階段**（`/admin/sms`，dry-run 架構未接簡訊商）：上課提醒、手機正規化（09XXXXXXXX，可疑一律拒收不猜）、SmsOptOut 分流（行銷/履約分開）、花費防線（單次/每日上限擋在 execute 層、金額存分）；架構文件 `docs/sms-module*`
+- [x] **時區修正**（`db693e0`）：formatDate 全面帶 Asia/Taipei（Vercel UTC 環境下曾全部少 8 小時）；1shop 匯入日期明確補 +08:00
+- [x] **後台導覽重整**：頂列 11 項收成 5 分組；講座拆「查看場次/建立講座」；總覽加場次/講座報名動態卡
+- [x] **自訂前台頁面**（`/p/[slug]`，CustomPage 表）：分頁管理可自建頁面（標題/內文/多圖），navbar 自動掛載；內文用 RichText 同 EDM 語法
+- [x] **EDM 發送對象可複選名單群組**（`27277a1`，groupIds 陣列＋回填 migration）：跨群組去重只寄一次、人數試算與寄出同一條解析路徑；模組文件 `docs/edm-module.md`
+- [x] **企業包班**：前台 `/corporate` 諮詢表單（蜜罐/防重複入庫/管理員通知信+自動回覆）＋後台 `/admin/corporate` 名單管理（狀態/備註）＋導覽/首頁 CTA 曝光（SITE_PAGES key `corporate`）
+- [x] 會員搜尋同時掃名單世界（未註冊 email 灰色區塊現形）；批次開通「查無會員」存底待開通、註冊當下自動認領
+
+**2026-08-06（講座索取信寄送狀態追蹤，`7de9e99` 已部署）**
+- [x] WebinarRequest 加 `deliveryStatus/deliveryDetail/deliveryAt`（migration 已上正式庫，舊資料 null 不回填）；寄信帶 `webinar_id` tag → Resend webhook 回流更新（狀態只升不降）
+- [x] 後台名單狀態標籤＋卡片退信/失敗計數；報名成功頁輪詢 5 秒×2 分鐘（送達綠勾/退信提示改地址）；公開查詢端點防列舉（僅回報 15 分鐘內有寄送動作的紀錄）
+- ⏳ 驗收：下次真實索取時看後台狀態標籤是否亮起（webhook 沿用 7/25 建的同一 endpoint，無需新設定）
+
+**2026-08-06 深夜（EDM 圖文編輯器升級，`b21c36a` + lint 修復 `8c59471`）**
+- [x] **新排版語法**（EDM 信件與自訂頁 RichText 同一套）：`**粗體**`、`## 標題`（獨立一段）、`---`（獨立一段＝分隔線）、`![說明](網址)` 全幅圖片；舊語法（變數/自動連結/`[按鈕](網址)`）不變，舊信件內容完全相容
+- [x] **渲染核心抽共用**：`src/lib/email/render-content.ts`（純函式）——信件 HTML 與後台即時預覽同一條路徑；`broadcast.ts` re-export，呼叫端零改動；防注入維持 esc() 單一入口（圖片/按鈕先抽 placeholder→esc→粗體→自動連結→回填，順序不可調換）
+- [x] **群發表單工具列**：粗體（選取即包）/標題/分隔線/按鈕/圖片/即時預覽；預覽套品牌信外框＋範例變數，textarea 維持非受控（鏡像 state 供預覽）
+- [x] **內文圖片直傳**：沿用簽名 URL 流程（新 `broadcast` prefix），上傳完自動插入語法
+- [x] 講座信/企業包班信共用 buildBroadcastHtml 自動獲得新語法；自訂頁表單 placeholder 同步更新
+- [x] 驗證：`scripts/test-edm-render.ts` 26 項（回歸/注入/新語法/邊界）＋ RichText SSR 7 項全過；lint 0 error（順手修掉講座功能遺留的 2 個 react-hooks lint error）、build 過
+- ⏳ 驗收：後台 /admin/broadcast 實際操作工具列＋上傳一張圖＋寄測試信給自己看版面
+- 📋 EDM 候選優化（2026-08-06 排序）：逐人成效明細（半天）＞範本庫管理頁（半天）＞自動化系列信（2天）＞名單健康管理（1天）＞A/B 主旨（1.5天）＞成效儀表板（1天）
 
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
