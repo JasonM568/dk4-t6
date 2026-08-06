@@ -74,9 +74,12 @@ export function WebinarRequestForm({
 
   const suggestion = suggestFix(email.trim());
 
-  // 寄出成功後啟動 60 秒重寄倒數（與伺服器端限流一致）
+  // 寄出成功後啟動 60 秒重寄倒數（與伺服器端限流一致）；
+  // setTimeout 0 延遲一拍，避免 effect 內同步 setState 觸發串聯重渲染（lint 規則）
   useEffect(() => {
-    if (state?.success) setCooldown(60);
+    if (!state?.success) return;
+    const t = setTimeout(() => setCooldown(60), 0);
+    return () => clearTimeout(t);
   }, [state]);
   useEffect(() => {
     if (cooldown <= 0) return;

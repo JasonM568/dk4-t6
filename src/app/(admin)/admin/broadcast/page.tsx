@@ -246,8 +246,10 @@ export default async function BroadcastPage({
                   audience: "all",
                   groupIds: [],
                   manualList: "",
-                  // 跟進信預設隔天同時段寄出（可自行調整）
+                  // 跟進信預設隔天同時段寄出（可自行調整）；
+                  // server component 每次請求都重新渲染，取當下時間是刻意行為
                   scheduledAt: toDatetimeLocal(
+                    // eslint-disable-next-line react-hooks/purity
                     new Date(Date.now() + 24 * 60 * 60 * 1000),
                   ),
                 }
