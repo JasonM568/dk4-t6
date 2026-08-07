@@ -8,6 +8,10 @@ import {
   type FailedRecipient,
 } from "@/lib/email/broadcast";
 import { ResendFailedButton } from "./resend-failed-button";
+import {
+  RecipientStatusTable,
+  type RecipientStatusRow,
+} from "./recipient-status-table";
 
 export const metadata = { title: "寄送內容 — Email群發" };
 
@@ -81,11 +85,13 @@ export default async function BroadcastDetailPage({
     failedList.length > 0 &&
     (record.status === "SENT" || record.status === "FAILED");
 
-  // 逐人投遞狀態：退信名單（含原因）與「寄出但尚未回報送達」名單。
+  // 逐人投遞狀態：退信名單（含原因）、「寄出但尚未回報送達」名單，
+  // 與逐人狀態表（每人取最高階事件：點擊 > 開信 > 送達；退信為終態）。
   // 只有 webhook 有回流事件的寄送才算（老寄送沒事件，全列未送達會誤導）
   const hasEvents = eventGroups.length > 0;
   let bouncedList: { email: string; reason: string | null }[] = [];
   let pendingList: string[] = [];
+  let recipientRows: RecipientStatusRow[] = [];
   if (hasEvents && record.recipients.length > 0) {
     const events = await prisma.broadcastEvent.findMany({
       where: { broadcastId: id },
@@ -114,6 +120,25 @@ export default async function BroadcastDetailPage({
     pendingList = record.recipients.filter(
       (email) => !receivedSet.has(email) && !bouncedSet.has(email),
     );
+
+    const RANK: Record<string, number> = { DELIVERED: 1, OPENED: 2, CLICKED: 3 };
+    const topEvent = new Map<string, "DELIVERED" | "OPENED" | "CLICKED">();
+    for (const e of events) {
+      if (!RANK[e.type]) continue;
+      const cur = topEvent.get(e.email);
+      if (!cur || RANK[e.type] > RANK[cur])
+        topEvent.set(e.email, e.type as "DELIVERED" | "OPENED" | "CLICKED");
+    }
+    recipientRows = record.recipients.map((email) => {
+      const status = bouncedSet.has(email)
+        ? ("BOUNCED" as const)
+        : (topEvent.get(email) ?? ("PENDING" as const));
+      return {
+        email,
+        status,
+        reason: status === "BOUNCED" ? (reasonMap.get(email) ?? "退信") : null,
+      };
+    });
   }
 
   return (
@@ -168,24 +193,6 @@ export default async function BroadcastDetailPage({
           </>
         )}
 
-        {record.sentCount > 0 && (
-          <>
-            <dt className="text-gray-500">成效</dt>
-            <dd className="text-gray-700">
-              送達 {stats.DELIVERED ?? 0} · 開信 {stats.OPENED ?? 0}
-              {pct(stats.OPENED ?? 0)} · 點擊 {stats.CLICKED ?? 0}
-              {pct(stats.CLICKED ?? 0)} · 退信{" "}
-              <span className={stats.BOUNCED ? "text-red-600" : ""}>
-                {stats.BOUNCED ?? 0}
-              </span>
-              <span className="mt-0.5 block text-xs text-gray-400">
-                開信/點擊為唯一人數；需在 Resend 開啟 tracking 並設定 webhook
-                後的新寄送才有數據
-              </span>
-            </dd>
-          </>
-        )}
-
         {record.sentBy && (
           <>
             <dt className="text-gray-500">操作者</dt>
@@ -221,6 +228,54 @@ export default async function BroadcastDetailPage({
           </>
         )}
       </dl>
+
+      {/* 成效統計卡（Resend webhook 回流；開信/點擊為唯一人數） */}
+      {record.sentCount > 0 && (
+        <div className="mb-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(
+              [
+                {
+                  label: "送達",
+                  n: stats.DELIVERED ?? 0,
+                  cls: "border-green-200 bg-green-50/50 text-green-700",
+                },
+                {
+                  label: "開信",
+                  n: stats.OPENED ?? 0,
+                  cls: "border-emerald-200 bg-emerald-50/50 text-emerald-700",
+                },
+                {
+                  label: "點擊",
+                  n: stats.CLICKED ?? 0,
+                  cls: "border-indigo-200 bg-indigo-50/50 text-indigo-700",
+                },
+                {
+                  label: "退信",
+                  n: stats.BOUNCED ?? 0,
+                  cls: stats.BOUNCED
+                    ? "border-red-200 bg-red-50/50 text-red-700"
+                    : "border-gray-200 bg-gray-50/50 text-gray-400",
+                },
+              ] as const
+            ).map((c) => (
+              <div key={c.label} className={`rounded-xl border p-4 ${c.cls}`}>
+                <div className="text-xs">{c.label}</div>
+                <div className="mt-1 text-2xl font-bold">
+                  {c.n}
+                  <span className="ml-1 text-sm font-medium opacity-70">
+                    {pct(c.n).replace("（", "").replace("）", "")}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-gray-400">
+            開信/點擊為唯一人數；比例以成功寄出 {record.sentCount} 封為分母。
+            需在 Resend 開啟 tracking 並設定 webhook 後的寄送才有數據。
+          </p>
+        </div>
+      )}
 
       {/* 建立跟進信：對此群發的開信/未開信/點擊名單再寄一封（名單於寄出當下解析） */}
       {record.status === "SENT" && record.sentCount > 0 && (
@@ -365,20 +420,29 @@ export default async function BroadcastDetailPage({
         className="h-[640px] w-full rounded-xl border border-gray-200 bg-white"
       />
 
-      {/* 收件名單快照 */}
-      {record.recipients.length > 0 && (
-        <details className="mt-6">
+      {/* 收件名單：有事件回流 → 逐人狀態表（可搜尋/篩選）；老寄送無事件 → 純名單 */}
+      {recipientRows.length > 0 ? (
+        <details className="mt-6" open>
           <summary className="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
-            收件名單（{record.recipients.length}）
+            收件名單與逐人狀態（{recipientRows.length}）
           </summary>
-          <ul className="mt-2 max-h-64 overflow-auto rounded-lg border border-gray-200 p-3 text-xs text-gray-600">
-            {record.recipients.map((email) => (
-              <li key={email} className="py-0.5">
-                {email}
-              </li>
-            ))}
-          </ul>
+          <RecipientStatusTable rows={recipientRows} />
         </details>
+      ) : (
+        record.recipients.length > 0 && (
+          <details className="mt-6">
+            <summary className="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
+              收件名單（{record.recipients.length}）
+            </summary>
+            <ul className="mt-2 max-h-64 overflow-auto rounded-lg border border-gray-200 p-3 text-xs text-gray-600">
+              {record.recipients.map((email) => (
+                <li key={email} className="py-0.5">
+                  {email}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )
       )}
     </div>
   );

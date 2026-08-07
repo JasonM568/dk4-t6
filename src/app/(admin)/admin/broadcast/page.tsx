@@ -339,10 +339,32 @@ export default async function BroadcastPage({
                         </>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {h.sentCount > 0
-                        ? `${eventStats.get(h.id)?.opened ?? 0} / ${eventStats.get(h.id)?.clicked ?? 0}`
-                        : "—"}
+                    <td className="px-4 py-3">
+                      {h.sentCount > 0 ? (
+                        (() => {
+                          const s = eventStats.get(h.id) ?? { opened: 0, clicked: 0 };
+                          const p = (n: number) => Math.round((n / h.sentCount) * 100);
+                          return (
+                            <span className="whitespace-nowrap">
+                              <span className="font-medium text-emerald-700">
+                                {s.opened}
+                              </span>
+                              <span className="text-xs text-emerald-600">
+                                （{p(s.opened)}%）
+                              </span>
+                              <span className="text-gray-300"> / </span>
+                              <span className="font-medium text-indigo-700">
+                                {s.clicked}
+                              </span>
+                              <span className="text-xs text-indigo-600">
+                                （{p(s.clicked)}%）
+                              </span>
+                            </span>
+                          );
+                        })()
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {h.status === "DRAFT" ? (
