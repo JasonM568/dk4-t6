@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { normalizeMobile } from "@/lib/sms/phone";
 
@@ -76,10 +76,133 @@ function parseTaipei(s: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function parseOrderFile(buf: ArrayBuffer): ParsedRow[] {
-  const wb = XLSX.read(buf, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false });
+// 解析防線：惡意/畸形檔案要快速安全失敗，不能拖垮 serverless function
+const PARSE_LIMITS = {
+  maxRows: 20_000, // 1shop 單檔實務上是數百列，2 萬列已是十倍餘裕
+  maxCols: 60,
+  maxCellLen: 2_000,
+} as const;
+
+/** Excel 序號日期在 exceljs 會轉成 UTC 牆上時間的 Date：取 UTC 分量還原成
+ *  「YYYY-MM-DD HH:mm:ss」字串，交給 parseTaipei 統一補 +08:00 */
+function utcWallString(d: Date): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(
+    d.getUTCHours(),
+  )}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+}
+
+/** exceljs 各種 cell value（字串/數字/日期/超連結/富文字/公式）一律收斂成純文字 */
+function cellText(v: ExcelJS.CellValue): string {
+  if (v == null) return "";
+  if (v instanceof Date) return utcWallString(v);
+  if (typeof v === "object") {
+    if ("richText" in v) return v.richText.map((t) => t.text).join("");
+    if ("text" in v) return String(v.text ?? "");
+    if ("result" in v) return cellText(v.result as ExcelJS.CellValue);
+    if ("error" in v) return "";
+    return "";
+  }
+  return String(v);
+}
+
+/** RFC 4180 CSV 解析（引號欄位/內嵌逗號換行/雙引號跳脫），內建列欄與長度上限。
+ *  CSV 不交給 XLSX parser：格式單純就用單純的解析器，縮小攻擊面 */
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  const pushField = () => {
+    if (row.length >= PARSE_LIMITS.maxCols) throw new Error("檔案欄位數過多，請確認是 1shop 匯出的訂單檔");
+    row.push(field.slice(0, PARSE_LIMITS.maxCellLen));
+    field = "";
+  };
+  const pushRow = () => {
+    pushField();
+    // 略過整列空白（尾端空行常見）
+    if (row.some((c) => c.trim() !== "")) {
+      if (rows.length >= PARSE_LIMITS.maxRows) throw new Error("檔案列數過多，請分批匯出後再上傳");
+      rows.push(row);
+    }
+    row = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"' && field === "") {
+      inQuotes = true;
+    } else if (ch === ",") {
+      pushField();
+    } else if (ch === "\n") {
+      pushRow();
+    } else if (ch !== "\r") {
+      field += ch;
+    }
+    if (field.length > PARSE_LIMITS.maxCellLen) field = field.slice(0, PARSE_LIMITS.maxCellLen);
+  }
+  if (field !== "" || row.length > 0) pushRow();
+  return rows;
+}
+
+/** 解碼 CSV bytes：先試 UTF-8，出現亂碼再退 Big5（與 src/lib/csv.ts 同策略；
+ *  這裡不 import 是因為該檔標記 server-only，會斷掉 tsx 腳本可測性） */
+function decodeCsvText(buf: ArrayBuffer): string {
+  const utf8 = new TextDecoder("utf-8").decode(buf);
+  if (!utf8.includes("�")) return utf8;
+  try {
+    return new TextDecoder("big5").decode(buf);
+  } catch {
+    return utf8;
+  }
+}
+
+/** XLSX（zip 容器）→ exceljs 讀第一張工作表；限制列欄數 */
+async function parseXlsxRows(buf: ArrayBuffer): Promise<string[][]> {
+  const wb = new ExcelJS.Workbook();
+  try {
+    await wb.xlsx.load(buf);
+  } catch {
+    throw new Error("無法解析 XLSX 檔案，請確認是 1shop 匯出的訂單檔");
+  }
+  const ws = wb.worksheets[0];
+  if (!ws) return [];
+  if (ws.actualRowCount > PARSE_LIMITS.maxRows)
+    throw new Error("檔案列數過多，請分批匯出後再上傳");
+  if (ws.actualColumnCount > PARSE_LIMITS.maxCols)
+    throw new Error("檔案欄位數過多，請確認是 1shop 匯出的訂單檔");
+
+  const rows: string[][] = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    const cells: string[] = [];
+    // row.values 是 1-indexed；固定掃到 actualColumnCount 保留欄位對位
+    for (let c = 1; c <= Math.min(ws.actualColumnCount, PARSE_LIMITS.maxCols); c++) {
+      cells.push(cellText(row.getCell(c).value).slice(0, PARSE_LIMITS.maxCellLen));
+    }
+    rows.push(cells);
+  });
+  return rows;
+}
+
+export async function parseOrderFile(buf: ArrayBuffer): Promise<ParsedRow[]> {
+  // 不相信副檔名/瀏覽器 MIME，用 magic bytes 判型：
+  //   PK\x03\x04 = zip 容器（xlsx）；D0 CF 11 E0 = 舊版 .xls（拒收）；其他當 CSV 文字
+  const head = new Uint8Array(buf.slice(0, 4));
+  const isZip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+  const isLegacyXls =
+    head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;
+  if (isLegacyXls)
+    throw new Error("不支援舊版 .xls 格式，請從 1shop 重新匯出 .xlsx 或 .csv");
+
+  const rows = isZip ? await parseXlsxRows(buf) : parseCsvRows(decodeCsvText(buf));
   if (rows.length < 2) return [];
 
   const header = rows[0].map((h) => String(h ?? "").trim());
@@ -118,7 +241,7 @@ export function parseOrderFile(buf: ArrayBuffer): ParsedRow[] {
 
 /** 依場次關鍵字歸類並寫入報名（冪等）；回傳匯入報告 */
 export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
-  const rows = parseOrderFile(buf);
+  const rows = await parseOrderFile(buf);
   const sessions = await prisma.courseSession.findMany({
     select: { id: true, keywords: true },
   });
