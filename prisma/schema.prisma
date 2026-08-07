@@ -462,7 +462,11 @@ model CourseMaterial {
 
 model Order {
   id          String      @id @default(cuid())
-  orderNo     String      @unique // ECPay MerchantTradeNo（≤20 字元）
+  orderNo     String      @unique // ECPay MerchantTradeNo（≤20 字元，加密安全亂數）
+  // 結帳防重原子鍵：PENDING 時 = "userId:courseId"，離開 PENDING 一律清 null。
+  // nullable unique（PG 允許多個 NULL）保證同 user 同課程同時只有一筆有效 PENDING，
+  // 併發下單靠 unique violation 擋，不靠先查再建
+  checkoutKey String?     @unique
   userId      String      @db.Uuid // auth.users.id，無 FK
   buyerEmail  String? // 下單當下 email 快照（後台顯示與稽核用）
   status      OrderStatus @default(PENDING)

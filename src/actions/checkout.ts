@@ -1,7 +1,9 @@
 "use server";
 
+import { randomBytes } from "crypto";
 import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 
@@ -9,9 +11,19 @@ export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
   | { ok: false; error: string; redirect?: string };
 
-/** 產生 ≤20 字元的訂單編號（ECPay MerchantTradeNo 限制）*/
+/** PENDING 訂單有效期：逾期在下次結帳時 lazy 轉 EXPIRED 並釋放防重鍵 */
+const PENDING_EXPIRE_MS = 2 * 60 * 60 * 1000;
+
+/** 產生 20 字元訂單編號（ECPay MerchantTradeNo 上限）。
+ *  加密安全亂數、不可預測——orderNo 會出現在 /orders/[orderNo] URL，
+ *  時間戳＋Math.random 可被猜號枚舉 */
 function genOrderNo(): string {
-  return "OD" + Date.now() + Math.floor(Math.random() * 900 + 100); // 18 碼數字
+  const alphabet =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const bytes = randomBytes(18);
+  let s = "";
+  for (const b of bytes) s += alphabet[b % alphabet.length];
+  return "OD" + s;
 }
 
 /**
@@ -39,13 +51,15 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
     return { ok: false, error: "你已擁有此課程", redirect: "/my-courses" };
   }
 
-  // 防止重複送出：已有 PENDING 訂單時拒絕再建（避免快速點擊產生多筆待付訂單）
-  const pendingOrder = await prisma.order.findFirst({
-    where: { userId, status: "PENDING", items: { some: { courseId } } },
+  // 逾期 PENDING lazy 轉 EXPIRED 並釋放防重鍵——舊訂單不會永久擋住重新購買
+  await prisma.order.updateMany({
+    where: {
+      userId,
+      status: "PENDING",
+      createdAt: { lt: new Date(Date.now() - PENDING_EXPIRE_MS) },
+    },
+    data: { status: "EXPIRED", checkoutKey: null },
   });
-  if (pendingOrder) {
-    return { ok: false, error: "你已有待付款的訂單，請完成付款或等待訂單逾期後再試" };
-  }
 
   // 讀取會員等級折扣（MemberStats 是 lazy upsert，沒有就視為無折扣）
   // 分級制度停用時一律原價，不查等級
@@ -68,41 +82,70 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
 
   const orderNo = genOrderNo();
 
-  // 建立訂單 + 明細 + 付款紀錄（PENDING）
-  await prisma.order.create({
-    data: {
-      orderNo,
-      userId,
-      buyerEmail: user.email, // 下單當下 email 快照（後台顯示與稽核用）
-      status: "PENDING",
-      subtotal,
-      discount,
-      total,
-      tierAtOrder: tierLevel,
-      items: {
-        create: [{ courseId: course.id, unitPrice: course.price }],
-      },
-      payment: {
-        create: {
-          provider: process.env.PAYMENT_PROVIDER ?? "ecpay",
-          status: "PENDING",
-          amount: total,
+  // 建立訂單 + 明細 + 付款紀錄（PENDING）。
+  // 防重不靠「先查再建」：checkoutKey nullable unique，併發下單第二筆直接撞
+  // unique violation（P2002），資料庫層保證同課程同時最多一筆有效 PENDING
+  let orderId: string;
+  try {
+    const created = await prisma.order.create({
+      data: {
+        orderNo,
+        checkoutKey: `${userId}:${courseId}`,
+        userId,
+        buyerEmail: user.email, // 下單當下 email 快照（後台顯示與稽核用）
+        status: "PENDING",
+        subtotal,
+        discount,
+        total,
+        tierAtOrder: tierLevel,
+        items: {
+          create: [{ courseId: course.id, unitPrice: course.price }],
+        },
+        payment: {
+          create: {
+            provider: process.env.PAYMENT_PROVIDER ?? "ecpay",
+            status: "PENDING",
+            amount: total,
+          },
         },
       },
-    },
-  });
+      select: { id: true },
+    });
+    orderId = created.id;
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return {
+        ok: false,
+        error:
+          "你已有這門課的待付款訂單，請先完成付款；若不打算付款，2 小時後訂單自動失效即可重新下單",
+      };
+    }
+    throw e;
+  }
 
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
   const provider = getPaymentProvider();
-  const { action, fields } = provider.createPayment({
-    orderNo,
-    amount: total,
-    itemName: course.title,
-    tradeDesc: "online-course-order",
-    returnUrl: `${base}/api/payment/ecpay/notify`,
-    resultUrl: `${base}/api/payment/ecpay/return`,
-    clientBackUrl: `${base}/orders/${orderNo}`,
-  });
-
-  return { ok: true, action, fields };
+  try {
+    const { action, fields } = provider.createPayment({
+      orderNo,
+      amount: total,
+      itemName: course.title,
+      tradeDesc: "online-course-order",
+      returnUrl: `${base}/api/payment/ecpay/notify`,
+      resultUrl: `${base}/api/payment/ecpay/return`,
+      clientBackUrl: `${base}/orders/${orderNo}`,
+    });
+    return { ok: true, action, fields };
+  } catch (e) {
+    // 金流表單建立失敗：訂單轉 FAILED 並釋放防重鍵，使用者可立刻重試，
+    // 不留下永久 PENDING
+    console.error("[checkout] 建立付款表單失敗：", e);
+    await prisma.order
+      .update({
+        where: { id: orderId },
+        data: { status: "FAILED", checkoutKey: null },
+      })
+      .catch(() => undefined);
+    return { ok: false, error: "建立付款連結失敗，請稍後再試" };
+  }
 }
