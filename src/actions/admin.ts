@@ -487,14 +487,51 @@ export async function batchRevokeEnrollmentAction(
 
 export type BulkPasswordState = { error?: string; success?: string } | null;
 
-/** 為勾選的會員批次重設密碼（覆蓋原密碼；用於從未登入的會員） */
+/** 密碼重設共用防線：逐筆取 profile，拒絕 admin 帳號、操作者本人、查無帳號。
+ *  回傳 null = 可重設；否則回拒絕原因（會寫進稽核紀錄）。 */
+async function passwordResetGuard(
+  targetId: string,
+  actorId: string,
+): Promise<string | null> {
+  if (targetId === actorId) return "拒絕：不可重設自己的密碼";
+  const profile = await getProfile(targetId);
+  if (!profile) return "拒絕：查無此會員";
+  if (isAdminRole(profile.role)) return "拒絕：不可重設管理員密碼";
+  return null;
+}
+
+async function auditPasswordReset(
+  action: "PASSWORD_RESET" | "PASSWORD_RESET_BULK",
+  actor: { id: string; email?: string | null },
+  targetId: string,
+  success: boolean,
+  detail?: string,
+) {
+  await prisma.adminAuditLog
+    .create({
+      data: {
+        action,
+        actorId: actor.id,
+        actorEmail: actor.email ?? null,
+        targetId,
+        success,
+        detail: detail ?? null,
+      },
+    })
+    .catch((e) => console.error("[audit] 稽核寫入失敗：", e?.message));
+}
+
+/** 為勾選的會員批次重設密碼（覆蓋原密碼；用於從未登入的會員）。
+ *  僅限管理員：密碼重設等同接管帳號，不開放 operator（防越權）。 */
 export async function bulkSetPasswordAction(
   _prev: BulkPasswordState,
   formData: FormData,
 ): Promise<BulkPasswordState> {
-  await requireEditor();
+  await requireFullAdmin();
 
-  const userIds = formData.getAll("userIds").map(String).filter(Boolean);
+  const userIds = [
+    ...new Set(formData.getAll("userIds").map(String).filter(Boolean)),
+  ];
   const password = String(formData.get("password") ?? "").trim();
 
   if (userIds.length === 0) return { error: "請至少勾選一位會員" };
@@ -502,37 +539,76 @@ export async function bulkSetPasswordAction(
   if (userIds.length > 300) return { error: "一次最多 300 位，請分批" };
 
   const adminUser = await getAuthUser();
+  if (!adminUser) return { error: "登入狀態失效，請重新登入" };
+
   let ok = 0;
+  const rejected: string[] = [];
   let fail = 0;
   for (const id of userIds) {
+    // 不信任前端傳入的 userIds：server 端逐筆驗證身分再動手
+    const reason = await passwordResetGuard(id, adminUser.id);
+    if (reason) {
+      rejected.push(id);
+      await auditPasswordReset("PASSWORD_RESET_BULK", adminUser, id, false, reason);
+      continue;
+    }
     if (await setUserPassword(id, password)) {
       ok++;
-      await recordMemberPassword(id, password, adminUser?.email ?? null);
-    } else fail++;
+      await recordMemberPassword(id, password, adminUser.email ?? null);
+      await auditPasswordReset("PASSWORD_RESET_BULK", adminUser, id, true);
+    } else {
+      fail++;
+      await auditPasswordReset(
+        "PASSWORD_RESET_BULK",
+        adminUser,
+        id,
+        false,
+        "Auth 更新失敗",
+      );
+    }
   }
 
   revalidatePath("/admin/members/inactive");
-  if (fail > 0) return { error: `完成但有失敗：成功 ${ok}、失敗 ${fail}` };
+  const parts = [`成功 ${ok}`];
+  if (rejected.length > 0) parts.push(`拒絕 ${rejected.length}（管理員/本人/查無帳號）`);
+  if (fail > 0) parts.push(`失敗 ${fail}`);
+  if (rejected.length > 0 || fail > 0) return { error: `完成：${parts.join("、")}` };
   return { success: `已為 ${ok} 位會員設定新密碼，可用群發通知告知學員` };
 }
 
-/** 單筆重設會員密碼（會員列表用），並記錄初始密碼供後台備查 */
+export type ResetPasswordState = { error?: string; success?: string } | null;
+
+/** 單筆重設會員密碼（會員列表用），並記錄初始密碼供後台備查。
+ *  僅限管理員（同批次重設）；拒絕 admin 帳號與操作者本人。 */
 export async function resetMemberPasswordAction(
   userId: string,
   formData: FormData,
-): Promise<void> {
-  await requireEditor();
-  const profile = await getProfile(userId);
-  // 不存在或為 admin 的帳號一律拒絕（防操作人員越權重設管理員密碼）
-  if (!profile || profile.role === "admin") return;
-  const password = String(formData.get("password") ?? "").trim();
-  if (password.length < 6) return;
-  const ok = await setUserPassword(userId, password);
-  if (ok) {
-    const adminUser = await getAuthUser();
-    await recordMemberPassword(userId, password, adminUser?.email ?? null);
+): Promise<ResetPasswordState> {
+  await requireFullAdmin();
+  const adminUser = await getAuthUser();
+  if (!adminUser) return { error: "登入狀態失效，請重新登入" };
+
+  const reason = await passwordResetGuard(userId, adminUser.id);
+  if (reason) {
+    await auditPasswordReset("PASSWORD_RESET", adminUser, userId, false, reason);
+    return { error: reason };
   }
+  const password = String(formData.get("password") ?? "").trim();
+  if (password.length < 6) return { error: "密碼至少 6 字元" };
+
+  const ok = await setUserPassword(userId, password);
+  await auditPasswordReset(
+    "PASSWORD_RESET",
+    adminUser,
+    userId,
+    ok,
+    ok ? undefined : "Auth 更新失敗",
+  );
+  if (!ok) return { error: "重設失敗（Auth 更新錯誤），請稍後再試" };
+
+  await recordMemberPassword(userId, password, adminUser.email ?? null);
   revalidatePath("/admin/members");
+  return { success: "已重設密碼" };
 }
 
 export type AddToGroupState = { error?: string; success?: string } | null;
