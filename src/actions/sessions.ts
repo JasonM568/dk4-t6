@@ -254,8 +254,8 @@ export async function saveBoardCodeAction(
   const code = String(formData.get("code") ?? "").trim();
   const hours = Math.round(Number(String(formData.get("hours") ?? "").trim()));
   if (!/^\d{4}$/.test(code)) return { error: "登入碼須為 4 位數字" };
-  if (!Number.isFinite(hours) || hours < 1 || hours > 720)
-    return { error: "登入時效須為 1–720 小時" };
+  if (!Number.isFinite(hours) || hours < 1 || hours > 24)
+    return { error: "登入時效須為 1–24 小時" };
   await prisma.$transaction([
     prisma.siteSetting.upsert({
       where: { key: "boardCode" },

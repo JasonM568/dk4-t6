@@ -50,6 +50,15 @@ model MemberPassword {
   updatedAt DateTime @updatedAt
 }
 
+// 看板登入共享限流（跨 serverless instance）：key = "ip:<addr>" 或 "global"
+model BoardLoginThrottle {
+  key         String    @id
+  failCount   Int       @default(0)
+  windowStart DateTime  @default(now())
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
 // 敏感後台操作稽核（密碼重設等）：只記操作者/目標/結果，絕不記密碼內容
 model AdminAuditLog {
   id         String   @id @default(cuid())
