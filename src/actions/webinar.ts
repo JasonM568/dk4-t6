@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { applyMergeTags, buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
 
@@ -38,6 +39,10 @@ async function parseWebinarForm(formData: FormData) {
   const emailSubject = String(formData.get("emailSubject") ?? "").trim();
   const emailBody = String(formData.get("emailBody") ?? "").trim() || DEFAULT_EMAIL_BODY;
   const isActive = formData.get("isActive") === "on";
+  const endStr = String(formData.get("endDate") ?? "").trim();
+  const endDate = endStr ? new Date(endStr) : null;
+  if (endDate && Number.isNaN(endDate.getTime()))
+    return { error: "結束日期格式錯誤" as const };
 
   if (!SLUG_RE.test(slug)) return { error: "網址代稱只能用小寫英數與連字號（例：ai-webinar-0815）" as const };
   if (!title) return { error: "請填寫講座標題" as const };
@@ -70,6 +75,7 @@ async function parseWebinarForm(formData: FormData) {
     emailBody,
     groupId,
     isActive,
+    endDate,
   };
 }
 
@@ -181,7 +187,7 @@ export async function requestWebinarLinkAction(
   if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確，請再確認" };
 
   const webinar = await prisma.webinar.findUnique({ where: { slug } });
-  if (!webinar || !webinar.isActive)
+  if (!webinar || !webinar.isActive || hasEndedInTaipei(webinar.endDate))
     return { error: "此講座報名已結束" };
 
   // 同 email 60 秒限流：防止被拿來重複轟炸別人的信箱

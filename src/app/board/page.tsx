@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { boardAuthStatus } from "@/lib/board-auth";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { boardLogoutAction } from "@/actions/board";
 import { BoardLoginForm, AutoRefresh } from "./board-client";
 
@@ -18,7 +19,7 @@ export default async function BoardPage() {
     );
   }
 
-  const [sessions, webinars] = await Promise.all([
+  const [allSessions, allWebinars] = await Promise.all([
     prisma.courseSession.findMany({
       where: { isVisible: true },
       // 最近開課日在前（日期近→遠），沒填日期的排最後
@@ -37,6 +38,7 @@ export default async function BoardPage() {
       select: {
         id: true,
         title: true,
+        endDate: true,
         requests: {
           orderBy: { createdAt: "asc" },
           select: { id: true, email: true, name: true },
@@ -44,6 +46,9 @@ export default async function BoardPage() {
       },
     }),
   ]);
+  // 結束日（場次以 endDate ?? eventDate 為準）過了隔天自動下架；沒填日期 = 永遠顯示
+  const sessions = allSessions.filter((s) => !hasEndedInTaipei(s.endDate ?? s.eventDate));
+  const webinars = allWebinars.filter((w) => !hasEndedInTaipei(w.endDate));
   const now = new Date();
   // 舊生 = 報名複訓方案（1shop 產品名含「複訓」）；其餘為新生
   const isRetrain = (product: string | null) => !!product?.includes("複訓");

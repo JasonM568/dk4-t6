@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { WebinarRequestForm } from "./request-form";
+
+// 結束日過了要即時顯示「已結束」——過期是時間觸發，沒有 admin 動作可 revalidate，
+// 一律動態渲染（報名頁流量低，成本可忽略）
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -45,7 +50,7 @@ export default async function WebinarPage({
             {webinar.description}
           </p>
         )}
-        {webinar.isActive ? (
+        {webinar.isActive && !hasEndedInTaipei(webinar.endDate) ? (
           <WebinarRequestForm slug={slug} senderEmail={senderEmail} />
         ) : (
           <p className="rounded-xl bg-gray-50 px-4 py-6 text-center text-gray-500">

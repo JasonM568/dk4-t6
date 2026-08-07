@@ -19,6 +19,7 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 與 next.config bodySizeLimit 12mb
 function parseSessionForm(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const dateStr = String(formData.get("eventDate") ?? "").trim();
+  const endStr = String(formData.get("endDate") ?? "").trim();
   const keywords = String(formData.get("keywords") ?? "")
     .split(/[,，\n]/)
     .map((k) => k.trim())
@@ -27,7 +28,12 @@ function parseSessionForm(formData: FormData) {
   const eventDate = dateStr ? new Date(dateStr) : null;
   if (eventDate && Number.isNaN(eventDate.getTime()))
     return { error: "開課日期格式錯誤" as const };
-  return { title, eventDate, keywords, isVisible };
+  const endDate = endStr ? new Date(endStr) : null;
+  if (endDate && Number.isNaN(endDate.getTime()))
+    return { error: "結束日期格式錯誤" as const };
+  if (endDate && eventDate && endDate < eventDate)
+    return { error: "結束日不能早於開課日" as const };
+  return { title, eventDate, endDate, keywords, isVisible };
 }
 
 export async function createSessionAction(

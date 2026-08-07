@@ -80,6 +80,7 @@ export default async function AdminSessionsPage() {
               id: s.id,
               title: s.title,
               eventDate: s.eventDate?.toISOString() ?? null,
+              endDate: s.endDate?.toISOString() ?? null,
               keywords: s.keywords,
               isVisible: s.isVisible,
               signups: s.signups.map((g) => ({

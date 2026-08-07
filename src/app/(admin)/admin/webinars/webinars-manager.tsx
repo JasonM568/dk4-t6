@@ -12,6 +12,7 @@ import {
 import { requestCourseImageUploadUrl } from "@/actions/admin";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 
 // 圖片限制（與課程封面上傳一致；bytes 直傳 Storage 不經 server action body）
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -85,6 +86,7 @@ export type WebinarRow = {
   emailBody: string;
   groupId: string | null;
   isActive: boolean;
+  endDate: string | null; // 結束日：過了隔天（台北時間）看板下架＋報名頁自動關閉；null = 不自動結束
   requests: WebinarRequestRow[];
 };
 
@@ -148,6 +150,18 @@ function WebinarFields({
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           <input type="checkbox" name="isActive" defaultChecked={initial?.isActive ?? true} />
           開放報名
+        </label>
+        <label
+          className="flex items-center gap-1.5 text-sm text-gray-500"
+          title="講座結束日：當天照常，隔天起看板自動下架、報名頁自動顯示已結束。留空 = 不自動結束"
+        >
+          結束日
+          <input
+            type="date"
+            name="endDate"
+            defaultValue={initial?.endDate ? initial.endDate.slice(0, 10) : ""}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-black focus:outline-none"
+          />
         </label>
       </div>
       <textarea
@@ -417,6 +431,11 @@ export function WebinarCard({
         {!webinar.isActive && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
             已關閉
+          </span>
+        )}
+        {webinar.isActive && hasEndedInTaipei(webinar.endDate) && (
+          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
+            已結束（看板下架、報名頁已關）
           </span>
         )}
       </summary>

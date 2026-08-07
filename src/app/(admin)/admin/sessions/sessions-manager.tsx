@@ -16,6 +16,7 @@ import {
 import type { ImportReport } from "@/lib/session-import";
 import { formatDate } from "@/lib/format";
 import { formatMobile } from "@/lib/sms/phone";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 
 export type SignupRow = {
   id: string;
@@ -31,6 +32,7 @@ export type SessionRow = {
   id: string;
   title: string;
   eventDate: string | null;
+  endDate: string | null; // 結束日（多日課程用）；下架判斷以 endDate ?? eventDate 為準
   keywords: string[];
   isVisible: boolean;
   signups: SignupRow[];
@@ -299,11 +301,25 @@ export function CreateSessionForm() {
           placeholder="場次名稱（例：8/20 AI初階 台北場）"
           className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
         />
-        <input
-          type="date"
-          name="eventDate"
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-        />
+        <label className="flex items-center gap-1.5 text-sm text-gray-500">
+          開課日
+          <input
+            type="date"
+            name="eventDate"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-black focus:outline-none"
+          />
+        </label>
+        <label
+          className="flex items-center gap-1.5 text-sm text-gray-500"
+          title="多日課程填最後一天；留空以開課日為準。過了隔天看板自動下架"
+        >
+          結束日
+          <input
+            type="date"
+            name="endDate"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-black focus:outline-none"
+          />
+        </label>
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           <input type="checkbox" name="isVisible" defaultChecked /> 顯示於看板
         </label>
@@ -408,6 +424,11 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
             不顯示於看板
           </span>
         )}
+        {session.isVisible && hasEndedInTaipei(session.endDate ?? session.eventDate) && (
+          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
+            已結束（看板已下架）
+          </span>
+        )}
       </summary>
       <div className="space-y-4 border-t border-gray-100 px-4 py-3">
         {canEdit && (
@@ -419,12 +440,27 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
                 required
                 className="w-64 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
               />
-              <input
-                type="date"
-                name="eventDate"
-                defaultValue={session.eventDate ? session.eventDate.slice(0, 10) : ""}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
-              />
+              <label className="flex items-center gap-1.5 text-sm text-gray-500">
+                開課日
+                <input
+                  type="date"
+                  name="eventDate"
+                  defaultValue={session.eventDate ? session.eventDate.slice(0, 10) : ""}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-black focus:outline-none"
+                />
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-gray-500"
+                title="多日課程填最後一天；留空以開課日為準。過了隔天看板自動下架"
+              >
+                結束日
+                <input
+                  type="date"
+                  name="endDate"
+                  defaultValue={session.endDate ? session.endDate.slice(0, 10) : ""}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 focus:border-black focus:outline-none"
+                />
+              </label>
               <label className="flex items-center gap-1.5 text-sm text-gray-600">
                 <input type="checkbox" name="isVisible" defaultChecked={session.isVisible} />
                 顯示於看板

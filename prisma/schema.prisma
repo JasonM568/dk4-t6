@@ -298,6 +298,7 @@ model Webinar {
   emailBody    String  @db.Text // 支援 {link}=講座連結、[按鈕文字](網址) CTA
   groupId      String? // 索取者自動加入的 MailGroup；null = 不加名單
   isActive     Boolean @default(true) // 關閉後頁面顯示「已結束」不再寄信
+  endDate      DateTime? // 講座結束日：當天照常，隔天（台北時間）看板自動下架＋報名頁自動關閉；null = 不自動結束
 
   requests WebinarRequest[]
 
@@ -359,7 +360,8 @@ model CorporateInquiry {
 model CourseSession {
   id        String    @id @default(cuid())
   title     String // 場次名稱（例：8/20 AI初階 台北場）
-  eventDate DateTime? // 開課日期（看板排序/顯示用，可空）
+  eventDate DateTime? // 開課日期（看板排序/顯示用，可空；過了隔天看板自動下架）
+  endDate   DateTime? // 結束日（多日課程用）：有值時以此為準取代 eventDate 判斷下架；null = 以 eventDate 為準
   keywords  String[]  @default([]) // 訂單「產品」欄含任一關鍵字 → 歸入本場次
   isVisible Boolean   @default(true) // 顯示於 /board 看板
   sortOrder Int       @default(0)
