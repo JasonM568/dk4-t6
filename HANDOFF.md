@@ -244,6 +244,21 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] 查核報告：總列數/有效 email＋手機/對到會員/回填數/略過原因/對不到會員 email 名單（前 20）
 - ⏳ Jason 將實際上傳訂單檔跑回填；⚠️ 本機 dev DB 尚未套此 migration（下次本機開發前跑 migrate deploy）
 
+**2026-08-08（平行線產出：模組化規劃稿，僅文件、未動程式）**
+- 📐 **`docs/MODULARIZATION_PLAN.md`**：全專案功能模組化計畫（modular monolith，非微服務）——
+  16 個業務模組（identity/access-control/course-catalog/learning-access/commerce/membership/
+  member-operations/zones/sessions-board/webinars/corporate-inquiries/email-marketing/
+  sms-marketing/site-content/media-storage/platform），每模組要有 `docs/modules/<name>/模組架構.md`
+- 核心規則：一表一 owner 模組、跨模組只走 `index.ts` 公開出口、SDK 隔離在 infrastructure adapter、
+  `src/app` 只當薄 adapter；依賴方向與禁止清單見計畫 §7
+- 四階段：Phase 0 文件骨架（先寫現況不搬程式）→ P1 platform/email/sms/identity/access-control →
+  P2 交易與學習流程 → P3 營運功能（拆 admin.ts）→ P4 強制邊界（lint 規則+CI 檢查）
+- 建議第一批交付：16 份文件骨架＋4 份現況文件＋模組索引；第一個搬移示範選 email-marketing
+- 現況基準文件：`docs/ARCHITECTURE.md`（同日建立）
+- ⚠️ 風險控制已明訂：禁止大爆炸重構、一 PR 一模組；**執行前與各開發線協調**（此 repo 多線並行，
+  搬檔期間其他線的 feature 開發會大量衝突，建議排空檔期集中做或凍結窗口）
+- 狀態：規劃稿待 Jason 確認排程；尚未建立任何 `src/modules/` 或 `docs/modules/`
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
