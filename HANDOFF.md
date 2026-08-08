@@ -232,6 +232,18 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - 已知取捨：`/zone/[slug]` 專區瀏覽頁不在閘門內（看影片的 /learn 有擋、登入導向也會強制）
 - 正式站已驗證：註冊頁含手機/條款欄位、/complete-profile 200、migration 已套、無品牌誤植字樣
 
+**2026-08-08 深夜之二（1shop 訂單回填會員手機，已部署）**
+- [x] **後台 `/admin/members/phone-import`**（會員管理右上「📱 訂單回填手機」，editor 可用）：
+  上傳 1shop 訂單檔（沿用 parseOrderFile 的 magic bytes/上限防護）→「顧客信箱」對會員
+  （getProfilesByEmails 大小寫不敏感分批查）→ 回填「顧客電話」到 MemberProfile
+- [x] **合規邊界**：只寫 phone、絕不代填同意——`MemberProfile.privacyConsentAt/Version` 改 nullable
+  （migration `20260815100000`，正式庫已套），「補齊」定義改為**有手機且有同意**；
+  回填會員登入仍走補填頁但手機已預填（畫面註明來源），勾同意即完成
+- [x] **覆蓋原則**：會員自行補齊過（有同意）一律不動，號碼不同列入報告 conflicts 表人工判斷；
+  同 email 多筆訂單取建立日期最新；市話/格式錯誤不猜、計數呈現；重複上傳冪等
+- [x] 查核報告：總列數/有效 email＋手機/對到會員/回填數/略過原因/對不到會員 email 名單（前 20）
+- ⏳ Jason 將實際上傳訂單檔跑回填；⚠️ 本機 dev DB 尚未套此 migration（下次本機開發前跑 migrate deploy）
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
