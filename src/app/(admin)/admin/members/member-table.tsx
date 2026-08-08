@@ -41,13 +41,15 @@ export function MemberTable({
   zones = [],
   showTier = false,
   canEdit = true,
+  canResetPassword = false,
 }: {
   members: MemberRow[];
   groups: { id: string; name: string }[];
   courses: { id: string; title: string }[];
   zones?: { id: string; name: string }[]; // 企業專區（無專區時隱藏該排操作）
   showTier?: boolean; // 分級制度停用時隱藏「等級」欄（TIER_SYSTEM_ENABLED 由 page 傳入）
-  canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/開通/加群組/重設密碼
+  canEdit?: boolean; // 總教練(唯讀)為 false：隱藏勾選/開通/加群組
+  canResetPassword?: boolean; // 密碼重設僅限管理員（server action 也擋，這裡只是不顯示按鈕）
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groupState, groupAction, groupPending] = useActionState<
@@ -93,7 +95,10 @@ export function MemberTable({
     }
     const fd = new FormData();
     fd.set("password", pw.trim());
-    startReset(() => resetMemberPasswordAction(m.id, fd));
+    startReset(async () => {
+      const r = await resetMemberPasswordAction(m.id, fd);
+      if (r?.error) alert(r.error);
+    });
   }
 
   const hidden = () =>
@@ -374,7 +379,7 @@ export function MemberTable({
                   )}
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                  {canEdit && (
+                  {canResetPassword && (
                     <button
                       type="button"
                       onClick={() => resetPassword(m)}

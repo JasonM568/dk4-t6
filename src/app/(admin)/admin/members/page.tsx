@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { listProfiles, listAuthMeta, countProfiles } from "@/lib/supabase/admin";
-import { currentCanEdit } from "@/lib/auth/staff";
+import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
+import { isFullAdmin } from "@/lib/auth/role";
 import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { MemberTable } from "./member-table";
 import { CourseMembersJump } from "./course-members-jump";
@@ -72,6 +73,8 @@ export default async function AdminMembersPage({
     select: { id: true, title: true },
   });
   const canEditNow = await currentCanEdit();
+  // 密碼重設僅限管理員（server action 也擋，這裡只是不顯示按鈕）
+  const canResetPasswordNow = isFullAdmin(await currentStaffRole());
 
   // 勾選名單群組 → 取出群組內 email 集合過濾會員
   const groupEmails =
@@ -247,6 +250,7 @@ export default async function AdminMembersPage({
       <MemberTable
         zones={zones}
         canEdit={canEditNow}
+        canResetPassword={canResetPasswordNow}
         courses={allCourses}
         showTier={TIER_SYSTEM_ENABLED}
         members={members.map((m) => ({

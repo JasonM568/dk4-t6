@@ -21,8 +21,8 @@ export default async function AdminSessionsPage() {
   ]);
   const hoursNum = Number(boardHours?.value);
   const currentHours = Number.isFinite(hoursNum)
-    ? Math.min(720, Math.max(1, Math.round(hoursNum)))
-    : 24;
+    ? Math.min(24, Math.max(1, Math.round(hoursNum)))
+    : 8;
 
   const totalSignups = sessions.reduce((n, s) => n + s.signups.length, 0);
 

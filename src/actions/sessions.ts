@@ -231,6 +231,9 @@ export async function uploadOrdersAction(
     return { error: "請選擇訂單檔（1shop 匯出的 .xlsx 或 .csv）" };
   if (file.size > MAX_UPLOAD_BYTES)
     return { error: "檔案超過 10MB，請確認是否選錯檔案" };
+  // 副檔名允許清單（實際檔型另由 parseOrderFile 的 magic bytes 判定，不信 MIME）
+  if (!/\.(xlsx|csv)$/i.test(file.name))
+    return { error: "只接受 .xlsx 或 .csv 檔（1shop 匯出的訂單檔）" };
 
   try {
     const report = await importOrders(await file.arrayBuffer());
@@ -251,8 +254,8 @@ export async function saveBoardCodeAction(
   const code = String(formData.get("code") ?? "").trim();
   const hours = Math.round(Number(String(formData.get("hours") ?? "").trim()));
   if (!/^\d{4}$/.test(code)) return { error: "登入碼須為 4 位數字" };
-  if (!Number.isFinite(hours) || hours < 1 || hours > 720)
-    return { error: "登入時效須為 1–720 小時" };
+  if (!Number.isFinite(hours) || hours < 1 || hours > 24)
+    return { error: "登入時效須為 1–24 小時" };
   await prisma.$transaction([
     prisma.siteSetting.upsert({
       where: { key: "boardCode" },

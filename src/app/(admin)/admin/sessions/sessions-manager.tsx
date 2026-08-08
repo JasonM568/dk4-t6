@@ -83,7 +83,7 @@ export function BoardCodeForm({
           name="hours"
           type="number"
           min={1}
-          max={720}
+          max={24}
           defaultValue={currentHours}
           className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
         />

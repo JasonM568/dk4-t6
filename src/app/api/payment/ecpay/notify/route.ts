@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
         await tx.order.update({
           where: { id: order.id },
-          data: { status: "PAID", paidAt: new Date() },
+          data: { status: "PAID", paidAt: new Date(), checkoutKey: null },
         });
         await tx.payment.update({
           where: { orderId: order.id },
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
       } else {
         await tx.order.update({
           where: { id: order.id },
-          data: { status: "FAILED" },
+          data: { status: "FAILED", checkoutKey: null },
         });
         await tx.payment.update({
           where: { orderId: order.id },

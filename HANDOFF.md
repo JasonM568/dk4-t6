@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-08-06（EDM 圖文編輯器升級；8/4〜8/6 講座/看板/簡訊/企業包班等 36 commit 補記）**
+> 最後更新：**2026-08-08（資安修復 6 項全數完成並部署：越權/升版/xlsx/看板/結帳/標頭）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
 > 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
@@ -191,6 +191,18 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - [x] 驗證：`scripts/test-edm-render.ts` 26 項（回歸/注入/新語法/邊界）＋ RichText SSR 7 項全過；lint 0 error（順手修掉講座功能遺留的 2 個 react-hooks lint error）、build 過
 - ⏳ 驗收：後台 /admin/broadcast 實際操作工具列＋上傳一張圖＋寄測試信給自己看版面
 - 📋 EDM 候選優化（2026-08-06 排序）：逐人成效明細（半天）＞範本庫管理頁（半天）＞自動化系列信（2天）＞名單健康管理（1天）＞A/B 主旨（1.5天）＞成效儀表板（1天）
+
+**2026-08-08（資安修復日：SECURITY_FIX_TODO 清單 6 項，P0-1 依 Jason 決定跳過）**
+- [x] **P0-2 密碼重設越權**：bulk/單筆重設改 `requireFullAdmin`（operator 不可重設）＋ server 端逐筆驗 profile（拒絕 admin/本人/查無，不信前端 userIds）＋ 新表 `AdminAuditLog` 稽核（不記密碼）＋ 批次回報成功/拒絕/失敗統計；重設按鈕僅 admin 顯示、`/admin/members/inactive` 改 `pageGuardFullAdmin`
+- [x] **P0-3 升版**：Next 16.2.7→16.2.12、React 19.2.4→19.2.8、eslint-config-next 同步（SSRF/RSC DoS 公告清除）
+- [x] **P1-4 xlsx 換裝**：`xlsx@0.18.5`（prototype pollution/ReDoS）→ exceljs 4.4.0；CSV 走獨立 RFC4180 parser；magic bytes 判型（舊版 .xls 拒收）；2 萬列/60 欄/單格 2000 字上限；`scripts/test-order-import.ts` 14 項全過。pnpm overrides 收 transitive（brace-expansion/js-yaml/postcss/uuid→11.1.1/sharp→0.35.0），audit 只剩 tsx→esbuild 1 low（dev-only）
+- [x] **P1-5 看板登入強化**（維持 4 位數字）：`BOARD_SESSION_SECRET` 獨立必填（≥32 字、無 fallback、缺漏安全失敗）；token `v1.exp.nonce.HMAC-SHA256` + timingSafeEqual；新表 `BoardLoginThrottle` DB 共享限流（同 IP 錯 5 次鎖 15 分、全域 10 分 100 次冷卻 60 分＋console.error 告警、成功重置）；IP 只信 x-real-ip/x-vercel-forwarded-for；時效上限 720→24h、預設 8h。**Vercel production+preview 已設 secret（與本機 .env 同值）**
+- [x] **P1-6 結帳競態**：`Order.checkoutKey`（nullable unique，PENDING=`userId:courseId`、離開 PENDING 清 null）→ 併發下單 DB 層擋 P2002，migration 有回填；PENDING 逾 2h 於下次結帳 lazy 轉 EXPIRED；orderNo 改 crypto randomBytes 20 字元（原時間戳可猜號）；金流表單失敗轉 FAILED 釋放鍵；webhook PAID/FAILED 同步清鍵
+- [x] **P2-7 安全標頭**（next.config.ts）：nosniff/Referrer-Policy/Permissions-Policy/X-Frame-Options DENY/HSTS/CSP `frame-ancestors 'none'` 立即阻擋；**完整白名單 CSP 掛 Report-Only 觀察中**（Supabase/YouTube/Slides/Canva/ECPay/GA4/Pixel/GTM），確認無誤殺後把 `REPORT_ONLY_CSP` 搬進 `ENFORCED_CSP` 即切換
+- 3 個新 migration 全 additive（AdminAuditLog/BoardLoginThrottle/checkoutKey 回填）、grep 無 public./auth.；本機已套、正式庫由 Vercel build migrate deploy 自動跑
+- ⚠️ **部署後影響**：看板既有 cookie 全失效（新 token 格式），現場要重輸一次 4 位碼；看板時效若原設 >24h 會收斂為 24h；operator 從此不能重設密碼（僅 admin）
+- ⏳ 驗收：(a) 正式站看板重新登入一次；(b) 連錯 4 位碼 5 次應被鎖 15 分；(c) 訂單頁快速連點只產生一筆 PENDING；(d) curl -I 看 7 個安全標頭；(e) 觀察 CSP Report-Only 一兩週無誤殺後切正式
+- 📋 未做（低優先遺留）：P0-1 明文密碼備查依 Jason 決定保留；tsx→esbuild 1 low（dev-only）；Vercel CLI 全域版本過舊建議 `pnpm add -g vercel@latest`
 
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常

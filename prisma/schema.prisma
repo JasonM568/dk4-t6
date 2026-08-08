@@ -50,6 +50,30 @@ model MemberPassword {
   updatedAt DateTime @updatedAt
 }
 
+// 看板登入共享限流（跨 serverless instance）：key = "ip:<addr>" 或 "global"
+model BoardLoginThrottle {
+  key         String    @id
+  failCount   Int       @default(0)
+  windowStart DateTime  @default(now())
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
+// 敏感後台操作稽核（密碼重設等）：只記操作者/目標/結果，絕不記密碼內容
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  action     String // PASSWORD_RESET / PASSWORD_RESET_BULK
+  actorId    String   @db.Uuid
+  actorEmail String?
+  targetId   String   @db.Uuid
+  success    Boolean
+  detail     String? // 失敗原因或拒絕理由（不含密碼）
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([targetId])
+}
+
 // course 平台自管的後台幹部角色（admin 仍沿用 QBC public.profiles.role=admin，不存這裡）。
 // OPERATOR=操作人員（可查看+編輯+匯出+批次/群發）；COACH=總教練（只能查看訂單/課程/會員）。
 // userId = auth.users.id；email 為指派當下快照，純顯示用。
@@ -438,7 +462,11 @@ model CourseMaterial {
 
 model Order {
   id          String      @id @default(cuid())
-  orderNo     String      @unique // ECPay MerchantTradeNo（≤20 字元）
+  orderNo     String      @unique // ECPay MerchantTradeNo（≤20 字元，加密安全亂數）
+  // 結帳防重原子鍵：PENDING 時 = "userId:courseId"，離開 PENDING 一律清 null。
+  // nullable unique（PG 允許多個 NULL）保證同 user 同課程同時只有一筆有效 PENDING，
+  // 併發下單靠 unique violation 擋，不靠先查再建
+  checkoutKey String?     @unique
   userId      String      @db.Uuid // auth.users.id，無 FK
   buyerEmail  String? // 下單當下 email 快照（後台顯示與稽核用）
   status      OrderStatus @default(PENDING)
