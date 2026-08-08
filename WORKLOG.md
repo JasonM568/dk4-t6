@@ -25,6 +25,10 @@
    - 決策：回填只寫 phone「不代填同意」（同意欄位改 nullable）——個資同意必須由會員本人勾選，
      回填會員登入時手機預填、勾同意即完成；會員自填手機絕不覆蓋，衝突列報告
 
+5. **模組化規劃稿入庫**（平行線產出，僅文件）：docs/MODULARIZATION_PLAN.md（16 模組四階段）＋
+   ARCHITECTURE.md 現況基準 commit 入庫、HANDOFF 摘要；提醒多線並行下搬檔需排凍結窗口。
+   狀態：待 Jason 確認排程，未動程式
+
 **未完成／待辦：**
 - Jason 將實際上傳 1shop 訂單檔跑回填（報告有異常截圖回報）；本機 dev DB 尚未套
   20260815100000 migration（下次本機開發前 `npx prisma migrate deploy`）
