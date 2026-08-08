@@ -118,6 +118,12 @@ export default async function DashboardPage() {
         >
           🧾 訂單管理
         </Link>
+        <Link
+          href="/dashboard/profile"
+          className="flex-1 rounded-xl border border-gray-200 p-4 text-center font-medium transition hover:bg-gray-50"
+        >
+          👤 會員資料
+        </Link>
       </div>
     </div>
   );

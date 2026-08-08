@@ -8,6 +8,9 @@ import { autoEnrollOnRegister } from "@/lib/zone-enroll";
 import { claimPendingEnrollments } from "@/lib/pending-enroll";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/course-access";
+import { explainMobile } from "@/lib/sms/phone";
+import { PRIVACY_POLICY_VERSION } from "@/lib/privacy";
+import { getAuthUser } from "@/lib/supabase/server";
 
 export type ActionState = {
   error?: string;
@@ -33,6 +36,35 @@ const registerSchema = z.object({
   email: z.string().email("Email 格式不正確"),
   password: z.string().min(6, "密碼至少 6 字元"),
 });
+
+/** 手機驗證（2026-08-15 起必填）：normalizeMobile 同一套規則，
+ *  拒絕理由轉成表單看得懂的訊息 */
+function parsePhoneField(raw: unknown): { phone?: string; error?: string } {
+  const r = explainMobile(raw);
+  if (r.mobile) return { phone: r.mobile };
+  switch (r.reject) {
+    case "EMPTY":
+      return { error: "請填寫手機號碼" };
+    case "LANDLINE":
+      return { error: "請填寫行動電話（市話收不到簡訊通知）" };
+    case "TOO_SHORT":
+    case "TOO_LONG":
+    case "FORMAT":
+    default:
+      return { error: "手機號碼格式不正確，請輸入 09 開頭的 10 碼號碼" };
+  }
+}
+
+/** 個資同意 checkbox（必勾）＋手機的共同驗證，註冊與補填共用 */
+function parseProfileFields(formData: FormData): {
+  phone?: string;
+  error?: string;
+} {
+  if (formData.get("privacyConsent") !== "on") {
+    return { error: "請閱讀並勾選同意個人資料蒐集告知事項" };
+  }
+  return parsePhoneField(formData.get("phone"));
+}
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Email 格式不正確"),
@@ -80,7 +112,8 @@ export async function loginAction(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data: signInData, error } =
+    await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
     return { error: mapAuthError(error.code, error.status) };
@@ -99,7 +132,77 @@ export async function loginAction(
     })
     .catch(() => null); // 導向查詢失敗不擋登入
 
-  redirect(zoneMember ? `/zone/${zoneMember.group.slug}` : "/dashboard");
+  const dest = zoneMember ? `/zone/${zoneMember.group.slug}` : "/dashboard";
+
+  // 2026-08-15 起手機必填：既有會員沒補過 → 先去補填頁（補完自動回 dest）。
+  // 查詢失敗 fail-open 不擋登入（合規閘門非安全邊界）
+  if (signInData.user) {
+    const hasProfile = await prisma.memberProfile
+      .findUnique({
+        where: { userId: signInData.user.id },
+        select: { userId: true },
+      })
+      .catch(() => ({ userId: "fail-open" }));
+    if (!hasProfile) {
+      redirect(`/complete-profile?next=${encodeURIComponent(dest)}`);
+    }
+  }
+
+  redirect(dest);
+}
+
+export type CompleteProfileState = { error?: string } | null;
+
+/** 既有會員補填手機＋個資同意（/complete-profile 與會員資料頁共用）。
+ *  補填後導回 next（僅接受站內路徑，防 open redirect）。 */
+export async function completeProfileAction(
+  _prev: CompleteProfileState,
+  formData: FormData,
+): Promise<CompleteProfileState> {
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
+
+  const fields = parseProfileFields(formData);
+  if (fields.error) return { error: fields.error };
+
+  await prisma.memberProfile.upsert({
+    where: { userId: user.id },
+    update: {
+      phone: fields.phone!,
+      privacyConsentAt: new Date(),
+      privacyConsentVersion: PRIVACY_POLICY_VERSION,
+    },
+    create: {
+      userId: user.id,
+      phone: fields.phone!,
+      privacyConsentAt: new Date(),
+      privacyConsentVersion: PRIVACY_POLICY_VERSION,
+    },
+  });
+
+  const nextRaw = String(formData.get("next") ?? "");
+  redirect(/^\/(?!\/)/.test(nextRaw) ? nextRaw : "/dashboard");
+}
+
+/** 會員資料頁更新手機（已同意過條款者；同意紀錄不變） */
+export async function updatePhoneAction(
+  _prev: CompleteProfileState,
+  formData: FormData,
+): Promise<CompleteProfileState> {
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
+
+  const parsed = parsePhoneField(formData.get("phone"));
+  if (parsed.error) return { error: parsed.error };
+
+  const updated = await prisma.memberProfile
+    .updateMany({ where: { userId: user.id }, data: { phone: parsed.phone! } })
+    .catch(() => ({ count: 0 }));
+  if (updated.count === 0) {
+    // 還沒有同意紀錄（理論上會被閘門擋在前面）：導去完整補填流程
+    redirect("/complete-profile?next=%2Fdashboard%2Fprofile");
+  }
+  redirect("/dashboard/profile?updated=1");
 }
 
 export async function registerAction(
@@ -116,6 +219,11 @@ export async function registerAction(
   }
 
   const { displayName, email, password } = parsed.data;
+
+  // 手機必填＋個資同意必勾（2026-08-15 起）：先驗完才建帳號
+  const profileFields = parseProfileFields(formData);
+  if (profileFields.error) return { error: profileFields.error };
+  const phone = profileFields.phone!;
 
   // 企業專區邀請碼（選填）：先驗證再建帳號，碼無效就不註冊，
   // 避免使用者以為拿到專區身分卻沒有
@@ -155,6 +263,29 @@ export async function registerAction(
         ? "此 Email 已被註冊。請直接登入，再到專區頁輸入邀請碼即可加入專區"
         : "此 Email 已被註冊，請直接登入或使用忘記密碼",
     };
+  }
+
+  // 手機＋個資同意紀錄：帳號建立成功即寫入（Confirm email 前寫入也沒關係，
+  // 以 userId 為鍵）。寫入失敗不擋註冊——登入閘門會再要求補填，記 log 即可。
+  if (data.user) {
+    try {
+      await prisma.memberProfile.upsert({
+        where: { userId: data.user.id },
+        update: {
+          phone,
+          privacyConsentAt: new Date(),
+          privacyConsentVersion: PRIVACY_POLICY_VERSION,
+        },
+        create: {
+          userId: data.user.id,
+          phone,
+          privacyConsentAt: new Date(),
+          privacyConsentVersion: PRIVACY_POLICY_VERSION,
+        },
+      });
+    } catch (e) {
+      console.error("[register] MemberProfile 寫入失敗（登入時會要求補填）", { email, e });
+    }
   }
 
   // 帶邀請碼註冊：帳號建立成功後立刻寫入專區會籍（以 email 為鍵，

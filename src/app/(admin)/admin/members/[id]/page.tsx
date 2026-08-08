@@ -25,7 +25,7 @@ export default async function MemberDetailPage({
   const { id } = await params;
 
   // 會員身分在 public.profiles（唯讀），課程資料在 course schema，應用層拼裝
-  const [profile, stats, enrollments, orders, allCourses] = await Promise.all([
+  const [profile, stats, enrollments, orders, allCourses, memberProfile] = await Promise.all([
     getProfile(id),
     prisma.memberStats.findUnique({ where: { userId: id } }),
     prisma.enrollment.findMany({
@@ -44,6 +44,7 @@ export default async function MemberDetailPage({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true, isPublished: true },
     }),
+    prisma.memberProfile.findUnique({ where: { userId: id } }),
   ]);
   const canEditNow = await currentCanEdit();
   if (!profile) notFound();
@@ -91,6 +92,18 @@ export default async function MemberDetailPage({
             }
           />
           <Item label="累積消費" value={formatNT(stats?.totalSpent ?? 0)} />
+          <Item
+            label="手機號碼"
+            value={memberProfile?.phone ?? "未補填（下次登入會要求）"}
+          />
+          <Item
+            label="個資同意"
+            value={
+              memberProfile
+                ? `${new Date(memberProfile.privacyConsentAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}（${memberProfile.privacyConsentVersion}）`
+                : "尚未同意"
+            }
+          />
         </dl>
       </section>
 

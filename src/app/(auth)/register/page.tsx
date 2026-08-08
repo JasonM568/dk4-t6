@@ -4,6 +4,8 @@ import { Suspense, useActionState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { registerAction, type ActionState } from "@/actions/auth";
+import { PrivacyNotice } from "@/components/privacy-notice";
+import { PRIVACY_CONSENT_LABEL } from "@/lib/privacy";
 
 /** 註冊完成轉換事件（GA4 sign_up / Meta Pixel CompleteRegistration / GTM dataLayer）。
  *  只在成功畫面掛載時觸發一次；追蹤碼未啟用時 window.gtag/fbq 為 undefined，安全略過。
@@ -90,6 +92,32 @@ function RegisterForm() {
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
           />
           <p className="mt-1 text-xs text-gray-400">至少 6 字元</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium">手機號碼</label>
+          <input
+            name="phone"
+            type="tel"
+            required
+            inputMode="numeric"
+            placeholder="0912345678"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            09 開頭 10 碼，用於上課通知與帳號服務
+          </p>
+        </div>
+        <div className="space-y-2">
+          <PrivacyNotice />
+          <label className="flex items-start gap-2 text-xs text-gray-600">
+            <input
+              name="privacyConsent"
+              type="checkbox"
+              required
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+            />
+            <span>{PRIVACY_CONSENT_LABEL}</span>
+          </label>
         </div>
         {invite && (
           <div>
