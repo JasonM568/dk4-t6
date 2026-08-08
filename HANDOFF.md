@@ -217,6 +217,21 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - ⏳ 驗收：/admin/sms 發一則給自己手機（後台紀錄應為綠色已發送、非紫色測試模式），對照 MAAC Go Dashboard 扣款
 - 📋 之後可做：MAAC Go 送達 webhook（sms.delivered/failed，HMAC 驗簽比照 /api/webhooks/resend）回流逐筆狀態
 
+**2026-08-08 深夜（會員手機必填＋個資法同意，已部署上線）**
+- [x] **新表 `MemberProfile`**（course schema，additive，正式庫已套）：phone（normalizeMobile 格式）＋
+  privacyConsentAt/Version——QBC 共用 profiles 唯讀不可動，補充資料存自己這邊；同意紀錄含版本可舉證
+- [x] **註冊頁**：手機必填＋個資告知條款（可展開）＋必勾同意；先驗完才建帳號
+- [x] **既有會員強制補填**：loginAction 無紀錄 → `/complete-profile?next=原目的地`；
+  `(member)/layout.tsx` 閘門擋 dashboard/my-courses/learn/orders 直連；DB 失敗 fail-open 不鎖會員
+- [x] **會員資料頁 `/dashboard/profile`**（新）：姓名/Email 唯讀、手機可改、同意紀錄＋條款展示；dashboard 加入口
+- [x] 後台會員詳情加手機/個資同意欄（未補填標「下次登入會要求」）
+- [x] 條款集中 `src/lib/privacy.ts` 版本化（**2026-08-08.v1**，Jason 已核可）；改版 bump 版本即可
+- ⚠️ **蒐集機關必須寫「希望學院學習平台」**——曾誤植黃璽理財被 Jason 糾正，本專案對外文案禁用黃璽品牌
+- ⚠️ **上線後所有既有會員（450+）下次登入會被要求補填**——若學員反映，屬預期行為；
+  近期大量登入前（開課/講座）建議先在 LINE 群預告
+- 已知取捨：`/zone/[slug]` 專區瀏覽頁不在閘門內（看影片的 /learn 有擋、登入導向也會強制）
+- 正式站已驗證：註冊頁含手機/條款欄位、/complete-profile 200、migration 已套、無品牌誤植字樣
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
