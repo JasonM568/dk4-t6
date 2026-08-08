@@ -204,6 +204,19 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 - ⏳ 驗收：(a) 正式站看板重新登入一次；(b) 連錯 4 位碼 5 次應被鎖 15 分；(c) 訂單頁快速連點只產生一筆 PENDING；(d) curl -I 看 7 個安全標頭；(e) 觀察 CSP Report-Only 一兩週無誤殺後切正式
 - 📋 未做（低優先遺留）：P0-1 明文密碼備查依 Jason 決定保留；tsx→esbuild 1 low（dev-only）；Vercel CLI 全域版本過舊建議 `pnpm add -g vercel@latest`
 
+**2026-08-08 晚（簡訊模組接 MAAC Go 並正式上線）**
+- [x] **MAAC Go adapter**（`src/lib/sms/provider/maacgo.ts`，漸強實驗室 sms.cresclab.com）：
+  台灣三大電信直連、NCC 合規內建、NT$0.78/段。逐通 POST /sms/send（type=notification）、
+  批 10 通間隔 1 秒、429/5xx 退避；錯誤轉中文（餘額不足/NCC 擋含原因/限速/號碼無效）；
+  憑證缺漏不 throw 逐筆回失敗；sk_test_ 視為非 live 後台會標示。細節見 docs/sms-module.md §8.0
+- [x] mock server 測試 17 項全過（`scripts/test-sms-maacgo.ts`，--conditions=react-server）
+- [x] **正式站已切真發送**：Vercel production `SMS_PROVIDER=maacgo` + `MAACGO_API_KEY`（sk_live，
+  已用唯讀端點驗證有效）＋ redeploy；正式庫 `sms:pricePerSegment` 已設 0.78
+- ⚠️ **本機 .env 刻意維持 dryrun**（key 存了但 SMS_PROVIDER 沒開）——本機測真發送才暫時打開，防開發誤發
+- 帳戶目前只有 NT$50 試用額度（約 64 段），大量發送前先到 MAAC Go 儲值；餘額不足會逐筆記「餘額不足」失敗
+- ⏳ 驗收：/admin/sms 發一則給自己手機（後台紀錄應為綠色已發送、非紫色測試模式），對照 MAAC Go Dashboard 扣款
+- 📋 之後可做：MAAC Go 送達 webhook（sms.delivered/failed，HMAC 驗簽比照 /api/webhooks/resend）回流逐筆狀態
+
 ### ⏳ 待驗收（下次開工先確認）
 0. **session 逾時實測**：(a) Jason 確認 Dashboard 兩欄位已存檔（若被要求升 Pro 則改走 cookie maxAge 方案）；(b) 正式站登入 >1 小時後訪問 `/dashboard` 應仍正常（活躍刷新沒被誤殺）；(c) 隔天 >24h 再訪問應被導回 `/login`；(d) hope 站抽驗登入無異常
 1. **htc621010 等 QBC 老會員**：登出重登後應能看 6/6（force-dynamic 已修，資料庫確認其 Enrollment 在、id 一致、課程上架中）
