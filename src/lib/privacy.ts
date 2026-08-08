@@ -11,7 +11,7 @@ export const PRIVACY_CONTACT_EMAIL = "course@huangxi.info";
 export const PRIVACY_POLICY_SECTIONS: { title: string; body: string }[] = [
   {
     title: "蒐集機關",
-    body: "黃璽理財管理顧問（希望學院學習平台，course.huangxi.info）。",
+    body: "希望學院學習平台（course.huangxi.info）。",
   },
   {
     title: "蒐集目的",
