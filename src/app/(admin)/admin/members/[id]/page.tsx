@@ -99,9 +99,11 @@ export default async function MemberDetailPage({
           <Item
             label="個資同意"
             value={
-              memberProfile
+              memberProfile?.privacyConsentAt
                 ? `${new Date(memberProfile.privacyConsentAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}（${memberProfile.privacyConsentVersion}）`
-                : "尚未同意"
+                : memberProfile
+                  ? "尚未同意（手機為訂單回填，下次登入會要求勾選）"
+                  : "尚未同意"
             }
           />
         </dl>

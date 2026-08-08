@@ -53,12 +53,14 @@ model MemberPassword {
 // 本平台自管的會員補充資料（QBC public.profiles 唯讀不可動，手機與個資同意存這裡）。
 // phone = normalizeMobile 產物（09XXXXXXXX）；個資法履行紀錄要能舉證「何時同意了哪一版條款」
 model MemberProfile {
-  userId                String   @id @db.Uuid // auth.users.id，無 FK
+  userId                String    @id @db.Uuid // auth.users.id，無 FK
   phone                 String
-  privacyConsentAt      DateTime // 勾選同意的時間戳
-  privacyConsentVersion String // 同意當下的條款版本（見 src/lib/privacy.ts）
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  // 同意欄位 nullable：1shop 訂單回填只寫 phone（同意必須由會員本人操作，不可代填）。
+  // 「補填完成」的定義＝有手機且有同意（見 src/lib/member-profile.ts）
+  privacyConsentAt      DateTime? // 勾選同意的時間戳
+  privacyConsentVersion String? // 同意當下的條款版本（見 src/lib/privacy.ts）
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@index([phone])
 }

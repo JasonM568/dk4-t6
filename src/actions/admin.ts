@@ -34,6 +34,8 @@ import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
 import { TRACKING_KEYS } from "@/lib/tracking";
 import { decodeCsvBuffer } from "@/lib/csv";
+import { parseOrderFile } from "@/lib/session-import";
+import { normalizeMobile } from "@/lib/sms/phone";
 import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { autoEnrollGroupCourses } from "@/lib/zone-enroll";
 import {
@@ -2125,6 +2127,150 @@ export async function togglePageAction(key: SitePageKey, enabled: boolean) {
 
 /** 儲存全站追蹤碼設定（GA4/Meta Pixel/GTM）。
  *  格式嚴格驗證：ID 會內插進前台 inline script，不能放行任意字串；空字串 = 停用 */
+// ─────────────────── 1shop 訂單回填會員手機 ───────────────────
+
+export type PhoneImportReport = {
+  totalRows: number; // 檔案資料列數
+  withContact: number; // 有 email＋可辨識手機的唯一 email 數
+  invalidPhone: number; // 有 email 但手機無法辨識的列數
+  matchedMembers: number; // email 對到平台會員
+  notMemberCount: number; // 對不到會員（未註冊或用別的信箱）
+  notMemberSample: string[]; // 對不到的 email 前 20 筆
+  filled: number; // 實際回填/更新的手機筆數
+  alreadyConsented: number; // 已自行補齊（有同意紀錄）→ 不動
+  alreadyHadPhone: number; // 先前回填過同號碼 → 略過
+  conflicts: { email: string; name: string; memberPhone: string; orderPhone: string }[]; // 會員自填 ≠ 訂單，僅列出不覆蓋
+};
+
+export type PhoneImportState =
+  | { error?: string; report?: PhoneImportReport }
+  | null;
+
+const PHONE_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+
+/** 上傳 1shop 訂單檔 → 以「顧客信箱」對會員 → 回填「顧客電話」到 MemberProfile。
+ *
+ *  合規邊界：只寫 phone、絕不寫同意欄位——同意必須由會員本人在補填頁勾選，
+ *  回填後會員登入時手機已預填、勾同意即完成。
+ *  覆蓋原則：會員自己填過的手機（有同意紀錄）一律不動，不同時列入 conflicts 供查核。 */
+export async function importMemberPhonesAction(
+  _prev: PhoneImportState,
+  formData: FormData,
+): Promise<PhoneImportState> {
+  await requireEditor();
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0)
+    return { error: "請選擇 1shop 匯出的訂單檔（.xlsx 或 .csv）" };
+  if (file.size > PHONE_IMPORT_MAX_BYTES)
+    return { error: "檔案超過 10MB，請確認是否選錯檔案" };
+  if (!/\.(xlsx|csv)$/i.test(file.name))
+    return { error: "只接受 .xlsx 或 .csv 檔（1shop 匯出的訂單檔）" };
+
+  let rows;
+  try {
+    rows = await parseOrderFile(await file.arrayBuffer());
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "解析失敗，請確認檔案格式" };
+  }
+
+  // email → 最新一筆可辨識手機（同 email 多筆訂單以建立日期最新者為準）
+  const byEmail = new Map<string, { phone: string; at: number; name: string }>();
+  let invalidPhone = 0;
+  for (const r of rows) {
+    const email = r.email.trim().toLowerCase();
+    if (!email || !email.includes("@")) continue;
+    const phone = normalizeMobile(r.phone);
+    if (!phone) {
+      if (r.phone.trim()) invalidPhone++;
+      continue;
+    }
+    const at = r.orderedAt?.getTime() ?? 0;
+    const cur = byEmail.get(email);
+    if (!cur || at >= cur.at) byEmail.set(email, { phone, at, name: r.name });
+  }
+  if (byEmail.size === 0)
+    return { error: "檔案中找不到任何「顧客信箱＋可辨識手機」的資料列" };
+
+  // email → 會員（大小寫不敏感、分批查，getProfilesByEmails 既有工具）
+  const profileMap = await getProfilesByEmails([...byEmail.keys()]);
+
+  const report: PhoneImportReport = {
+    totalRows: rows.length,
+    withContact: byEmail.size,
+    invalidPhone,
+    matchedMembers: 0,
+    notMemberCount: 0,
+    notMemberSample: [],
+    filled: 0,
+    alreadyConsented: 0,
+    alreadyHadPhone: 0,
+    conflicts: [],
+  };
+
+  const matched: { userId: string; email: string; phone: string; name: string }[] = [];
+  for (const [email, info] of byEmail) {
+    const p = profileMap.get(email);
+    if (!p) {
+      report.notMemberCount++;
+      if (report.notMemberSample.length < 20) report.notMemberSample.push(email);
+      continue;
+    }
+    matched.push({ userId: p.id, email, phone: info.phone, name: info.name });
+  }
+  report.matchedMembers = matched.length;
+
+  const existingRows = await prisma.memberProfile.findMany({
+    where: { userId: { in: matched.map((m) => m.userId) } },
+    select: { userId: true, phone: true, privacyConsentAt: true },
+  });
+  const existingById = new Map(existingRows.map((r) => [r.userId, r]));
+
+  const toCreate: { userId: string; phone: string }[] = [];
+  const toUpdate: { userId: string; phone: string }[] = [];
+  for (const m of matched) {
+    const ex = existingById.get(m.userId);
+    if (!ex) {
+      toCreate.push({ userId: m.userId, phone: m.phone });
+      continue;
+    }
+    if (ex.privacyConsentAt) {
+      // 會員自己完成過補填：本人填的優先，絕不覆蓋；號碼不同列入查核
+      report.alreadyConsented++;
+      if (ex.phone !== m.phone) {
+        report.conflicts.push({
+          email: m.email,
+          name: m.name,
+          memberPhone: ex.phone,
+          orderPhone: m.phone,
+        });
+      }
+      continue;
+    }
+    // 先前回填過（未同意）：訂單有更新的號碼就跟著更新
+    if (ex.phone === m.phone) report.alreadyHadPhone++;
+    else toUpdate.push({ userId: m.userId, phone: m.phone });
+  }
+
+  if (toCreate.length > 0) {
+    const res = await prisma.memberProfile.createMany({
+      data: toCreate,
+      skipDuplicates: true,
+    });
+    report.filled += res.count;
+  }
+  for (const u of toUpdate) {
+    await prisma.memberProfile.update({
+      where: { userId: u.userId },
+      data: { phone: u.phone },
+    });
+    report.filled++;
+  }
+
+  revalidatePath("/admin/members");
+  return { report };
+}
+
 export async function saveTrackingSettingsAction(
   _prev: BroadcastState,
   formData: FormData,

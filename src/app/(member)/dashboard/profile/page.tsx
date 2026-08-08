@@ -22,8 +22,9 @@ export default async function MemberProfilePage({
     getMemberProfile(user.id),
     searchParams,
   ]);
-  // 沒有補填紀錄理論上進不來（(member)/layout 閘門），保險再導一次
-  if (!memberProfile) redirect("/complete-profile?next=%2Fdashboard%2Fprofile");
+  // 沒補齊（無紀錄或訂單回填未同意）理論上進不來（(member)/layout 閘門），保險再導一次
+  if (!memberProfile || !memberProfile.privacyConsentAt)
+    redirect("/complete-profile?next=%2Fdashboard%2Fprofile");
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">

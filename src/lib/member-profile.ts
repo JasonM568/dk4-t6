@@ -11,16 +11,16 @@ export async function getMemberProfile(userId: string) {
   return prisma.memberProfile.findUnique({ where: { userId } });
 }
 
-/** 是否已補齊（有手機＋同意紀錄）。查詢失敗 fail-open 視為已補齊——
- *  這是合規閘門不是安全邊界，DB 瞬斷不該把全站會員鎖在門外（對齊 loginAction
- *  「導向查詢失敗不擋登入」的既有原則） */
+/** 是否已補齊（有手機「且」有同意紀錄——訂單回填列只有手機、同意為 null，不算補齊）。
+ *  查詢失敗 fail-open 視為已補齊——這是合規閘門不是安全邊界，
+ *  DB 瞬斷不該把全站會員鎖在門外（對齊 loginAction「導向查詢失敗不擋登入」的既有原則） */
 export async function isProfileComplete(userId: string): Promise<boolean> {
   try {
     const row = await prisma.memberProfile.findUnique({
       where: { userId },
-      select: { userId: true },
+      select: { privacyConsentAt: true },
     });
-    return !!row;
+    return !!row?.privacyConsentAt;
   } catch (e) {
     console.error("[member-profile] 補填狀態查詢失敗（fail-open）：", e);
     return true;

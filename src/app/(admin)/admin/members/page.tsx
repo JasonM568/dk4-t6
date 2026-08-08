@@ -187,6 +187,12 @@ export default async function AdminMembersPage({
           >
             🔑 未登入會員（批次設密碼）
           </Link>
+          <Link
+            href="/admin/members/phone-import"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            📱 訂單回填手機
+          </Link>
         </div>
       </header>
 

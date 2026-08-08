@@ -137,13 +137,14 @@ export async function loginAction(
   // 2026-08-15 起手機必填：既有會員沒補過 → 先去補填頁（補完自動回 dest）。
   // 查詢失敗 fail-open 不擋登入（合規閘門非安全邊界）
   if (signInData.user) {
-    const hasProfile = await prisma.memberProfile
+    // 補齊定義＝有手機「且」有同意（訂單回填列只有手機、同意 null，仍要走補填頁勾同意）
+    const row = await prisma.memberProfile
       .findUnique({
         where: { userId: signInData.user.id },
-        select: { userId: true },
+        select: { privacyConsentAt: true },
       })
-      .catch(() => ({ userId: "fail-open" }));
-    if (!hasProfile) {
+      .catch(() => ({ privacyConsentAt: new Date(0) })); // fail-open
+    if (!row?.privacyConsentAt) {
       redirect(`/complete-profile?next=${encodeURIComponent(dest)}`);
     }
   }
