@@ -151,7 +151,26 @@
 
 ---
 
-## 8. 之後要接三竹（或其他簡訊商）該做什麼
+## 8. 簡訊商串接
+
+### 8.0 已接：MAAC Go（漸強實驗室，2026-08-08）
+
+`src/lib/sms/provider/maacgo.ts`——台灣三大電信直連、NCC 合規內建、NT$0.78/段（中文 70 字/段）。
+
+- **啟用**：`.env` 設 `SMS_PROVIDER=maacgo` + `MAACGO_API_KEY=sk_live_...`（Vercel 同步設定後 redeploy）。
+  金鑰在 <https://sms.cresclab.com> Dashboard → 🤖 MCP / API 建立；新帳號送 NT$50 試用額度
+- `sk_test_` 金鑰視為非 live（`isLive=false`），後台紀錄標「測試金鑰（不實際發送）」；
+  憑證缺漏不 throw，逐筆回失敗＋中文原因（頁面不會 500）
+- 逐通打 `POST /sms/send`（`type: "notification"`）：內容是逐人渲染，broadcast 端點對不上逐筆對應約定。
+  批 10 通、批間 1 秒；429/5xx 走 `postWithRetry` 退避
+- 錯誤碼對應中文：`insufficient_balance`（餘額不足去儲值）/ `ncc_blocked`（含封鎖原因）/ `rate_limited`
+- `MAACGO_TEAM`（選填）：MAAC Go 後台成本歸屬報表標籤；`MAACGO_API_BASE`（僅測試）：mock server 覆寫
+- **啟用後記得把後台 `sms:pricePerSegment` 調成 78（分）**，並先發一則給自己驗證
+- 送達回報：MAAC Go 有 `sms.delivered`/`sms.failed` webhook（HMAC-SHA256 簽章），第一階段未接——
+  要接時參考 `/api/webhooks/resend` 的驗簽做法，事件更新 `SmsBroadcast` 逐筆狀態
+- 驗證：`npx tsx --conditions=react-server scripts/test-sms-maacgo.ts`（17 項，mock server 不花錢）
+
+### 8.1 之後要接三竹（或其他簡訊商）該做什麼
 
 介面已經就位，只要補一個檔：
 
