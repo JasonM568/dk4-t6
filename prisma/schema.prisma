@@ -403,6 +403,7 @@ model CourseSession {
   endDate   DateTime? // 結束日（多日課程用）：有值時以此為準取代 eventDate 判斷下架；null = 以 eventDate 為準
   keywords  String[]  @default([]) // 訂單「產品」欄含任一關鍵字 → 歸入本場次
   isVisible Boolean   @default(true) // 顯示於 /board 看板
+  adminNote String?   @db.Text // 僅後台管理用的場次備忘，不顯示於公開看板
   sortOrder Int       @default(0)
 
   signups SessionSignup[]

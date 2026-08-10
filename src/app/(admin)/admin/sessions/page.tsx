@@ -83,6 +83,7 @@ export default async function AdminSessionsPage() {
               endDate: s.endDate?.toISOString() ?? null,
               keywords: s.keywords,
               isVisible: s.isVisible,
+              adminNote: s.adminNote,
               signups: s.signups.map((g) => ({
                 id: g.id,
                 orderNo: g.orderNo,

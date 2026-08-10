@@ -24,6 +24,7 @@ function parseSessionForm(formData: FormData) {
     .split(/[,，\n]/)
     .map((k) => k.trim())
     .filter(Boolean);
+  const adminNote = String(formData.get("adminNote") ?? "").trim();
   const isVisible = formData.get("isVisible") === "on";
   const eventDate = dateStr ? new Date(dateStr) : null;
   if (eventDate && Number.isNaN(eventDate.getTime()))
@@ -33,7 +34,8 @@ function parseSessionForm(formData: FormData) {
     return { error: "結束日期格式錯誤" as const };
   if (endDate && eventDate && endDate < eventDate)
     return { error: "結束日不能早於開課日" as const };
-  return { title, eventDate, endDate, keywords, isVisible };
+  if (adminNote.length > 5_000) return { error: "場次備忘錄不可超過 5,000 字" as const };
+  return { title, eventDate, endDate, keywords, isVisible, adminNote: adminNote || null };
 }
 
 export async function createSessionAction(

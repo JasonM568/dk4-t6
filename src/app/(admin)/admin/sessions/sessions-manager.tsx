@@ -35,6 +35,7 @@ export type SessionRow = {
   endDate: string | null; // 結束日（多日課程用）；下架判斷以 endDate ?? eventDate 為準
   keywords: string[];
   isVisible: boolean;
+  adminNote: string | null;
   signups: SignupRow[];
 };
 
@@ -330,6 +331,13 @@ export function CreateSessionForm() {
         placeholder="產品關鍵字（逗號分隔，訂單「產品」欄含任一關鍵字即歸入，例：8/20, AI初階台北）"
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
+      <textarea
+        name="adminNote"
+        rows={3}
+        maxLength={5000}
+        placeholder="場次備忘錄（僅後台管理可見；例：兩人合報送講座門票，但可個別結帳）"
+        className="w-full resize-y rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+      />
       <div className="flex items-center gap-2">
         <button
           disabled={pending}
@@ -424,6 +432,11 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
             不顯示於看板
           </span>
         )}
+        {canEdit && session.adminNote && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+            有備忘錄
+          </span>
+        )}
         {session.isVisible && hasEndedInTaipei(session.endDate ?? session.eventDate) && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
             已結束（看板已下架）
@@ -473,6 +486,19 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
               placeholder="產品關鍵字（逗號分隔）"
               className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
             />
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-amber-800">
+                場次備忘錄（僅後台管理可見，不會顯示於公開看板）
+              </span>
+              <textarea
+                name="adminNote"
+                rows={4}
+                maxLength={5000}
+                defaultValue={session.adminNote ?? ""}
+                placeholder="例：兩人合報送講座門票，但學員可個別結帳；請手動註記。"
+                className="w-full resize-y rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
+              />
+            </label>
             <div className="flex items-center gap-2">
               <button
                 disabled={editing}
