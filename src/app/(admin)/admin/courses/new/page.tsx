@@ -15,7 +15,7 @@ export default async function NewCoursePage() {
     }),
     prisma.courseGroup.findMany({
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, kind: true },
     }),
   ]);
 

@@ -27,7 +27,7 @@ type CourseFormProps = {
     openToGroupUntil?: Date | null;
   };
   allCategories?: { id: string; name: string }[];
-  allZones?: { id: string; name: string }[];
+  allZones?: { id: string; name: string; kind?: string }[];
   submitLabel: string;
 };
 
@@ -184,7 +184,7 @@ export function CourseForm({
         </Field>
       )}
       {allZones.length > 0 && (
-        <Field label="所屬企業專區（選了專區＝不公開販售，僅專區會員可見）">
+        <Field label="所屬專區（選了專區＝不公開販售，僅專區會員可見）">
           <select
             name="groupId"
             value={groupId}
@@ -194,7 +194,7 @@ export function CourseForm({
             <option value="">一般課程（公開販售）</option>
             {allZones.map((z) => (
               <option key={z.id} value={z.id}>
-                {z.name}
+                {z.kind === "SUBSCRIPTION" ? "訂閱｜" : "企業｜"}{z.name}
               </option>
             ))}
           </select>

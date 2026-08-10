@@ -45,6 +45,7 @@ export default async function AdminZoneDetailPage({
     },
   });
   if (!zone) notFound();
+  const isSubscription = zone.kind === "SUBSCRIPTION";
 
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
 
@@ -52,8 +53,8 @@ export default async function AdminZoneDetailPage({
     <div className="max-w-3xl">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{zone.name}</h1>
-        <Link href="/admin/zones" className="text-sm text-indigo-600 hover:underline">
-          ← 回專區列表
+        <Link href={isSubscription ? "/admin/subscription" : "/admin/zones"} className="text-sm text-indigo-600 hover:underline">
+          ← 回{isSubscription ? "訂閱專區" : "企業專區"}列表
         </Link>
       </div>
       <p className="mb-6 font-mono text-sm text-gray-400">/zone/{zone.slug}</p>
@@ -79,7 +80,7 @@ export default async function AdminZoneDetailPage({
               name="wallText"
               rows={3}
               defaultValue={zone.wallText ?? ""}
-              placeholder="例：本專區為世華會企業包班會員專屬，欲加入請洽世華會祕書處。"
+              placeholder={isSubscription ? "例：本專區為訂閱會員專屬，欲加入請洽客服。" : "例：本專區為世華會企業包班會員專屬，欲加入請洽世華會祕書處。"}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
             />
           </div>
@@ -108,7 +109,9 @@ export default async function AdminZoneDetailPage({
         <h2 className="mb-1 font-bold">專區課程（{zone.courses.length}）</h2>
         <p className="mb-3 text-xs text-gray-400">
           到「課程上架」新增/編輯課程時，將「所屬專區」選為此專區即可掛入。
-          觀看權限需另外用「批次開通」逐課開通給會員。
+          {isSubscription
+            ? "訂閱會員名單中的會員可直接觀看本專區所有已上架影片；移出名單會立即停止觀看資格。"
+            : "觀看權限需另外用「批次開通」逐課開通給會員。"}
         </p>
         <ul className="divide-y divide-gray-100">
           {zone.courses.length === 0 && (
@@ -192,7 +195,7 @@ export default async function AdminZoneDetailPage({
 
       {/* 會員管理 */}
       <section className="mb-8 rounded-xl border border-gray-200 p-4">
-        <h2 className="mb-3 font-bold">專區會員（{zone.members.length}）</h2>
+        <h2 className="mb-3 font-bold">{isSubscription ? "訂閱會員" : "專區會員"}（{zone.members.length}）</h2>
 
         <div className="mb-4 space-y-4">
           <AddZoneMemberForm addAction={addZoneMemberAction.bind(null, zone.id)} />
@@ -231,7 +234,9 @@ export default async function AdminZoneDetailPage({
           ))}
         </ul>
         <p className="mt-2 text-xs text-gray-400">
-          移除只影響「能否看到專區」；已開通的課程觀看權限不會被取消（需到課程的觀看名單移除）。
+          {isSubscription
+            ? "移出訂閱會員名單會立即停止本專區所有影片的觀看資格。"
+            : "移除只影響「能否看到專區」；已開通的課程觀看權限不會被取消（需到課程的觀看名單移除）。"}
         </p>
       </section>
 

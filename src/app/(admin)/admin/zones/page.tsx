@@ -9,6 +9,7 @@ export const metadata = { title: "企業專區 — 管理後台" };
 export default async function AdminZonesPage() {
   await pageGuardEditor();
   const zones = await prisma.courseGroup.findMany({
+    where: { kind: "BUSINESS" },
     include: {
       _count: { select: { members: true, courses: true, inviteCodes: true } },
     },

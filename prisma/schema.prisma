@@ -218,6 +218,7 @@ model CourseGroup {
   name         String // 顯示名稱（如 世華會學習專區）
   wallText     String? @db.Text // 非會員擋牆頁的說明文字（選填，如聯絡窗口）
   isActive     Boolean @default(true) // 停用 = 前台整區 404
+  kind         String  @default("BUSINESS") // BUSINESS=企業包班；SUBSCRIPTION=訂閱會員影片專區
   themePrimary String? // 專區主題色 #RRGGBB（標題區/按鈕）；空 = 全站預設靛藍
   themeAccent  String? // 輔助色 #RRGGBB（漸層第二色/徽章）；空 = 沿用主題色
 

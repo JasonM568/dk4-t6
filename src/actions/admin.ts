@@ -2389,7 +2389,7 @@ const zoneSlugSchema = z
   .min(1, "請填寫網址代稱")
   .regex(/^[a-z0-9-]+$/, "網址代稱只能用小寫英文、數字與連字號（-）");
 
-/** 建立企業專區 */
+/** 建立企業／訂閱專區 */
 export async function createZoneAction(
   _prev: ZoneActionState,
   formData: FormData,
@@ -2397,12 +2397,13 @@ export async function createZoneAction(
   await requireEditor();
   const name = String(formData.get("name") ?? "").trim();
   const slug = String(formData.get("slug") ?? "").trim().toLowerCase();
+  const kind = formData.get("kind") === "SUBSCRIPTION" ? "SUBSCRIPTION" : "BUSINESS";
   if (!name) return { error: "請填寫專區名稱" };
   const parsedSlug = zoneSlugSchema.safeParse(slug);
   if (!parsedSlug.success) return { error: parsedSlug.error.issues[0].message };
 
   try {
-    await prisma.courseGroup.create({ data: { name, slug } });
+    await prisma.courseGroup.create({ data: { name, slug, kind } });
   } catch (e) {
     if (e instanceof Error && e.message.includes("Unique constraint")) {
       return { error: `網址代稱「${slug}」已被使用，請換一個` };
@@ -2410,6 +2411,7 @@ export async function createZoneAction(
     throw e;
   }
   revalidatePath("/admin/zones");
+  revalidatePath("/admin/subscription");
   return { success: `已建立專區「${name}」` };
 }
 

@@ -75,6 +75,16 @@ export async function canWatchCourse(
     select: { id: true },
   });
   if (enrollment) return true;
+  // 訂閱專區的有效資格由專區會員名單管理：在名單內即可看全部專區影片；
+  // 移出名單立即失去資格，日後接訂閱金流時只需同步這份名單。
+  if (course.groupId) {
+    const group = await prisma.courseGroup.findUnique({
+      where: { id: course.groupId },
+      select: { kind: true },
+    });
+    if (group?.kind === "SUBSCRIPTION" && await isGroupMember(course.groupId, user.email))
+      return true;
+  }
   if (groupOpenAccessActive(course)) {
     return isGroupMember(course.groupId!, user.email);
   }

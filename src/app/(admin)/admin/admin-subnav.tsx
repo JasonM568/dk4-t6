@@ -14,6 +14,7 @@ const PLATFORM_TABS = [
   { href: "/admin/enrollments", label: "批次開通", editorOnly: true },
   { href: "/admin/orders", label: "訂單查詢" },
   { href: "/admin/zones", label: "企業專區", editorOnly: true },
+  { href: "/admin/subscription", label: "訂閱專區", editorOnly: true },
 ];
 const MARKETING_TABS = [
   { href: "/admin/broadcast", label: "Email群發", editorOnly: true },
@@ -36,6 +37,7 @@ const PLATFORM_PREFIXES = [
   "/admin/enrollments",
   "/admin/orders",
   "/admin/zones",
+  "/admin/subscription",
 ];
 const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/corporate", "/admin/sms"];
 const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff"];

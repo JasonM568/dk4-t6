@@ -1,0 +1,2 @@
+-- 專區類型：既有專區維持 BUSINESS；SUBSCRIPTION 會員可直接觀看其專區影片課程。
+ALTER TABLE "CourseGroup" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'BUSINESS';

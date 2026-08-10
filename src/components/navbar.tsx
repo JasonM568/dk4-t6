@@ -20,6 +20,13 @@ export async function Navbar() {
       select: { id: true, slug: true, title: true },
     })
     .catch(() => []);
+  const subscriptionZone = user?.email
+    ? await prisma.courseGroupMember.findFirst({
+        where: { email: user.email.toLowerCase(), group: { isActive: true, kind: "SUBSCRIPTION" } },
+        include: { group: { select: { slug: true, name: true } } },
+        orderBy: { createdAt: "desc" },
+      }).catch(() => null)
+    : null;
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
@@ -64,6 +71,14 @@ export async function Navbar() {
               className="text-sm text-gray-600 transition hover:text-black"
             >
               我的課程
+            </Link>
+          )}
+          {subscriptionZone && (
+            <Link
+              href={`/zone/${subscriptionZone.group.slug}`}
+              className="text-sm font-medium text-indigo-600 transition hover:text-indigo-800"
+            >
+              訂閱專區
             </Link>
           )}
           {isAdmin && (
