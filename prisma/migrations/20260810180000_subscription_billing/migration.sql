@@ -1,0 +1,11 @@
+CREATE TABLE "SubscriptionPlan" ("id" TEXT NOT NULL,"groupId" TEXT NOT NULL,"name" TEXT NOT NULL,"interval" TEXT NOT NULL,"price" INTEGER NOT NULL,"isActive" BOOLEAN NOT NULL DEFAULT true,"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"updatedAt" TIMESTAMP(3) NOT NULL,CONSTRAINT "SubscriptionPlan_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "Subscription" ("id" TEXT NOT NULL,"groupId" TEXT NOT NULL,"planId" TEXT NOT NULL,"email" TEXT NOT NULL,"userId" UUID,"status" TEXT NOT NULL DEFAULT 'PENDING',"provider" TEXT,"providerRef" TEXT,"currentPeriodEnd" TIMESTAMP(3),"cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false,"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"updatedAt" TIMESTAMP(3) NOT NULL,CONSTRAINT "Subscription_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "SubscriptionPayment" ("id" TEXT NOT NULL,"subscriptionId" TEXT NOT NULL,"amount" INTEGER NOT NULL,"status" TEXT NOT NULL DEFAULT 'PENDING',"providerTradeNo" TEXT,"paidAt" TIMESTAMP(3),"rawPayload" JSONB,"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,CONSTRAINT "SubscriptionPayment_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "Subscription_providerRef_key" ON "Subscription"("providerRef");
+CREATE INDEX "Subscription_email_status_idx" ON "Subscription"("email","status");
+CREATE INDEX "Subscription_groupId_status_idx" ON "Subscription"("groupId","status");
+CREATE INDEX "SubscriptionPayment_subscriptionId_status_idx" ON "SubscriptionPayment"("subscriptionId","status");
+ALTER TABLE "SubscriptionPlan" ADD CONSTRAINT "SubscriptionPlan_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "CourseGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_planId_fkey" FOREIGN KEY ("planId") REFERENCES "SubscriptionPlan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "CourseGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "SubscriptionPayment" ADD CONSTRAINT "SubscriptionPayment_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription"("id") ON DELETE CASCADE ON UPDATE CASCADE;

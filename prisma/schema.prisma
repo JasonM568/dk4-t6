@@ -252,8 +252,55 @@ model CourseGroup {
   members     CourseGroupMember[]
   inviteCodes GroupInviteCode[]
   dailyBriefs DailyBrief[]
+  subscriptionPlans SubscriptionPlan[]
+  subscriptions Subscription[]
 
   createdAt DateTime @default(now())
+}
+
+// 訂閱金流與會籍狀態：付款供應商 adapter 完成後，回呼只需寫入此處並同步 group member。
+model SubscriptionPlan {
+  id String @id @default(cuid())
+  groupId String
+  group CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name String
+  interval String // MONTHLY | YEARLY
+  price Int
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  subscriptions Subscription[]
+}
+model Subscription {
+  id String @id @default(cuid())
+  groupId String
+  group CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  planId String
+  plan SubscriptionPlan @relation(fields: [planId], references: [id])
+  email String
+  userId String? @db.Uuid
+  status String @default("PENDING") // PENDING | ACTIVE | FAILED | CANCELED | EXPIRED
+  provider String?
+  providerRef String? @unique
+  currentPeriodEnd DateTime?
+  cancelAtPeriodEnd Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  payments SubscriptionPayment[]
+  @@index([email, status])
+  @@index([groupId, status])
+}
+model SubscriptionPayment {
+  id String @id @default(cuid())
+  subscriptionId String
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount Int
+  status String @default("PENDING")
+  providerTradeNo String?
+  paidAt DateTime?
+  rawPayload Json?
+  createdAt DateTime @default(now())
+  @@index([subscriptionId, status])
 }
 
 // ── 訂閱專區每日財經剪報 ──
