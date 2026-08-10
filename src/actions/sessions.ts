@@ -89,8 +89,15 @@ export async function addSignupAction(
   const orderNoInput = String(formData.get("orderNo") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
   const phoneInput = String(formData.get("phone") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const isRetrain = String(formData.get("type")) === "retrain";
   if (!name) return { error: "請填寫姓名" };
+  if (email && !email.includes("@")) return { error: "Email 格式不正確" };
+  if (isRetrain) {
+    if (!email) return { error: "選擇複訓方案時請填寫舊生 Email 以驗證資格" };
+    const oldStudent = await prisma.studentRecord.findUnique({ where: { email }, select: { id: true } });
+    if (!oldStudent) return { error: "查無此 Email 的歷史學員資料，請改選新生或先匯入學員資料" };
+  }
 
   // 手機選填；但填了就一定要是能收簡訊的號碼——存進去卻發不出簡訊比留空更糟
   let phone: string | null = null;
@@ -117,6 +124,7 @@ export async function addSignupAction(
         sessionId,
         orderNo,
         name,
+        email: email || null,
         phone,
         product,
         orderedAt: new Date(),

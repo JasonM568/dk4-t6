@@ -376,6 +376,12 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           placeholder="手機（選填，09xxxxxxxx）"
           className="w-44 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
+        <input
+          name="email"
+          type="email"
+          placeholder="Email（複訓必填）"
+          className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        />
         <select
           name="type"
           defaultValue="new"
