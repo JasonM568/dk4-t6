@@ -10,6 +10,7 @@ const PLATFORM_TABS = [
   { href: "/admin/courses", label: "課程上架" },
   { href: "/admin/categories", label: "課程分類", editorOnly: true },
   { href: "/admin/members", label: "會員列表" },
+  { href: "/admin/students", label: "學員資料庫", editorOnly: true },
   { href: "/admin/members/import", label: "會員新增", editorOnly: true },
   { href: "/admin/enrollments", label: "批次開通", editorOnly: true },
   { href: "/admin/orders", label: "訂單查詢" },

@@ -12,12 +12,13 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
 
   // MemberStats 是 lazy upsert（首次付款成功才建立），新會員可能還沒有 → 用預設值
-  const [stats, orderCount] = await Promise.all([
+  const [stats, orderCount, studentRecord] = await Promise.all([
     prisma.memberStats.findUnique({
       where: { userId: user.id },
       include: { currentTier: true },
     }),
     prisma.order.count({ where: { userId: user.id } }),
+    prisma.studentRecord.findUnique({ where: { email: user.email?.trim().toLowerCase() ?? "" }, include: { histories: { orderBy: { attendedAt: "desc" } } } }),
   ]);
 
   const totalSpent = stats?.totalSpent ?? 0;
@@ -103,6 +104,8 @@ export default async function DashboardPage() {
         <Stat label="購買課程" value={`${coursesBought} 門`} />
         <Stat label="訂單數" value={`${orderCount} 筆`} />
       </div>
+
+      {studentRecord?.histories.length ? <section className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/40 p-5"><h2 className="font-bold">📖 我的歷史上課記錄</h2><ul className="mt-3 space-y-2 text-sm">{studentRecord.histories.map(h=><li key={h.id}>{h.courseName}{h.attendedAt?` · ${h.attendedAt.toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"})}`:""}</li>)}</ul></section> : null}
 
       {/* 快速連結 */}
       <div className="mt-6 flex gap-4">
