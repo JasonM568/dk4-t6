@@ -130,6 +130,20 @@ async function main() {
     check("超過 60 欄的 1shop 原始訂單可解析", rows.length === 1 && rows[0]?.orderNo === "W001");
   }
   {
+    // 1shop 自訂欄位會一併匯出：同行者可能是獨立欄位，也可能寫在訂單資訊裡。
+    const companionHeader = [...HEADER, "同行友人姓名", "訂單資訊"];
+    const companionRow = [
+      "P001", "2026-08-05 09:30:00", "已成立", "訂購人", "量子課", "已付款", "", "", "200",
+      "同行甲", "同行人姓名：同行乙",
+    ];
+    const rows = await parseOrderFile(csvBuf(`${companionHeader.join(",")}\n${companionRow.join(",")}\n`));
+    check(
+      "同行者獨立入列（自訂欄位與訂單資訊）",
+      rows[0]?.attendees.map((a) => a.name).join("、") === "訂購人、同行甲、同行乙",
+      JSON.stringify(rows[0]?.attendees),
+    );
+  }
+  {
     // 亂資料（缺必要標頭）→ 友善錯誤而非 crash
     await expectThrow("缺標頭友善錯誤", csvBuf("哈囉,這不是,訂單檔\n1,2,3\n"), "無法辨識檔案格式");
   }

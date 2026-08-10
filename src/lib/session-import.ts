@@ -5,7 +5,7 @@ import { normalizeMobile } from "@/lib/sms/phone";
 // 1shop 訂單檔匯入 → 場次報名歸類。
 // 規則：金流狀態含「已付款」的列，依「產品」欄比對場次關鍵字歸入（最長關鍵字優先）；
 // 訂單狀態含「取消」或金流狀態含「退款」的列，反向移除既有報名（訂單編號全域唯一）。
-// 匯入冪等：@@unique(sessionId, orderNo) + skipDuplicates，重複上傳不重複計數。
+// 匯入冪等：@@unique(sessionId, orderNo, attendeeKey) + skipDuplicates；同一訂單的同行者各自入列。
 // 不 import "server-only"：無機密，保留 tsx 腳本可測性；僅由 server actions 呼叫。
 
 /** 對不到場次關鍵字的已付款列：完整帶回給前端，讓管理員當場指定歸類。
@@ -19,6 +19,12 @@ export type UnmatchedOrderRow = {
   phone: string | null; // 原始字串，歸類寫入時才 normalizeMobile
   amount: number | null;
   orderedAt: string | null;
+  attendees: OrderAttendee[];
+};
+
+export type OrderAttendee = {
+  key: string;
+  name: string;
 };
 
 export type ImportReport = {
@@ -41,6 +47,7 @@ type ParsedRow = {
   phone: string;
   email: string;
   amount: number | null;
+  attendees: OrderAttendee[];
 };
 
 // 標頭名 → 欄位（以標頭定位，不吃死欄位順序；1shop 匯出格式變動時較耐受）
@@ -55,6 +62,40 @@ const HEADERS = {
   email: "顧客信箱",
   amount: "小計",
 } as const;
+
+/** 1shop 的自訂欄位會直接成為匯出欄位。各銷售頁的命名不同，因此以欄位
+ * 語意辨識同行者，而不是把欄位位置或某一個固定名稱寫死。 */
+const COMPANION_HEADER_RE = /同行|同伴|友人|朋友|(?:學員|參加(?:者|人)?|報名(?:者|人)?)(?:\s*(?:姓名|名字|名稱)|[0-9０-９])/;
+const ORDER_INFO_HEADER_RE = /訂單資訊|訂單備註|顧客備註|備註/;
+const COMPANION_IN_TEXT_RE = /(?:同行(?:者|人|友人)?|同伴|友人|朋友|學員|參加者?)\s*(?:姓名)?\s*(?:[0-9０-９]+)?\s*[:：]\s*([^\n\r]+)/g;
+
+function cleanAttendeeNames(value: string): string[] {
+  return value
+    .split(/[、,，;；|／/]/)
+    .map((name) => name.replace(/^[-－\s]+|[-－\s]+$/g, "").trim())
+    // 姓名不可含 email/電話等明顯非姓名字元；保留中英文與常見姓名符號。
+    .filter((name) => name.length >= 2 && name.length <= 40 && !/[@\d]/.test(name));
+}
+
+/** 從自訂同行欄位與訂單資訊文字找出同行者。未填就絕不根據數量猜名字。 */
+function findCompanionNames(header: string[], row: unknown[], buyerName: string): string[] {
+  const found: string[] = [];
+  const add = (value: string) => {
+    for (const name of cleanAttendeeNames(value)) {
+      if (name !== buyerName && !found.includes(name)) found.push(name);
+    }
+  };
+
+  header.forEach((label, index) => {
+    const value = String(row[index] ?? "").trim();
+    if (!value) return;
+    if (COMPANION_HEADER_RE.test(label) && label !== HEADERS.name) add(value);
+    if (ORDER_INFO_HEADER_RE.test(label)) {
+      for (const match of value.matchAll(COMPANION_IN_TEXT_RE)) add(match[1] ?? "");
+    }
+  });
+  return found;
+}
 
 /**
  * 1shop 的「建立日期」是不帶時區的台北牆上時間（"2026-08-03 22:01:16"）。
@@ -227,16 +268,22 @@ export async function parseOrderFile(buf: ArrayBuffer): Promise<ParsedRow[]> {
     const parsed = dateStr ? parseTaipei(dateStr) : null;
     const amountStr = cell(r, col.amount);
     const amount = amountStr ? Math.round(Number(amountStr)) : null;
+    const name = cell(r, col.name);
+    const companions = findCompanionNames(header, r, name);
     return {
       orderNo: cell(r, col.orderNo),
       orderedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed : null,
       orderStatus: cell(r, col.orderStatus),
-      name: cell(r, col.name),
+      name,
       product: cell(r, col.product),
       paymentStatus: cell(r, col.paymentStatus),
       phone: cell(r, col.phone),
       email: cell(r, col.email),
       amount: amount !== null && Number.isFinite(amount) ? amount : null,
+      attendees: [
+        { key: "buyer", name },
+        ...companions.map((companion, index) => ({ key: `companion-${index + 1}`, name: companion })),
+      ],
     };
   });
 }
@@ -275,6 +322,7 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
   const toCreate: {
     sessionId: string;
     orderNo: string;
+    attendeeKey: string;
     name: string;
     email: string | null;
     phone: string | null;
@@ -309,22 +357,26 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
         phone: row.phone || null,
         amount: row.amount,
         orderedAt: row.orderedAt?.toISOString() ?? null,
+        attendees: row.attendees,
       });
       unmatchedRows.set(row.product, list);
       continue;
     }
-    toCreate.push({
-      sessionId,
-      orderNo: row.orderNo,
-      name: row.name,
-      email: row.email || null,
-      // 正規化成 09XXXXXXXX；市話、分機、格式錯誤一律存 null——
-      // 簡訊模組寧可少一個收件人，也不要一個發不出去的號碼
-      phone: normalizeMobile(row.phone),
-      product: row.product,
-      amount: row.amount,
-      orderedAt: row.orderedAt,
-    });
+    for (const attendee of row.attendees) {
+      if (!attendee.name) continue;
+      toCreate.push({
+        sessionId,
+        orderNo: row.orderNo,
+        attendeeKey: attendee.key,
+        name: attendee.name,
+        // 同行者的聯絡資訊通常不在訂單中；只把訂購人的 email/手機帶入。
+        email: attendee.key === "buyer" ? row.email || null : null,
+        phone: attendee.key === "buyer" ? normalizeMobile(row.phone) : null,
+        product: row.product,
+        amount: row.amount,
+        orderedAt: row.orderedAt,
+      });
+    }
   }
 
   if (cancelOrderNos.length > 0) {

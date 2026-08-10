@@ -153,6 +153,7 @@ export async function assignUnmatchedAction(
     phone: string | null;
     amount: number | null;
     orderedAt: string | null;
+    attendees: { key: string; name: string }[];
   }[];
   try {
     const parsed: unknown = JSON.parse(String(formData.get("rows") ?? "[]"));
@@ -164,7 +165,14 @@ export async function assignUnmatchedAction(
         typeof (r as { orderNo?: unknown }).orderNo === "string" &&
         !!(r as { orderNo: string }).orderNo &&
         typeof (r as { name?: unknown }).name === "string" &&
-        !!(r as { name: string }).name,
+        !!(r as { name: string }).name &&
+        Array.isArray((r as { attendees?: unknown }).attendees) &&
+        (r as { attendees: unknown[] }).attendees.every(
+          (a) => !!a && typeof a === "object" &&
+            typeof (a as { key?: unknown }).key === "string" &&
+            typeof (a as { name?: unknown }).name === "string" &&
+            !!(a as { name: string }).name,
+        ),
     );
     if (rows.length === 0) return { error: "名單資料不完整，請重新上傳訂單檔" };
   } catch {
@@ -177,20 +185,24 @@ export async function assignUnmatchedAction(
   });
   if (!session) return { error: "場次不存在（可能剛被刪除），請重新選擇" };
 
-  const res = await prisma.sessionSignup.createMany({
-    data: rows.map((r) => {
+  const attendees = rows.flatMap((r) =>
+    r.attendees.map((attendee) => {
       const orderedAt = r.orderedAt ? new Date(r.orderedAt) : null;
       return {
         sessionId: session.id,
         orderNo: r.orderNo,
-        name: r.name,
-        email: r.email || null,
-        phone: normalizeMobile(r.phone), // 與訂單檔匯入同一套正規化
+        attendeeKey: attendee.key,
+        name: attendee.name,
+        email: attendee.key === "buyer" ? r.email || null : null,
+        phone: attendee.key === "buyer" ? normalizeMobile(r.phone) : null,
         product,
         amount: typeof r.amount === "number" ? r.amount : null,
         orderedAt: orderedAt && !Number.isNaN(orderedAt.getTime()) ? orderedAt : null,
       };
     }),
+  );
+  const res = await prisma.sessionSignup.createMany({
+    data: attendees,
     skipDuplicates: true,
   });
 
@@ -204,7 +216,7 @@ export async function assignUnmatchedAction(
 
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
-  const dup = rows.length - res.count;
+  const dup = attendees.length - res.count;
   return {
     success: `已把「${product}」${res.count} 筆歸入「${session.title}」${
       dup > 0 ? `（${dup} 筆已在名單略過）` : ""

@@ -417,6 +417,7 @@ model SessionSignup {
   sessionId String
   session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   orderNo   String // 1shop 訂單編號
+  attendeeKey String @default("buyer") // 同張訂單的報名者識別（buyer / companion-1…）
   name      String // 顧客姓名（看板顯示）
   email     String?
   phone     String?
@@ -426,7 +427,7 @@ model SessionSignup {
 
   createdAt DateTime @default(now())
 
-  @@unique([sessionId, orderNo]) // 重複上傳冪等（同單同場次只算一筆）
+  @@unique([sessionId, orderNo, attendeeKey]) // 重複上傳冪等；一張訂單可有多位同行者
   @@index([sessionId])
 }
 
