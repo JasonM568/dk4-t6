@@ -14,6 +14,7 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { buildFollowUpProp } from "./followup-stats";
 import { toDatetimeLocal } from "./datetime";
 import { isFollowUpFilter } from "@/lib/email/followup";
+import { BROADCAST_PRESETS } from "@/lib/email/presets";
 
 export const metadata = { title: "Email群發 — 管理後台" };
 
@@ -40,12 +41,13 @@ export default async function BroadcastPage({
     page?: string;
     from?: string;
     tpl?: string;
+    preset?: string;
     followUp?: string;
     filter?: string;
   }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw, from, tpl, followUp: followUpId, filter } = await searchParams;
+  const { page: pageRaw, from, tpl, preset, followUp: followUpId, filter } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
   // 舊信帶入：?from=<broadcastId> 把該封信的主旨/內文/關聯課程帶進表單
@@ -60,6 +62,9 @@ export default async function BroadcastPage({
   // 範本庫帶入：?tpl=<templateId>（與 ?from 同款流程，內容來源改為 MailTemplate）
   const savedTemplate = !template && tpl
     ? await prisma.mailTemplate.findUnique({ where: { id: tpl } })
+    : null;
+  const selectedPreset = !template && !savedTemplate
+    ? BROADCAST_PRESETS.find((p) => p.id === preset) ?? null
     : null;
 
   // 跟進信模式：?followUp=<broadcastId>&filter=OPENED|NOT_OPENED|CLICKED
@@ -187,6 +192,36 @@ export default async function BroadcastPage({
         </section>
       )}
 
+      {!followUpProp && (
+        <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+          <h2 className="mb-2 text-sm font-medium text-amber-900">✨ 推薦 EDM 範本</h2>
+          <div className="space-y-2">
+            {BROADCAST_PRESETS.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/80 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/admin/broadcast?preset=${p.id}`}
+                    className={`font-medium hover:underline ${selectedPreset?.id === p.id ? "text-amber-900" : "text-indigo-600"}`}
+                  >
+                    {selectedPreset?.id === p.id ? "▸ " : ""}{p.name}
+                  </Link>
+                  <p className="text-xs text-gray-500">{p.description}</p>
+                </div>
+                <Link
+                  href={`/admin/broadcast?preset=${p.id}`}
+                  className="rounded border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  載入並預覽
+                </Link>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-amber-800">
+            載入後請補上課程日期、地點、截止日與正確報名連結；範本不會自動選取或寄送任何名單。
+          </p>
+        </section>
+      )}
+
       {template && (
         <div className="mb-4 rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
           📄 已帶入範本「{template.subject}」——主旨、內文、關聯課程已填好，
@@ -207,6 +242,11 @@ export default async function BroadcastPage({
           ）
         </div>
       )}
+      {selectedPreset && (
+        <div className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          ✨ 已載入推薦範本「{selectedPreset.name}」並開啟即時預覽。請確認活動資訊與報名連結後，再選擇收件名單。
+        </div>
+      )}
       {followUpProp && (
         <div className="mb-4 rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
           📬 正在建立跟進信——寄給「{followUpProp.sourceSubject}」的
@@ -220,19 +260,20 @@ export default async function BroadcastPage({
         </div>
       )}
       <BroadcastForm
-        key={from ?? tpl ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
+        key={from ?? tpl ?? preset ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
         courses={courses}
         groups={groupOptions}
         memberCount={memberCount}
         members={memberOptions}
         sendAction={sendBroadcastAction}
         followUp={followUpProp ?? undefined}
+        initialPreview={!!selectedPreset}
         defaultValues={
-          template || savedTemplate
+          template || savedTemplate || selectedPreset
             ? {
-                subject: (template ?? savedTemplate)!.subject,
-                body: (template ?? savedTemplate)!.body,
-                courseId: (template ?? savedTemplate)!.courseId ?? "",
+                subject: (template ?? savedTemplate ?? selectedPreset)!.subject,
+                body: (template ?? savedTemplate ?? selectedPreset)!.body,
+                courseId: (template ?? savedTemplate)?.courseId ?? "",
                 audience: "all",
                 groupIds: [],
                 manualList: "",

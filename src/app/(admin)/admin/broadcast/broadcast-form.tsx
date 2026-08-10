@@ -64,6 +64,7 @@ type BroadcastFormProps = {
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
   defaultValues?: BroadcastFormDefaults; // 編輯排程/草稿時帶入
   followUp?: BroadcastFollowUp; // 跟進信模式：取代發送對象區塊
+  initialPreview?: boolean;
 };
 
 /** 電子報群發表單：選發送對象（全部會員/名單群組/手動名單）→ 寄測試信 → 正式群發/排程/存草稿 */
@@ -75,6 +76,7 @@ export function BroadcastForm({
   sendAction,
   defaultValues,
   followUp,
+  initialPreview = false,
 }: BroadcastFormProps) {
   const [state, formAction, pending] = useActionState<BroadcastState, FormData>(
     sendAction,
@@ -125,7 +127,7 @@ export function BroadcastForm({
   // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
   // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
   const [bodyText, setBodyText] = useState(defaultValues?.body ?? "");
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(initialPreview);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgError, setImgError] = useState("");
   const imgInputRef = useRef<HTMLInputElement>(null);
