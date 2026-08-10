@@ -68,6 +68,7 @@ export default async function AdminWebinarsPage() {
               groupId: w.groupId,
               isActive: w.isActive,
               endDate: w.endDate?.toISOString() ?? null,
+              unpublishAt: w.unpublishAt?.toISOString() ?? null,
               requests: w.requests.map((r) => ({
                 id: r.id,
                 email: r.email,

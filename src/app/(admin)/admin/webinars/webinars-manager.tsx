@@ -87,6 +87,7 @@ export type WebinarRow = {
   groupId: string | null;
   isActive: boolean;
   endDate: string | null; // 結束日：過了隔天（台北時間）看板下架＋報名頁自動關閉；null = 不自動結束
+  unpublishAt: string | null; // 精確下架時間；到點立即從首頁/看板隱藏並關閉報名
   requests: WebinarRequestRow[];
 };
 
@@ -119,6 +120,15 @@ function WebinarFields({
   const [dmImage, setDmImage] = useState(initial?.dmImage ?? "");
   const [dmError, setDmError] = useState("");
   const [dmUploading, setDmUploading] = useState(false);
+  const toTaipeiDatetimeLocal = (value: string | null | undefined) => {
+    if (!value) return "";
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(value));
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+  };
 
   const onDmFile = async (file: File | undefined) => {
     if (!file) return;
@@ -160,6 +170,15 @@ function WebinarFields({
             type="date"
             name="endDate"
             defaultValue={initial?.endDate ? initial.endDate.slice(0, 10) : ""}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-black focus:outline-none"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-gray-500" title="台灣時間；到點立即自動從首頁／看板下架並關閉報名">
+          下架時間
+          <input
+            type="datetime-local"
+            name="unpublishAt"
+            defaultValue={toTaipeiDatetimeLocal(initial?.unpublishAt)}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-black focus:outline-none"
           />
         </label>
@@ -433,7 +452,8 @@ export function WebinarCard({
             已關閉
           </span>
         )}
-        {webinar.isActive && hasEndedInTaipei(webinar.endDate) && (
+        {webinar.isActive && (hasEndedInTaipei(webinar.endDate) ||
+          (!!webinar.unpublishAt && new Date(webinar.unpublishAt) <= new Date())) && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
             已結束（看板下架、報名頁已關）
           </span>

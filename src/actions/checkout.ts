@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
+import { isCoursePublicActive } from "@/lib/course-access";
 
 export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
@@ -39,7 +40,7 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
 
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   // 企業專區課程（groupId 有值）不販售，一律視同不存在，堵住拿 courseId 直接下單
-  if (!course || !course.isPublished || course.groupId) {
+  if (!course || !isCoursePublicActive(course) || course.groupId) {
     return { ok: false, error: "課程不存在" };
   }
 

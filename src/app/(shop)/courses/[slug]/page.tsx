@@ -7,7 +7,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 import { getProfileRole } from "@/lib/supabase/admin";
 import { isAdminRole } from "@/lib/auth/role";
-import { canViewGroupCourse, canWatchCourse } from "@/lib/course-access";
+import { canViewGroupCourse, canWatchCourse, isCoursePublicActive } from "@/lib/course-access";
 import { formatNT } from "@/lib/format";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { BuyButton } from "@/components/buy-button";
@@ -25,7 +25,7 @@ export default async function CourseDetailPage({
       group: { select: { slug: true, name: true } },
     },
   });
-  if (!course || !course.isPublished) notFound();
+  if (!course || !isCoursePublicActive(course)) notFound();
 
   // 可選登入：未登入也能看課程詳情，只是沒有會員折扣
   const user = await getAuthUser();

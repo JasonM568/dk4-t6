@@ -39,6 +39,7 @@ export default async function BoardPage() {
         id: true,
         title: true,
         endDate: true,
+        unpublishAt: true,
         requests: {
           orderBy: { createdAt: "asc" },
           select: { id: true, email: true, name: true },
@@ -48,8 +49,10 @@ export default async function BoardPage() {
   ]);
   // 結束日（場次以 endDate ?? eventDate 為準）過了隔天自動下架；沒填日期 = 永遠顯示
   const sessions = allSessions.filter((s) => !hasEndedInTaipei(s.endDate ?? s.eventDate));
-  const webinars = allWebinars.filter((w) => !hasEndedInTaipei(w.endDate));
   const now = new Date();
+  const webinars = allWebinars.filter(
+    (w) => !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > now),
+  );
   // 舊生 = 報名複訓方案（1shop 產品名含「複訓」）；其餘為新生
   const isRetrain = (product: string | null) => !!product?.includes("複訓");
 

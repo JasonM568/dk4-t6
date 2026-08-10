@@ -285,6 +285,7 @@ model Course {
   price       Int // 優惠價 = 實際售價（新台幣整數，金流以此計算）
   sortOrder   Int      @default(0) // 前台顯示順序（小的在前，後台上移/下移調整）
   isPublished Boolean  @default(false)
+  unpublishAt DateTime? // 公開課程自動下架時間；到點後型錄、詳情與結帳一律關閉
   groupId     String? // 所屬企業專區；null = 一般公開販售課程
   group       CourseGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   openToGroupUntil DateTime? // 專區限時免開通觀看：此日期前專區會員不需 Enrollment 即可觀看；null/過期 = 回到手動開通
@@ -338,6 +339,7 @@ model Webinar {
   groupId      String? // 索取者自動加入的 MailGroup；null = 不加名單
   isActive     Boolean @default(true) // 關閉後頁面顯示「已結束」不再寄信
   endDate      DateTime? // 講座結束日：當天照常，隔天（台北時間）看板自動下架＋報名頁自動關閉；null = 不自動結束
+  unpublishAt  DateTime? // 精確自動下架時間；與舊結束日並存，任一到期即關閉
 
   requests WebinarRequest[]
 

@@ -79,6 +79,11 @@ const courseSchema = z.object({
     .nullable(),
   price: z.coerce.number({ message: "優惠價要填數字" }).int("優惠價要填整數").min(0, "優惠價不能是負數"),
   isPublished: z.coerce.boolean(),
+  unpublishAt: z
+    .string()
+    .regex(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})?$/, "下架時間格式不正確")
+    .transform((v) => (v ? new Date(`${v}:00+08:00`) : null))
+    .nullable(),
   // 所屬企業專區；空字串（一般課程）→ null
   groupId: z
     .string()
@@ -108,6 +113,7 @@ function courseInput(formData: FormData) {
     listPrice: String(formData.get("listPrice") ?? "").trim(),
     price: formData.get("price"),
     isPublished: formData.get("isPublished") === "on",
+    unpublishAt: String(formData.get("unpublishAt") ?? "").trim(),
     groupId: String(formData.get("groupId") ?? ""),
     openToGroupUntil: String(formData.get("openToGroupUntil") ?? "").trim(),
   };
@@ -165,6 +171,8 @@ export async function createCourse(
     throw e;
   }
   revalidatePath("/admin/courses");
+  revalidatePath("/");
+  revalidatePath("/courses");
   redirect("/admin/courses");
 }
 
@@ -200,6 +208,9 @@ export async function updateCourse(
   }
   revalidatePath("/admin/courses");
   revalidatePath(`/admin/courses/${id}`);
+  revalidatePath("/");
+  revalidatePath("/courses");
+  revalidatePath(`/courses/${parsed.data.slug}`);
   redirect("/admin/courses");
 }
 

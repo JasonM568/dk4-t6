@@ -21,6 +21,7 @@ type CourseFormProps = {
     listPrice?: number | null;
     price?: number;
     isPublished?: boolean;
+    unpublishAt?: Date | null;
     categoryIds?: string[];
     groupId?: string | null;
     openToGroupUntil?: Date | null;
@@ -77,6 +78,16 @@ export function CourseForm({
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const busy = pending || coverUploading || introUploading;
+
+  const toTaipeiDatetimeLocal = (value: Date | null | undefined) => {
+    if (!value) return "";
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+  };
 
   async function onCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -359,6 +370,17 @@ export function CourseForm({
         />
         立即上架
       </label>
+      <Field label="公開課程自動下架時間（選填）">
+        <input
+          name="unpublishAt"
+          type="datetime-local"
+          defaultValue={toTaipeiDatetimeLocal(defaultValues.unpublishAt)}
+          className="input"
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          台灣時間；到點後會自動從首頁、課程列表與購買頁下架。留空 = 持續公開。
+        </p>
+      </Field>
 
       {uploadError && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

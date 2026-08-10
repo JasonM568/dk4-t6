@@ -10,7 +10,19 @@ import { canAccessAdmin } from "@/lib/auth/role";
  * 新增任何前台課程查詢（含 sitemap/搜尋）都必須用這裡，不要自己寫 where。
  */
 export function publicCourseWhere() {
-  return { isPublished: true, groupId: null } as const;
+  return {
+    isPublished: true,
+    groupId: null,
+    OR: [{ unpublishAt: null }, { unpublishAt: { gt: new Date() } }],
+  };
+}
+
+/** 公開課程是否仍在販售期間（型錄、詳情、結帳共用）。 */
+export function isCoursePublicActive(course: {
+  isPublished: boolean;
+  unpublishAt: Date | null;
+}): boolean {
+  return course.isPublished && (!course.unpublishAt || course.unpublishAt > new Date());
 }
 
 /** email 正規化：會籍寫入與比對兩端都必須經過這裡，否則大小寫/空白會誤擋 */

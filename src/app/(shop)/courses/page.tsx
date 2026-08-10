@@ -3,6 +3,8 @@ import { CourseCard } from "@/components/course-card";
 import { publicCourseWhere } from "@/lib/course-access";
 
 export const metadata = { title: "所有課程 — 希望學院學習平台" };
+// 課程可設定自動下架時間，型錄必須在到點後立即更新。
+export const dynamic = "force-dynamic";
 
 export default async function CoursesPage() {
   const courses = await prisma.course.findMany({

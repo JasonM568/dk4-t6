@@ -15,6 +15,7 @@ import { buildFollowUpProp } from "./followup-stats";
 import { toDatetimeLocal } from "./datetime";
 import { isFollowUpFilter } from "@/lib/email/followup";
 import { BROADCAST_PRESETS } from "@/lib/email/presets";
+import { DeleteTemplateButton } from "./delete-template-button";
 
 export const metadata = { title: "Email群發 — 管理後台" };
 
@@ -174,14 +175,10 @@ export default async function BroadcastPage({
                 <span className="min-w-0 flex-1 truncate text-xs text-gray-400">
                   {t.subject}
                 </span>
-                <form action={deleteMailTemplateAction.bind(null, t.id)}>
-                  <SubmitButton
-                    pendingText="刪除中…"
-                    className="text-xs text-gray-400 hover:text-red-600 hover:underline"
-                  >
-                    刪除
-                  </SubmitButton>
-                </form>
+                <DeleteTemplateButton
+                  templateName={t.name}
+                  deleteAction={deleteMailTemplateAction.bind(null, t.id)}
+                />
               </li>
             ))}
           </ul>

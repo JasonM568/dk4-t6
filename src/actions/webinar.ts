@@ -41,8 +41,12 @@ async function parseWebinarForm(formData: FormData) {
   const isActive = formData.get("isActive") === "on";
   const endStr = String(formData.get("endDate") ?? "").trim();
   const endDate = endStr ? new Date(endStr) : null;
+  const unpublishRaw = String(formData.get("unpublishAt") ?? "").trim();
+  const unpublishAt = unpublishRaw ? new Date(`${unpublishRaw}:00+08:00`) : null;
   if (endDate && Number.isNaN(endDate.getTime()))
     return { error: "結束日期格式錯誤" as const };
+  if (unpublishAt && Number.isNaN(unpublishAt.getTime()))
+    return { error: "下架時間格式錯誤" as const };
 
   if (!SLUG_RE.test(slug)) return { error: "網址代稱只能用小寫英數與連字號（例：ai-webinar-0815）" as const };
   if (!title) return { error: "請填寫講座標題" as const };
@@ -76,6 +80,7 @@ async function parseWebinarForm(formData: FormData) {
     groupId,
     isActive,
     endDate,
+    unpublishAt,
   };
 }
 
@@ -107,6 +112,8 @@ export async function createWebinarAction(
     return { error: `網址代稱「${parsed.slug}」已被使用` };
   }
   revalidatePath("/admin/webinars");
+  revalidatePath("/");
+  revalidatePath("/board");
   // 建立成功直接回場次列表（新場次排最上面），建立頁只負責建立
   redirect("/admin/webinars");
 }
@@ -126,6 +133,8 @@ export async function updateWebinarAction(
   }
   revalidatePath("/admin/webinars");
   revalidatePath(`/webinar/${parsed.slug}`);
+  revalidatePath("/");
+  revalidatePath("/board");
   return { success: "已更新" };
 }
 
@@ -134,6 +143,8 @@ export async function deleteWebinarAction(id: string) {
   await requireEditor();
   await prisma.webinar.delete({ where: { id } }).catch(() => undefined);
   revalidatePath("/admin/webinars");
+  revalidatePath("/");
+  revalidatePath("/board");
 }
 
 /** 管理員編輯索取紀錄（姓名/email 打錯修正） */
@@ -187,7 +198,8 @@ export async function requestWebinarLinkAction(
   if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確，請再確認" };
 
   const webinar = await prisma.webinar.findUnique({ where: { slug } });
-  if (!webinar || !webinar.isActive || hasEndedInTaipei(webinar.endDate))
+  if (!webinar || !webinar.isActive || hasEndedInTaipei(webinar.endDate) ||
+    (!!webinar.unpublishAt && webinar.unpublishAt <= new Date()))
     return { error: "此講座報名已結束" };
 
   // 同 email 60 秒限流：防止被拿來重複轟炸別人的信箱

@@ -4,6 +4,10 @@ import { CourseCard } from "@/components/course-card";
 import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { publicCourseWhere } from "@/lib/course-access";
 import { isPageEnabled } from "@/lib/site-pages";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
+
+// 自動下架是時間觸發，沒有管理員操作可觸發 revalidate；首頁需即時判斷。
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const [courses, webinars, corporateEnabled] = await Promise.all([
@@ -22,11 +26,18 @@ export default async function HomePage() {
         title: true,
         description: true,
         dmImage: true,
+        endDate: true,
+        unpublishAt: true,
       },
     }),
     // 企業包班區塊跟 /corporate 分頁共用開關（後台「分頁管理」）
     isPageEnabled("corporate"),
   ]);
+
+  // 舊講座以 endDate（隔天起下架）相容；新講座可設定精確的 unpublishAt。
+  const activeWebinars = webinars.filter(
+    (w) => !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > new Date()),
+  );
 
   return (
     <div>
@@ -59,17 +70,17 @@ export default async function HomePage() {
       </section>
 
       {/* 近期講座：進行中的講座報名頁（後台關閉報名即自動消失） */}
-      {webinars.length > 0 && (
+      {activeWebinars.length > 0 && (
         <section className="mx-auto max-w-6xl px-4 py-12">
           <h2 className="mb-6 text-center text-2xl font-bold">🎤 近期講座</h2>
           <div
             className={`grid gap-6 ${
-              webinars.length === 1
+              activeWebinars.length === 1
                 ? "mx-auto max-w-xl"
                 : "sm:grid-cols-2 lg:grid-cols-3"
             }`}
           >
-            {webinars.map((w) => (
+            {activeWebinars.map((w) => (
               <Link
                 key={w.id}
                 href={`/webinar/${w.slug}`}

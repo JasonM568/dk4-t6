@@ -50,7 +50,8 @@ export default async function WebinarPage({
             {webinar.description}
           </p>
         )}
-        {webinar.isActive && !hasEndedInTaipei(webinar.endDate) ? (
+        {webinar.isActive && !hasEndedInTaipei(webinar.endDate) &&
+        (!webinar.unpublishAt || webinar.unpublishAt > new Date()) ? (
           <WebinarRequestForm slug={slug} senderEmail={senderEmail} />
         ) : (
           <p className="rounded-xl bg-gray-50 px-4 py-6 text-center text-gray-500">

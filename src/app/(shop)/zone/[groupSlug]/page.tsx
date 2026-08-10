@@ -99,7 +99,11 @@ export default async function ZonePage({
 
   // ── 會員/後台幹部：專區課程列表 ──
   const courses = await prisma.course.findMany({
-    where: { groupId: zone.id, isPublished: true },
+    where: {
+      groupId: zone.id,
+      isPublished: true,
+      OR: [{ unpublishAt: null }, { unpublishAt: { gt: new Date() } }],
+    },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
   });
 
