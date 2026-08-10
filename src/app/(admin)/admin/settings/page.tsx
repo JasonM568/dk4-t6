@@ -5,6 +5,7 @@ import { pageGuardFullAdmin } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { TrackingForm } from "./tracking-form";
 import { CreateCustomPageForm, CustomPageCard } from "./custom-pages-manager";
+import Link from "next/link";
 
 export const metadata = { title: "分頁管理 — 管理後台" };
 
@@ -83,6 +84,12 @@ export default async function AdminSettingsPage() {
           <h3 className="mb-2 text-sm font-medium">新增頁面</h3>
           <CreateCustomPageForm />
         </div>
+      </section>
+
+      <section className="mt-10 rounded-xl border border-gray-200 p-4">
+        <h2 className="text-lg font-bold">知識專欄</h2>
+        <p className="mt-1 text-sm text-gray-500">管理顧院長文章：草稿、發布、下架，以及公開／訂閱會員限定閱讀。</p>
+        <Link href="/admin/settings/knowledge" className="mt-3 inline-block rounded-lg border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50">管理知識專欄</Link>
       </section>
 
       {/* 追蹤碼設定 */}

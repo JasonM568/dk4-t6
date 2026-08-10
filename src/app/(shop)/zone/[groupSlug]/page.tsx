@@ -134,6 +134,11 @@ export default async function ZonePage({
         <p className="mt-2 mb-8 text-sm text-white/85">
           專區課程由管理員開通觀看權限；已開通的課程點進去即可上課。
         </p>
+        {zone.kind === "SUBSCRIPTION" && (
+          <Link href={`/zone/${zone.slug}/briefs`} className="mb-8 inline-flex rounded-lg bg-white px-4 py-2 text-sm font-medium shadow-sm" style={{ color: primary }}>
+            查看每日財經剪報 →
+          </Link>
+        )}
         {courses.length === 0 ? (
           <p className="text-white/85">課程籌備中，敬請期待。</p>
         ) : (

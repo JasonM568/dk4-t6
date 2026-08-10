@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateInviteCode, redeemInvite } from "@/lib/zone-invite";
 import { autoEnrollOnRegister } from "@/lib/zone-enroll";
+import { claimStudentRecord } from "@/lib/student-history";
 import { claimPendingEnrollments } from "@/lib/pending-enroll";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/course-access";
@@ -316,6 +317,11 @@ export async function registerAction(
       await claimPendingEnrollments(email, data.user.id);
     } catch (e) {
       console.error("[register] 待開通認領失敗", { email, e });
+    }
+    try {
+      await claimStudentRecord(email, data.user.id);
+    } catch (e) {
+      console.error("[register] 歷史學員資料認領失敗", { email, e });
     }
   }
 

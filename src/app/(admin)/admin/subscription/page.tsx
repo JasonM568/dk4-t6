@@ -32,6 +32,7 @@ export default async function AdminSubscriptionPage() {
             <form action={toggleZoneActive.bind(null, z.id, !z.isActive)}>
               <button className="text-sm text-indigo-600 hover:underline">{z.isActive ? "停用" : "啟用"}</button>
             </form>
+            <Link href={`/admin/subscription/${z.slug}/briefs`} className="text-sm text-indigo-600 hover:underline">剪報</Link>
             <Link href={`/admin/zones/${z.id}`} className="text-sm text-indigo-600 hover:underline">管理</Link>
           </li>
         ))}

@@ -65,6 +65,32 @@ model MemberProfile {
   @@index([phone])
 }
 
+// 歷史學員主檔：尚未註冊者也可先匯入；註冊後以 email 自動認領。
+model StudentRecord {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  phone         String?
+  claimedUserId String?  @db.Uuid
+  claimedAt     DateTime?
+  histories     StudentCourseHistory[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model StudentCourseHistory {
+  id        String   @id @default(cuid())
+  studentId String
+  student   StudentRecord @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseName String
+  attendedAt DateTime?
+  source    String? // IMPORT / MANUAL / 1SHOP
+  note      String? @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
+}
+
 // 看板登入共享限流（跨 serverless instance）：key = "ip:<addr>" 或 "global"
 model BoardLoginThrottle {
   key         String    @id
@@ -225,8 +251,39 @@ model CourseGroup {
   courses     Course[]
   members     CourseGroupMember[]
   inviteCodes GroupInviteCode[]
+  dailyBriefs DailyBrief[]
 
   createdAt DateTime @default(now())
+}
+
+// ── 訂閱專區每日財經剪報 ──
+// 管理員只需上傳新聞截圖；標題、日期與三款固定封面由系統產生。
+model DailyBrief {
+  id           String   @id @default(cuid())
+  groupId      String
+  group        CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  dateKey      String   // Asia/Taipei 日期，YYYY-MM-DD；每個專區每天一篇
+  title        String
+  coverVariant Int      @default(0) // 0/1/2 三款系統固定封面輪替
+  status       String   @default("PUBLISHED") // DRAFT | PUBLISHED | UNPUBLISHED
+  publishedAt  DateTime?
+  images       DailyBriefImage[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([groupId, dateKey])
+  @@index([groupId, status, dateKey])
+}
+
+model DailyBriefImage {
+  id        String     @id @default(cuid())
+  briefId   String
+  brief     DailyBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  sortOrder Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  @@index([briefId, sortOrder])
 }
 
 // 專區會員：以 email 為鍵（存入前一律 toLowerCase().trim()），
@@ -320,6 +377,28 @@ model CustomPage {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ── 知識專欄 ──
+// 從「系統設定 → 分頁管理」維護；可公開或僅限任一訂閱專區會員閱讀。
+model KnowledgeArticle {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  title        String
+  summary      String   @db.Text
+  coverImage   String?
+  content      String   @db.Text
+  images       String[] @default([])
+  tags         String[] @default([])
+  visibility   String   @default("PUBLIC") // PUBLIC | SUBSCRIBER
+  status       String   @default("DRAFT") // DRAFT | PUBLISHED | UNPUBLISHED
+  publishedAt  DateTime?
+  unpublishAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([visibility, status])
 }
 
 // ── 講座報名頁 ──
