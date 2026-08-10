@@ -118,9 +118,17 @@ async function main() {
   );
   await expectThrow(
     "CSV 超過欄位上限",
-    csvBuf(Array.from({ length: 61 }, (_, i) => `c${i}`).join(",") + "\nx".repeat(3)),
+    csvBuf(Array.from({ length: 151 }, (_, i) => `c${i}`).join(",") + "\nx".repeat(3)),
     "欄位數過多",
   );
+  {
+    // 1shop 原始訂單資料新版有超過 60 欄；只要必要欄位仍在，就必須能讀取。
+    const wideHeader = [...HEADER, ...Array.from({ length: 61 }, (_, i) => `延伸欄位${i + 1}`)];
+    const wideRow = ["W001", "2026-08-05 09:30:00", "已成立", "寬表測試", "量子課", "已付款", "", "", "100",
+      ...Array.from({ length: 61 }, () => "")];
+    const rows = await parseOrderFile(csvBuf(`${wideHeader.join(",")}\n${wideRow.join(",")}\n`));
+    check("超過 60 欄的 1shop 原始訂單可解析", rows.length === 1 && rows[0]?.orderNo === "W001");
+  }
   {
     // 亂資料（缺必要標頭）→ 友善錯誤而非 crash
     await expectThrow("缺標頭友善錯誤", csvBuf("哈囉,這不是,訂單檔\n1,2,3\n"), "無法辨識檔案格式");
