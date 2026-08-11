@@ -76,6 +76,8 @@ model StudentRecord {
   histories     StudentCourseHistory[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([phone])
 }
 
 model StudentCourseHistory {
