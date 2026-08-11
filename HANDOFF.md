@@ -1,6 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
+> 最後補記：**2026-08-11（EDM 影片行銷列為下一階段待辦；目前先討論學員資料庫）**
 > 最後更新：**2026-08-08（資安修復 6 項全數完成並部署：越權/升版/xlsx/看板/結帳/標頭）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
@@ -16,6 +17,15 @@
 - GitHub repo：<https://github.com/JasonM568/dk4-t6.git>（push `main` 即自動部署 production）
 - Vercel 專案：`tjs-projects-435187fd/course-platform`
 - dev server：`pnpm dev` → http://localhost:3000
+
+---
+
+## 📋 下一階段待辦
+
+- [ ] **EDM 影片行銷／階段式影片漏斗**：影片內容以 YouTube 不公開或 Vimeo 嵌入平台頁面，平台僅保存標題、封面、說明、嵌入連結、觀看權限與上下架時間；EDM 顯示封面＋播放按鈕導向指定頁。
+  - 第一版：公開／Email 解鎖／登入會員／訂閱會員四種觀看權限，並以 EDM 點擊與影片頁瀏覽做分眾。
+  - 第二版：串接播放器觀看進度，實作「看第 1 支 → 寄第 2 支 → 課程轉換」的自動化流程。
+  - 潛在名單可用 YouTube 不公開；付費學員與訂閱內容優先 Vimeo 並設定網域嵌入限制。
 
 ---
 
