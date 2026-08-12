@@ -6,7 +6,7 @@ import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
 import { explainMobile, normalizeMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { findStudentByPhone } from "@/lib/student-history";
-import { isRetrainProduct, assignGroups, type Meal } from "@/lib/session-roster";
+import { isRetrainProduct, assignGroups, assignRemaining, type Meal } from "@/lib/session-roster";
 
 // 課程場次看板：後台管理 actions（場次 CRUD / 訂單匯入 / 看板 4 位碼）
 
@@ -326,8 +326,9 @@ export async function setSignupGroupAction(id: string, groupNo: number | null) {
   revalidatePath("/board");
 }
 
-/** 自動分組：新舊生依報名時間 round-robin 平均散進各組（各組鏡射整體新舊比）。
- *  重跑會覆蓋所有手動調整（前端 confirm）；每組上限一併存回場次。 */
+/** 自動分組。mode=all：全量重分（覆蓋手動調整，前端 confirm）；
+ *  mode=fill：只補「未分組」的人進現有組（每日更新名單後的新報名），已分好的不動。
+ *  每組上限一併存回場次。 */
 export async function autoGroupAction(
   sessionId: string,
   _prev: SessionFormState,
@@ -337,16 +338,21 @@ export async function autoGroupAction(
   const cap = Math.floor(Number(formData.get("cap")));
   if (!Number.isFinite(cap) || cap < 1 || cap > 99)
     return { error: "每組人數上限請填 1〜99" };
+  const fillOnly = String(formData.get("mode")) === "fill";
 
   const signups = await prisma.sessionSignup.findMany({
     where: { sessionId },
     select: {
       id: true, product: true, deferredToSessionId: true, orderedAt: true, createdAt: true,
+      groupNo: true,
     },
   });
   if (signups.every((s) => s.deferredToSessionId)) return { error: "沒有可分組的學員" };
 
-  const { assignments, groupCount } = assignGroups(signups, cap);
+  const { assignments, groupCount } = fillOnly
+    ? assignRemaining(signups, cap)
+    : assignGroups(signups, cap);
+  if (fillOnly && assignments.size === 0) return { error: "沒有未分組的學員" };
   // 反轉成「組 → 成員 id 清單」，一組一個 updateMany，交易內一次寫完
   const byGroup = new Map<number, string[]>();
   for (const [id, groupNo] of assignments) {
@@ -365,7 +371,11 @@ export async function autoGroupAction(
   ]);
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
-  return { success: `已分成 ${groupCount} 組（共 ${assignments.size} 人）` };
+  return {
+    success: fillOnly
+      ? `已把 ${assignments.size} 位未分組學員補進各組（現共 ${groupCount} 組）`
+      : `已分成 ${groupCount} 組（共 ${assignments.size} 人）`,
+  };
 }
 
 /** 延期：原列保留並標記（排除於統計/分組/看板/簡訊），目標場次建新列。

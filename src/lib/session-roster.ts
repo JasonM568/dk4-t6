@@ -88,6 +88,68 @@ export type GroupableSignup = {
   createdAt: Date;
 };
 
+/** 補分組：只分「未分組」的人，已分好的組別完全不動（每日更新名單後的新報名用）。
+ *  逐人挑「同類（新生/舊生）人數最少 → 總人數最少 → 組號最小」且未滿上限的組，
+ *  全部組都滿了才開新組——維持各組人數與新舊比大致均衡。
+ *  回傳的 assignments 只含這次補進去的人。 */
+export function assignRemaining(
+  signups: (GroupableSignup & { groupNo: number | null })[],
+  cap: number,
+): { assignments: Map<string, number>; groupCount: number } {
+  const safeCap = Math.max(1, Math.floor(cap));
+  const active = signups.filter((s) => !s.deferredToSessionId);
+  const grouped = active.filter((s) => s.groupNo != null);
+  // 還沒分過組 → 等同全量分組
+  if (grouped.length === 0) return assignGroups(active, safeCap);
+
+  let groupCount = Math.max(MIN_GROUPS, ...grouped.map((s) => s.groupNo!));
+  const stats = new Map<number, { total: number; fresh: number; retrain: number }>();
+  for (let g = 1; g <= groupCount; g++) stats.set(g, { total: 0, fresh: 0, retrain: 0 });
+  for (const s of grouped) {
+    const st = stats.get(s.groupNo!) ?? { total: 0, fresh: 0, retrain: 0 };
+    st.total++;
+    if (isRetrainProduct(s.product)) st.retrain++;
+    else st.fresh++;
+    stats.set(s.groupNo!, st);
+  }
+
+  const byTime = (a: GroupableSignup, b: GroupableSignup) => {
+    const ta = a.orderedAt?.getTime() ?? a.createdAt.getTime();
+    const tb = b.orderedAt?.getTime() ?? b.createdAt.getTime();
+    return ta - tb || a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id);
+  };
+  const ungrouped = active.filter((s) => s.groupNo == null).sort(byTime);
+
+  const assignments = new Map<string, number>();
+  for (const s of ungrouped) {
+    const retrain = isRetrainProduct(s.product);
+    let best: number | null = null;
+    for (let g = 1; g <= groupCount; g++) {
+      const st = stats.get(g)!;
+      if (st.total >= safeCap) continue;
+      if (best === null) {
+        best = g;
+        continue;
+      }
+      const bs = stats.get(best)!;
+      const cat = (x: typeof st) => (retrain ? x.retrain : x.fresh);
+      if (cat(st) < cat(bs) || (cat(st) === cat(bs) && st.total < bs.total)) best = g;
+    }
+    if (best === null) {
+      // 全滿 → 開新組
+      groupCount++;
+      stats.set(groupCount, { total: 0, fresh: 0, retrain: 0 });
+      best = groupCount;
+    }
+    const st = stats.get(best)!;
+    st.total++;
+    if (retrain) st.retrain++;
+    else st.fresh++;
+    assignments.set(s.id, best);
+  }
+  return { assignments, groupCount };
+}
+
 /** 自動分組：延出者排除；新生、舊生各自依 orderedAt/createdAt/id 穩定排序後
  *  round-robin 散進各組（舊生從新生停下的游標接續）——各組人數差 ≤1，
  *  且新舊比例鏡射整體名單（名單是 6:4 每組就約 6:4）。確定性：同輸入必同輸出。 */

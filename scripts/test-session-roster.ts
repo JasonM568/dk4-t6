@@ -5,6 +5,7 @@ import {
   mealLabel,
   computeRosterStats,
   assignGroups,
+  assignRemaining,
   groupCountFor,
   type GroupableSignup,
 } from "../src/lib/session-roster";
@@ -116,6 +117,45 @@ function main() {
     const { assignments, groupCount } = assignGroups(makeSignups(5, 3), 8);
     const sizes = groupSizes(assignments, groupCount);
     check("小場 8 人分 6 組、每組 1-2 人", groupCount === 6 && Math.max(...sizes) <= 2, sizes.join(","));
+  }
+
+  console.log("— 補分組（每日更新名單後的新報名）—");
+  {
+    // 42 人已分好 6 組，再來 6 位新報名（4 新 2 舊）→ 只補這 6 位，既有組別不動
+    const base = makeSignups(25, 17);
+    const { assignments: first } = assignGroups(base, 8);
+    const grouped = base.map((s) => ({ ...s, groupNo: first.get(s.id)! }));
+    const newcomers = makeSignups(4, 2).map((s, i) => ({
+      ...s,
+      id: `new${i}`,
+      orderedAt: new Date("2026-08-10T00:00:00Z"),
+      groupNo: null as number | null,
+    }));
+    const all = [...grouped, ...newcomers];
+    const { assignments, groupCount } = assignRemaining(all, 8);
+    check("只分未分組的人", assignments.size === 6 && newcomers.every((s) => assignments.has(s.id)));
+    check("不動既有組別（回傳不含已分組者）", grouped.every((s) => !assignments.has(s.id)));
+    const sizes = Array.from({ length: groupCount }, (_, i) => i + 1).map(
+      (g) =>
+        grouped.filter((s) => s.groupNo === g).length +
+        [...assignments.values()].filter((v) => v === g).length,
+    );
+    check("補完各組人數仍均衡（差 ≤1）且不超上限", Math.max(...sizes) - Math.min(...sizes) <= 1 && Math.max(...sizes) <= 8, sizes.join(","));
+  }
+  {
+    // 全組都滿 → 開新組
+    const base = makeSignups(30, 18); // 48 人 cap8 → 6 組全滿
+    const { assignments: first } = assignGroups(base, 8);
+    const grouped = base.map((s) => ({ ...s, groupNo: first.get(s.id)! }));
+    const extra = { ...makeSignups(1, 0)[0], id: "overflow", groupNo: null as number | null };
+    const { assignments, groupCount } = assignRemaining([...grouped, extra], 8);
+    check("全滿時開第 7 組", assignments.get("overflow") === 7 && groupCount === 7, `${assignments.get("overflow")}/${groupCount}`);
+  }
+  {
+    // 還沒分過組時，補分組 = 全量分組
+    const fresh = makeSignups(10, 5).map((s) => ({ ...s, groupNo: null as number | null }));
+    const { assignments, groupCount } = assignRemaining(fresh, 8);
+    check("無既有組 → 等同全量分組", assignments.size === 15 && groupCount === 6);
   }
 
   console.log(`\n結果：${pass} 通過、${fail} 失敗`);

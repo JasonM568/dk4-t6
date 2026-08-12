@@ -525,7 +525,10 @@ function GroupPanel({ session }: { session: SessionRow }) {
       <form
         action={action}
         onSubmit={(e) => {
+          // confirm 只針對「重新分組」（會覆蓋手動調整）；補分組不動既有組別不必問
+          const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
           if (
+            submitter?.value === "all" &&
             grouped.length > 0 &&
             !confirm("重新分組會覆蓋所有手動調整過的組別，繼續？")
           )
@@ -548,7 +551,20 @@ function GroupPanel({ session }: { session: SessionRow }) {
         <span className="text-xs text-gray-400">
           組數 = max(6, ⌈{active.length}÷上限⌉)；新舊生依報名順序平均散進各組
         </span>
+        {/* 每日更新名單後的新報名：只補未分組的人進現有組，已分好的完全不動 */}
+        {grouped.length > 0 && grouped.length < active.length && (
+          <button
+            name="mode"
+            value="fill"
+            disabled={pending}
+            className="rounded-lg border border-indigo-400 px-3 py-1.5 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+          >
+            {pending ? "分組中…" : `補分組（${active.length - grouped.length} 位未分組）`}
+          </button>
+        )}
         <button
+          name="mode"
+          value="all"
           disabled={pending || active.length === 0}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
         >
