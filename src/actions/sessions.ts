@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
 import { explainMobile, normalizeMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
+import { findStudentByPhone } from "@/lib/student-history";
 
 // 課程場次看板：後台管理 actions（場次 CRUD / 訂單匯入 / 看板 4 位碼）
 
@@ -91,13 +92,9 @@ export async function addSignupAction(
   const phoneInput = String(formData.get("phone") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const isRetrain = String(formData.get("type")) === "retrain";
+  const confirmOldStudent = formData.get("confirmOldStudent") === "on";
   if (!name) return { error: "請填寫姓名" };
   if (email && !email.includes("@")) return { error: "Email 格式不正確" };
-  if (isRetrain) {
-    if (!email) return { error: "選擇複訓方案時請填寫舊生 Email 以驗證資格" };
-    const oldStudent = await prisma.studentRecord.findUnique({ where: { email }, select: { id: true } });
-    if (!oldStudent) return { error: "查無此 Email 的歷史學員資料，請改選新生或先匯入學員資料" };
-  }
 
   // 手機選填；但填了就一定要是能收簡訊的號碼——存進去卻發不出簡訊比留空更糟
   let phone: string | null = null;
@@ -108,6 +105,32 @@ export async function addSignupAction(
         error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼，或留空）`,
       };
     phone = mobile;
+  }
+
+  // 舊生資格核對改用手機（Email 常見夫妻／親子共用，對不到本人）。
+  // 資料庫查無這支號碼時不硬擋——學員資料庫是逐步累積的，勾「確認為舊生」
+  // 即一併建檔，下次同一支號碼就查得到。
+  if (isRetrain) {
+    if (!phone) return { error: "選擇複訓方案時請填寫學員手機以核對舊生資格" };
+    const oldStudent = await findStudentByPhone(phone);
+    if (!oldStudent) {
+      if (!confirmOldStudent)
+        return {
+          error: "學員資料庫查無這支手機。確認本人是舊生的話，請勾選「確認為舊生，一併建檔」再送出",
+        };
+      await prisma.studentRecord.create({
+        data: { phone, name, email: email || null },
+      });
+    } else if (!oldStudent.name || (email && !oldStudent.email)) {
+      // 順手補齊資料庫缺的姓名／Email，不覆蓋既有值
+      await prisma.studentRecord.update({
+        where: { id: oldStudent.id },
+        data: {
+          name: oldStudent.name ?? name,
+          email: oldStudent.email ?? (email || null),
+        },
+      });
+    }
   }
 
   // 沒填訂單編號就生一組「手動-」流水（orderNo 是場次內冪等鍵，不能留空）

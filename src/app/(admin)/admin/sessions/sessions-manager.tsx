@@ -357,6 +357,7 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
     addSignupAction.bind(null, sessionId),
     null,
   );
+  const [isRetrain, setIsRetrain] = useState(false);
   return (
     <form action={action} className="space-y-2 rounded-lg border border-dashed border-gray-300 p-3">
       <div className="text-xs font-medium text-gray-500">
@@ -369,22 +370,25 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           placeholder="姓名（必填）"
           className="w-40 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
-        {/* 手機：這支表單本來就是給電話報名用的，順手留號碼才發得出上課提醒簡訊 */}
+        {/* 手機：舊生資格核對的識別鍵，也是上課提醒簡訊的收件號碼 */}
         <input
           name="phone"
           inputMode="numeric"
-          placeholder="手機（選填，09xxxxxxxx）"
-          className="w-44 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+          required={isRetrain}
+          placeholder={isRetrain ? "手機（複訓必填，09xxxxxxxx）" : "手機（選填，09xxxxxxxx）"}
+          className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
+        {/* Email 選填：夫妻／親子共用信箱很常見，不能拿來認人 */}
         <input
           name="email"
           type="email"
-          placeholder="Email（複訓必填）"
+          placeholder="Email（選填）"
           className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
         <select
           name="type"
           defaultValue="new"
+          onChange={(e) => setIsRetrain(e.target.value === "retrain")}
           className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         >
           <option value="new">新生</option>
@@ -407,6 +411,13 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           {pending ? "加入中…" : "加入名單"}
         </button>
       </div>
+      {/* 舊生資格以手機核對學員資料庫；查無號碼時勾這裡即一併建檔（資料庫逐步累積） */}
+      {isRetrain && (
+        <label className="flex items-center gap-2 text-xs text-gray-600">
+          <input type="checkbox" name="confirmOldStudent" className="h-3.5 w-3.5" />
+          學員資料庫查無這支手機時，確認為舊生並一併建檔
+        </label>
+      )}
       <Feedback state={state} />
     </form>
   );

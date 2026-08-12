@@ -65,19 +65,23 @@ model MemberProfile {
   @@index([phone])
 }
 
-// 歷史學員主檔：尚未註冊者也可先匯入；註冊後以 email 自動認領。
+// 歷史學員主檔：尚未註冊者也可先匯入。
+// 識別鍵是「手機」不是 email——夫妻、親子共用一個信箱在實務上很常見
+// （蘇郁雅報名時填的是先生陳建中的信箱），email 當唯一鍵會讓第二個人根本建不了檔。
+// email 保留為選填、不設唯一，只在「該信箱剛好只有一筆」時當認領備援。
 model StudentRecord {
   id            String   @id @default(cuid())
-  email         String   @unique
+  phone         String?  @unique
+  email         String?
   name          String?
-  phone         String?
   claimedUserId String?  @db.Uuid
   claimedAt     DateTime?
   histories     StudentCourseHistory[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@index([phone])
+  @@index([email])
+  @@index([claimedUserId])
 }
 
 model StudentCourseHistory {

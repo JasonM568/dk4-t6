@@ -4,6 +4,8 @@ import { getAuthUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/db";
 import { formatNT } from "@/lib/format";
 import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
+import { getMemberProfile } from "@/lib/member-profile";
+import { claimStudentRecord } from "@/lib/student-history";
 
 export const metadata = { title: "會員中心" };
 
@@ -12,14 +14,25 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
 
   // MemberStats 是 lazy upsert（首次付款成功才建立），新會員可能還沒有 → 用預設值
-  const [stats, orderCount, studentRecord] = await Promise.all([
+  const [stats, orderCount, memberProfile] = await Promise.all([
     prisma.memberStats.findUnique({
       where: { userId: user.id },
       include: { currentTier: true },
     }),
     prisma.order.count({ where: { userId: user.id } }),
-    prisma.studentRecord.findUnique({ where: { email: user.email?.trim().toLowerCase() ?? "" }, include: { histories: { orderBy: { attendedAt: "desc" } } } }),
+    getMemberProfile(user.id),
   ]);
+
+  // 歷史上課紀錄只認「已認領到本帳號」的那筆——共用信箱（夫妻／親子）若用 email 比對，
+  // 會把另一半的上課紀錄顯示在自己頁面上。註冊當下已認領過；這裡再補一次是為了
+  // 既有會員（先前沒手機、或註冊後才補填手機）。認領失敗不擋頁面。
+  await claimStudentRecord(user.id, { email: user.email, phone: memberProfile?.phone }).catch(
+    (e) => console.error("[dashboard] 歷史學員資料認領失敗", e),
+  );
+  const studentRecord = await prisma.studentRecord.findFirst({
+    where: { claimedUserId: user.id },
+    include: { histories: { orderBy: { attendedAt: "desc" } } },
+  });
 
   const totalSpent = stats?.totalSpent ?? 0;
   const coursesBought = stats?.coursesBought ?? 0;

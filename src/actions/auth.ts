@@ -319,7 +319,7 @@ export async function registerAction(
       console.error("[register] 待開通認領失敗", { email, e });
     }
     try {
-      await claimStudentRecord(email, data.user.id);
+      await claimStudentRecord(data.user.id, { email, phone });
     } catch (e) {
       console.error("[register] 歷史學員資料認領失敗", { email, e });
     }
