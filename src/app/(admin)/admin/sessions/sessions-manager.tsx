@@ -358,6 +358,22 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
     null,
   );
   const [isRetrain, setIsRetrain] = useState(false);
+  // 受控欄位：React 19 表單在 action 完成後會重置未受控欄位——「查無手機→勾確認→重送」
+  // 是設計好的正常路徑，錯誤回來把欄位清空會逼管理員整組重打
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  // 只在「這次送出成功」那一刻清空一次（比對 state 物件變化，不能只看 success——
+  // 它會留到下一輪，成功後再打的新資料會被誤清）
+  const [prevState, setPrevState] = useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state?.success) {
+      setName("");
+      setPhone("");
+      setEmail("");
+    }
+  }
   return (
     <form action={action} className="space-y-2 rounded-lg border border-dashed border-gray-300 p-3">
       <div className="text-xs font-medium text-gray-500">
@@ -367,6 +383,8 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
         <input
           name="name"
           required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           placeholder="姓名（必填）"
           className="w-40 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
@@ -375,6 +393,8 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           name="phone"
           inputMode="numeric"
           required={isRetrain}
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
           placeholder={isRetrain ? "手機（複訓必填，09xxxxxxxx）" : "手機（選填，09xxxxxxxx）"}
           className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
@@ -382,12 +402,16 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
         <input
           name="email"
           type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           placeholder="Email（選填）"
           className="w-52 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         />
+        {/* 受控：React 19 送出後會重置未受控欄位，錯誤回來時下拉若悄悄跳回「新生」，
+            管理員重送就會被當新生寫入（不建檔、不標複訓）——用 state 鎖住選擇 */}
         <select
           name="type"
-          defaultValue="new"
+          value={isRetrain ? "retrain" : "new"}
           onChange={(e) => setIsRetrain(e.target.value === "retrain")}
           className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         >
