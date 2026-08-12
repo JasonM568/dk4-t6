@@ -170,6 +170,38 @@ async function main() {
     ));
     check("無葷素欄 → 未偵測且列為未標", !mealColumnFound && rows[0]?.meal === null);
   }
+  {
+    // 每個銷售頁的自訂欄位各自成一欄（實例：AI課程頁「用餐」、量子2.0頁「課程用餐葷素」）
+    // ——不同訂單的葷素落在不同欄，兩欄都要讀
+    const multiHeader = [...HEADER, "用餐", "課程用餐葷素"];
+    const mk = (no: string, colA: string, colB: string) =>
+      [no, "2026-08-05 09:30:00", "已成立", `顧客${no}`, "量子課", "已付款", "", "", "100", colA, colB];
+    const { rows } = await parseOrderFile(csvBuf(
+      `${multiHeader.join(",")}\n${[mk("MC1", "素食", ""), mk("MC2", "", "葷食"), mk("MC3", "", "")]
+        .map((r) => r.join(","))
+        .join("\n")}\n`,
+    ));
+    check(
+      "多葷素欄逐列取非空值",
+      rows.map((r) => String(r.meal)).join(",") === "VEG,MEAT,null",
+      rows.map((r) => String(r.meal)).join(","),
+    );
+  }
+  {
+    // 葷素寫在訂單資訊自由文字（「課程用餐葷素： 葷食」）——取冒號後的值，
+    // 不能整串比對：「葷素」含素字會把葷食誤判成素
+    const infoHeader = [...HEADER, "訂單資訊"];
+    const { rows } = await parseOrderFile(csvBuf(
+      `${infoHeader.join(",")}\n` +
+      `TX1,2026-08-05 09:30:00,已成立,文字葷,量子課,已付款,,,100,課程用餐葷素： 葷食\n` +
+      `TX2,2026-08-05 09:30:00,已成立,文字素,量子課,已付款,,,100,課程用餐葷素： 素食\n`,
+    ));
+    check(
+      "訂單資訊文字備援（葷食不被葷素的素字誤判）",
+      rows.map((r) => String(r.meal)).join(",") === "MEAT,VEG",
+      rows.map((r) => String(r.meal)).join(","),
+    );
+  }
 
   {
     // 亂資料（缺必要標頭）→ 友善錯誤而非 crash

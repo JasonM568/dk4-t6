@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { normalizeMobile } from "@/lib/sms/phone";
-import { MEAL_HEADER_RE, parseMealValue, type Meal } from "@/lib/session-roster";
+import { MEAL_HEADER_RE, MEAL_IN_TEXT_RE, parseMealValue, type Meal } from "@/lib/session-roster";
 
 // 1shop 訂單檔匯入 → 場次報名歸類。
 // 規則：金流狀態含「已付款」的列，依「產品」欄比對場次關鍵字歸入（最長關鍵字優先）；
@@ -267,12 +267,34 @@ export async function parseOrderFile(
     );
   }
 
-  // 葷素欄：1shop 自訂欄位（各銷售頁命名不同），語意辨識第一個命中的欄；
-  // 排除固定欄位名，避免像「產品」誤中（目前 RE 不會，防未來改 RE 時踩到）
+  // 葷素欄：1shop 自訂欄位在匯出檔「每個銷售頁各自成一欄」（實例：AI課程頁
+  // 「用餐」、量子2.0頁「課程用餐葷素」），所以收集**所有**命中欄，逐列取
+  // 第一個非空值；都空再掃訂單資訊自由文字備援。
+  // 排除固定欄位名，防未來改 RE 時誤中「產品」之類
   const fixedLabels = new Set<string>(Object.values(HEADERS));
-  const mealCol = header.findIndex(
-    (label) => !fixedLabels.has(label) && MEAL_HEADER_RE.test(label),
-  );
+  const mealCols = header
+    .map((label, index) => ({ label, index }))
+    .filter(({ label }) => !fixedLabels.has(label) && MEAL_HEADER_RE.test(label))
+    .map(({ index }) => index);
+  const orderInfoCols = header
+    .map((label, index) => ({ label, index }))
+    .filter(({ label }) => ORDER_INFO_HEADER_RE.test(label))
+    .map(({ index }) => index);
+  const findMeal = (r: unknown[]): Meal | null => {
+    for (const i of mealCols) {
+      const meal = parseMealValue(String(r[i] ?? "").trim());
+      if (meal) return meal;
+    }
+    // 備援：訂單資訊文字裡的「課程用餐葷素： 葷食」——取冒號後的值再判讀
+    for (const i of orderInfoCols) {
+      const match = String(r[i] ?? "").match(MEAL_IN_TEXT_RE);
+      if (match) {
+        const meal = parseMealValue(match[1]);
+        if (meal) return meal;
+      }
+    }
+    return null;
+  };
 
   const cell = (r: unknown[], i: number | undefined) =>
     i === undefined ? "" : String(r[i] ?? "").trim();
@@ -294,14 +316,14 @@ export async function parseOrderFile(
       phone: cell(r, col.phone),
       email: cell(r, col.email),
       amount: amount !== null && Number.isFinite(amount) ? amount : null,
-      meal: mealCol >= 0 ? parseMealValue(cell(r, mealCol)) : null,
+      meal: findMeal(r),
       attendees: [
         { key: "buyer", name },
         ...companions.map((companion, index) => ({ key: `companion-${index + 1}`, name: companion })),
       ],
     };
   });
-  return { rows: parsedRows, mealColumnFound: mealCol >= 0 };
+  return { rows: parsedRows, mealColumnFound: mealCols.length > 0 };
 }
 
 /** 依場次關鍵字歸類並寫入報名（冪等）；回傳匯入報告 */
