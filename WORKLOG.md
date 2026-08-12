@@ -15,14 +15,22 @@
   可匯入，回報缺手機筆數）；認領手機優先、email 僅在只對到一筆時當備援、已認領的不搶；
   會員中心歷史紀錄改認 `claimedUserId`。`scripts/test-student-claim.ts` 7 情境全過。
 
-**收尾：** 本機補套 `20260811090000_student_record_phone_index`（8/08 留的待辦）。
+**CSP 違規收集端點（已部署）**
+
+- 查到的問題：Report-Only 完整白名單掛著，但**沒有 report-uri**——違規只印在使用者的
+  瀏覽器 console，8/08 起的「觀察 1–2 週」其實一筆都沒收到，等於空轉四天。
+- 補上 `/api/csp-report` + `CspReport` 表。公開端點（瀏覽器送報告不帶 cookie，無法驗身分），
+  防線放在寫入內容：限 content-type/body 大小、欄位截斷、只留 pathname（網址可能帶 token）、
+  丟棄瀏覽器擴充套件噪音、同組合累加、不同組合上限 500 列。
+- **下一步（約 8/19 後）**：查 `course."CspReport"` 依 count 排序，確認沒有自家來源被擋，
+  就把 `REPORT_ONLY_CSP` 內容搬進 `ENFORCED_CSP` 切正式阻擋。表空的就代表無誤殺。
+
+**收尾：** 本機補套 `20260811090000_student_record_phone_index`（8/08 留的待辦）；
+`.mcp.json` 移除專案層 Supabase MCP 已 commit（改走 claude.ai connector）。
 
 **未完成／待辦：**
-- CSP Report-Only **沒有 report-uri／report-to**，違規只進瀏覽器 console 沒人收——
-  「觀察 1–2 週」實際上收不到任何資料。要切正式阻擋前得先補收集端點或人工掃頁。
-- `.mcp.json` 移除 Supabase MCP 的未 commit 修改仍待決（現改用 claude.ai Supabase connector，
-  今天查正式庫都走它，專案層設定等於冗餘）
-- 簡訊實測（/admin/sms 發一則給自己）、看板 4 位碼驗收，仍未做
+- 簡訊實測（/admin/sms 發一則給自己）、看板 4 位碼驗收——都要 Jason 本人操作（會真的扣款）
+- 蘇郁雅該筆待 Jason 在後台輸入（需要她本人手機號碼）
 
 ## 2026-08-08
 
