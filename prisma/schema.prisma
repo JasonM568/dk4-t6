@@ -106,6 +106,20 @@ model BoardLoginThrottle {
   updatedAt   DateTime  @updatedAt
 }
 
+// CSP 違規回報（Report-Only 觀察期用）：同一組 directive+來源+頁面只留一列累加次數，
+// 資料量才不會被瀏覽器灌爆。確認完整白名單無誤殺後即可切正式阻擋，屆時此表可留可刪。
+model CspReport {
+  id           String   @id @default(cuid())
+  directive    String
+  blockedUri   String
+  documentPath String
+  count        Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+
+  @@unique([directive, blockedUri, documentPath])
+}
+
 // 敏感後台操作稽核（密碼重設等）：只記操作者/目標/結果，絕不記密碼內容
 model AdminAuditLog {
   id         String   @id @default(cuid())

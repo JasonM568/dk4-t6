@@ -6,6 +6,7 @@ import type { NextConfig } from "next";
 //      不會誤殺既有功能）
 //   2. 完整白名單 CSP 先掛 Report-Only 蒐集違規——在 preview/正式站觀察一段時間、
 //      確認無誤殺後，把 REPORT_ONLY_CSP 內容搬進正式 CSP 即可切換為阻擋
+//      （違規進 /api/csp-report → course."CspReport"，依 count 排序即可判斷會不會誤殺）
 // 白名單依實際使用來源：Supabase Storage/Auth、YouTube 影片、Google Slides/Canva
 // 簡報嵌入、ECPay 跳轉、GA4/Meta Pixel/GTM 追蹤碼（後台僅 admin 可設、ID 格式嚴格驗證）
 
@@ -32,12 +33,15 @@ const REPORT_ONLY_CSP = [
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "object-src 'none'",
+  // 違規回報收集端點：沒有這行的話 Report-Only 只會印在使用者的 console，沒人看得到
+  "report-uri /api/csp-report",
 ].join("; ");
 
 const ENFORCED_CSP = [
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "object-src 'none'",
+  "report-uri /api/csp-report",
 ].join("; ");
 
 const SECURITY_HEADERS = [
