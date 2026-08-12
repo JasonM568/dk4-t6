@@ -762,19 +762,20 @@ export function SessionCard({
                       </span>
                     )}
                   </td>
-                  {/* 葷素：點按循環 葷→素→未標（延出列不給改） */}
+                  {/* 葷素：下拉直選（延出列不給改） */}
                   <td className="px-2 py-1.5 text-xs">
                     {canEdit && !deferredOut ? (
-                      <button
-                        type="button"
-                        title="點按切換：葷 → 素 → 未標"
-                        onClick={() =>
+                      <select
+                        value={s.meal === "VEG" || s.meal === "MEAT" ? s.meal : ""}
+                        onChange={(e) =>
                           setSignupMealAction(
                             s.id,
-                            s.meal === "MEAT" ? "VEG" : s.meal === "VEG" ? null : "MEAT",
+                            e.target.value === "VEG" || e.target.value === "MEAT"
+                              ? e.target.value
+                              : null,
                           )
                         }
-                        className={`rounded border px-2 py-0.5 transition hover:bg-gray-50 ${
+                        className={`rounded border bg-white px-1.5 py-0.5 text-xs focus:border-black focus:outline-none ${
                           s.meal === "VEG"
                             ? "border-green-300 text-green-700"
                             : s.meal === "MEAT"
@@ -782,8 +783,10 @@ export function SessionCard({
                               : "border-amber-300 text-amber-700"
                         }`}
                       >
-                        {mealLabel(s.meal)}
-                      </button>
+                        <option value="MEAT">葷</option>
+                        <option value="VEG">素</option>
+                        <option value="">未標</option>
+                      </select>
                     ) : (
                       <span className="text-gray-500">{deferredOut ? "—" : mealLabel(s.meal)}</span>
                     )}
