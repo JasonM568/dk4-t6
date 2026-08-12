@@ -6,6 +6,7 @@ import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
 import { explainMobile, normalizeMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { findStudentByPhone } from "@/lib/student-history";
+import { isRetrainProduct, assignGroups, type Meal } from "@/lib/session-roster";
 
 // 課程場次看板：後台管理 actions（場次 CRUD / 訂單匯入 / 看板 4 位碼）
 
@@ -93,6 +94,8 @@ export async function addSignupAction(
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const isRetrain = String(formData.get("type")) === "retrain";
   const confirmOldStudent = formData.get("confirmOldStudent") === "on";
+  const mealInput = String(formData.get("meal") ?? "");
+  const meal: Meal = mealInput === "VEG" ? "VEG" : "MEAT"; // 白名單，預設葷
   if (!name) return { error: "請填寫姓名" };
   if (email && !email.includes("@")) return { error: "Email 格式不正確" };
 
@@ -137,9 +140,9 @@ export async function addSignupAction(
   const orderNo =
     orderNoInput || `手動-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-  // 舊生判別全站統一看 product 是否含「複訓」——選舊生就自動補上標記
+  // 舊生判別全站統一（isRetrainProduct）——選舊生就自動補上「複訓」標記
   const base = note || "手動新增";
-  const product = isRetrain && !base.includes("複訓") ? `複訓｜${base}` : base;
+  const product = isRetrain && !isRetrainProduct(base) ? `複訓｜${base}` : base;
 
   try {
     await prisma.sessionSignup.create({
@@ -150,6 +153,7 @@ export async function addSignupAction(
         email: email || null,
         phone,
         product,
+        meal,
         orderedAt: new Date(),
       },
     });
@@ -186,6 +190,7 @@ export async function assignUnmatchedAction(
     phone: string | null;
     amount: number | null;
     orderedAt: string | null;
+    meal?: string | null;
     attendees: { key: string; name: string }[];
   }[];
   try {
@@ -231,6 +236,9 @@ export async function assignUnmatchedAction(
         product,
         amount: typeof r.amount === "number" ? r.amount : null,
         orderedAt: orderedAt && !Number.isNaN(orderedAt.getTime()) ? orderedAt : null,
+        // meal 經前端 JSON 來回，白名單收斂防竄改
+        meal:
+          attendee.key === "buyer" && (r.meal === "VEG" || r.meal === "MEAT") ? r.meal : null,
       };
     }),
   );
@@ -263,6 +271,160 @@ export async function removeSignupAction(id: string) {
   await prisma.sessionSignup.delete({ where: { id } }).catch(() => undefined);
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
+}
+
+/** 逐人切換葷素（後台名單表格；匯入未標或同行者由這裡補） */
+export async function setSignupMealAction(id: string, meal: Meal | null) {
+  await requireEditor();
+  const value = meal === "VEG" || meal === "MEAT" ? meal : null; // 白名單
+  await prisma.sessionSignup
+    .update({ where: { id }, data: { meal: value } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
+/** 手動指定單人組別（自動分組後的微調；null = 改回未分組） */
+export async function setSignupGroupAction(id: string, groupNo: number | null) {
+  await requireEditor();
+  const value =
+    typeof groupNo === "number" && Number.isInteger(groupNo) && groupNo >= 1 && groupNo <= 99
+      ? groupNo
+      : null;
+  await prisma.sessionSignup
+    .update({ where: { id }, data: { groupNo: value } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
+/** 自動分組：新舊生依報名時間 round-robin 平均散進各組（各組鏡射整體新舊比）。
+ *  重跑會覆蓋所有手動調整（前端 confirm）；每組上限一併存回場次。 */
+export async function autoGroupAction(
+  sessionId: string,
+  _prev: SessionFormState,
+  formData: FormData,
+): Promise<SessionFormState> {
+  await requireEditor();
+  const cap = Math.floor(Number(formData.get("cap")));
+  if (!Number.isFinite(cap) || cap < 1 || cap > 99)
+    return { error: "每組人數上限請填 1〜99" };
+
+  const signups = await prisma.sessionSignup.findMany({
+    where: { sessionId },
+    select: {
+      id: true, product: true, deferredToSessionId: true, orderedAt: true, createdAt: true,
+    },
+  });
+  if (signups.every((s) => s.deferredToSessionId)) return { error: "沒有可分組的學員" };
+
+  const { assignments, groupCount } = assignGroups(signups, cap);
+  // 反轉成「組 → 成員 id 清單」，一組一個 updateMany，交易內一次寫完
+  const byGroup = new Map<number, string[]>();
+  for (const [id, groupNo] of assignments) {
+    byGroup.set(groupNo, [...(byGroup.get(groupNo) ?? []), id]);
+  }
+  await prisma.$transaction([
+    prisma.courseSession.update({ where: { id: sessionId }, data: { groupCap: cap } }),
+    ...[...byGroup.entries()].map(([groupNo, ids]) =>
+      prisma.sessionSignup.updateMany({ where: { id: { in: ids } }, data: { groupNo } }),
+    ),
+    // 延出者不佔組
+    prisma.sessionSignup.updateMany({
+      where: { sessionId, deferredToSessionId: { not: null } },
+      data: { groupNo: null },
+    }),
+  ]);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  return { success: `已分成 ${groupCount} 組（共 ${assignments.size} 人）` };
+}
+
+/** 延期：原列保留並標記（排除於統計/分組/看板/簡訊），目標場次建新列。
+ *  新列刻意沿用原 orderNo+attendeeKey——1shop 退款的全域刪除（importOrders
+ *  的 deleteMany by orderNo）會連延期列一併清掉：退款＝人不來了，正確。 */
+export async function deferSignupAction(
+  _prev: SessionFormState,
+  formData: FormData,
+): Promise<SessionFormState> {
+  await requireEditor();
+  const signupId = String(formData.get("signupId") ?? "");
+  const targetSessionId = String(formData.get("targetSessionId") ?? "");
+  if (!signupId || !targetSessionId) return { error: "請選擇要延期到的場次" };
+
+  const signup = await prisma.sessionSignup.findUnique({ where: { id: signupId } });
+  if (!signup) return { error: "報名紀錄不存在（可能剛被移除）" };
+  if (signup.deferredToSessionId) return { error: "這筆報名已經延期過了" };
+  if (signup.sessionId === targetSessionId) return { error: "不能延期到同一場次" };
+  const target = await prisma.courseSession.findUnique({
+    where: { id: targetSessionId },
+    select: { id: true, title: true },
+  });
+  if (!target) return { error: "目標場次不存在（可能剛被刪除）" };
+
+  try {
+    await prisma.$transaction([
+      prisma.sessionSignup.create({
+        data: {
+          sessionId: target.id,
+          orderNo: signup.orderNo,
+          attendeeKey: signup.attendeeKey,
+          name: signup.name,
+          email: signup.email,
+          phone: signup.phone,
+          product: signup.product,
+          amount: signup.amount,
+          orderedAt: signup.orderedAt,
+          meal: signup.meal,
+          groupNo: null,
+          deferredFromSessionId: signup.sessionId,
+        },
+      }),
+      prisma.sessionSignup.update({
+        where: { id: signup.id },
+        data: { deferredToSessionId: target.id, groupNo: null },
+      }),
+    ]);
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002")
+      return { error: `${signup.name} 已在「${target.title}」的名單裡` };
+    throw e;
+  }
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  return { success: `已把 ${signup.name} 延期到「${target.title}」` };
+}
+
+/** 取消延期：刪除目標場次那筆、原列復原。
+ *  鏈式延期（A→B→C）只准從尾端取消，避免中間斷鏈留孤兒列。 */
+export async function undoDeferSignupAction(signupId: string): Promise<SessionFormState> {
+  await requireEditor();
+  const signup = await prisma.sessionSignup.findUnique({ where: { id: signupId } });
+  if (!signup?.deferredToSessionId) return { error: "這筆報名沒有延期紀錄" };
+
+  const targetRow = await prisma.sessionSignup.findUnique({
+    where: {
+      sessionId_orderNo_attendeeKey: {
+        sessionId: signup.deferredToSessionId,
+        orderNo: signup.orderNo,
+        attendeeKey: signup.attendeeKey,
+      },
+    },
+    select: { id: true, deferredToSessionId: true },
+  });
+  if (targetRow?.deferredToSessionId)
+    return { error: "對方場次那筆又再延期了，請先到該場次取消後續延期" };
+
+  await prisma.$transaction([
+    ...(targetRow ? [prisma.sessionSignup.delete({ where: { id: targetRow.id } })] : []),
+    prisma.sessionSignup.update({
+      where: { id: signup.id },
+      data: { deferredToSessionId: null },
+    }),
+  ]);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  return { success: `已取消 ${signup.name} 的延期` };
 }
 
 /** 上傳 1shop 訂單檔 → 解析歸類匯入 */

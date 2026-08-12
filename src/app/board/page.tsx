@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { boardAuthStatus } from "@/lib/board-auth";
+import { isRetrainProduct } from "@/lib/session-roster";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { boardLogoutAction } from "@/actions/board";
 import { BoardLoginForm, AutoRefresh } from "./board-client";
@@ -26,8 +27,11 @@ export default async function BoardPage() {
       orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
       include: {
         signups: {
+          // 已延期到其他場次的不列（對方場次會有新列）
+          where: { deferredToSessionId: null },
           orderBy: { orderedAt: "asc" },
-          select: { id: true, name: true, product: true },
+          // 只給看板需要的最小欄位——刻意不含電話/信箱
+          select: { id: true, name: true, product: true, meal: true, groupNo: true },
         },
       },
     }),
@@ -53,8 +57,8 @@ export default async function BoardPage() {
   const webinars = allWebinars.filter(
     (w) => !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > now),
   );
-  // 舊生 = 報名複訓方案（1shop 產品名含「複訓」）；其餘為新生
-  const isRetrain = (product: string | null) => !!product?.includes("複訓");
+  // 舊生 = 報名複訓方案；判別規則統一在 session-roster
+  const isRetrain = (product: string | null) => isRetrainProduct(product);
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -139,6 +143,28 @@ export default async function BoardPage() {
         {sessions.map((s) => {
           const retrain = s.signups.filter((g) => isRetrain(g.product));
           const fresh = s.signups.length - retrain.length;
+          const veg = s.signups.filter((g) => g.meal === "VEG").length;
+          // 有任何人分了組 → 依組別分節顯示；全未分組 → 維持扁平名字雲
+          const hasGroups = s.signups.some((g) => g.groupNo != null);
+          const groups = hasGroups
+            ? [...new Set(s.signups.map((g) => g.groupNo).filter((n): n is number => n != null))].sort(
+                (a, b) => a - b,
+              )
+            : [];
+          const chip = (g: { id: string; name: string; product: string | null }) =>
+            isRetrain(g.product) ? (
+              <span
+                key={g.id}
+                className="rounded-full bg-amber-50 px-2.5 py-1 text-sm text-amber-800 ring-1 ring-amber-200"
+              >
+                {g.name}
+                <span className="ml-1 text-xs text-amber-500">複訓</span>
+              </span>
+            ) : (
+              <span key={g.id} className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700">
+                {g.name}
+              </span>
+            );
           return (
             <section key={s.id} className="rounded-2xl border border-gray-200 p-5">
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -158,31 +184,40 @@ export default async function BoardPage() {
                   <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-medium text-amber-800">
                     舊生 {retrain.length}
                   </span>
+                  {/* 葷 = 非素（含未標，訂餐往安全側算） */}
+                  <span className="rounded-full bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-600">
+                    葷 {s.signups.length - veg}｜素 {veg}
+                  </span>
                 </div>
               </div>
               {s.signups.length === 0 ? (
                 <p className="text-sm text-gray-400">尚無報名</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {s.signups.map((g) =>
-                    isRetrain(g.product) ? (
-                      <span
-                        key={g.id}
-                        className="rounded-full bg-amber-50 px-2.5 py-1 text-sm text-amber-800 ring-1 ring-amber-200"
-                      >
-                        {g.name}
-                        <span className="ml-1 text-xs text-amber-500">複訓</span>
-                      </span>
-                    ) : (
-                      <span
-                        key={g.id}
-                        className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
-                      >
-                        {g.name}
-                      </span>
-                    ),
+              ) : hasGroups ? (
+                <div className="space-y-3">
+                  {groups.map((groupNo) => {
+                    const members = s.signups.filter((g) => g.groupNo === groupNo);
+                    const groupVeg = members.filter((g) => g.meal === "VEG").length;
+                    return (
+                      <div key={groupNo}>
+                        <div className="mb-1.5 text-sm font-medium text-gray-500">
+                          第 {groupNo} 組 · {members.length} 人
+                          {groupVeg > 0 && ` · 素 ${groupVeg}`}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">{members.map(chip)}</div>
+                      </div>
+                    );
+                  })}
+                  {s.signups.some((g) => g.groupNo == null) && (
+                    <div>
+                      <div className="mb-1.5 text-sm font-medium text-amber-600">未分組</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {s.signups.filter((g) => g.groupNo == null).map(chip)}
+                      </div>
+                    </div>
                   )}
                 </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">{s.signups.map(chip)}</div>
               )}
             </section>
           );

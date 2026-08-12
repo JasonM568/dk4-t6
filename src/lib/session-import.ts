@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { normalizeMobile } from "@/lib/sms/phone";
+import { MEAL_HEADER_RE, parseMealValue, type Meal } from "@/lib/session-roster";
 
 // 1shop 訂單檔匯入 → 場次報名歸類。
 // 規則：金流狀態含「已付款」的列，依「產品」欄比對場次關鍵字歸入（最長關鍵字優先）；
@@ -19,6 +20,7 @@ export type UnmatchedOrderRow = {
   phone: string | null; // 原始字串，歸類寫入時才 normalizeMobile
   amount: number | null;
   orderedAt: string | null;
+  meal: Meal | null; // 葷素（管理員指定歸類寫入時一併帶上）
   attendees: OrderAttendee[];
 };
 
@@ -35,6 +37,8 @@ export type ImportReport = {
   canceledRemoved: number; // 取消/退款反向移除
   unmatched: { product: string; count: number; rows: UnmatchedOrderRow[] }[]; // 待管理員指定歸類
   invalid: number; // 缺訂單編號/顧客的列
+  mealColumnFound: boolean; // 檔案裡有沒有葷素欄位（餐點/用餐…）
+  mealUnknown: number; // 有欄位但該列值空白（已付款且歸入場次的列才計）
 };
 
 type ParsedRow = {
@@ -47,6 +51,7 @@ type ParsedRow = {
   phone: string;
   email: string;
   amount: number | null;
+  meal: Meal | null;
   attendees: OrderAttendee[];
 };
 
@@ -235,7 +240,9 @@ async function parseXlsxRows(buf: ArrayBuffer): Promise<string[][]> {
   return rows;
 }
 
-export async function parseOrderFile(buf: ArrayBuffer): Promise<ParsedRow[]> {
+export async function parseOrderFile(
+  buf: ArrayBuffer,
+): Promise<{ rows: ParsedRow[]; mealColumnFound: boolean }> {
   // 不相信副檔名/瀏覽器 MIME，用 magic bytes 判型：
   //   PK\x03\x04 = zip 容器（xlsx）；D0 CF 11 E0 = 舊版 .xls（拒收）；其他當 CSV 文字
   const head = new Uint8Array(buf.slice(0, 4));
@@ -246,7 +253,7 @@ export async function parseOrderFile(buf: ArrayBuffer): Promise<ParsedRow[]> {
     throw new Error("不支援舊版 .xls 格式，請從 1shop 重新匯出 .xlsx 或 .csv");
 
   const rows = isZip ? await parseXlsxRows(buf) : parseCsvRows(decodeCsvText(buf));
-  if (rows.length < 2) return [];
+  if (rows.length < 2) return { rows: [], mealColumnFound: false };
 
   const header = rows[0].map((h) => String(h ?? "").trim());
   const col: Partial<Record<keyof typeof HEADERS, number>> = {};
@@ -260,10 +267,17 @@ export async function parseOrderFile(buf: ArrayBuffer): Promise<ParsedRow[]> {
     );
   }
 
+  // 葷素欄：1shop 自訂欄位（各銷售頁命名不同），語意辨識第一個命中的欄；
+  // 排除固定欄位名，避免像「產品」誤中（目前 RE 不會，防未來改 RE 時踩到）
+  const fixedLabels = new Set<string>(Object.values(HEADERS));
+  const mealCol = header.findIndex(
+    (label) => !fixedLabels.has(label) && MEAL_HEADER_RE.test(label),
+  );
+
   const cell = (r: unknown[], i: number | undefined) =>
     i === undefined ? "" : String(r[i] ?? "").trim();
 
-  return rows.slice(1).map((r) => {
+  const parsedRows = rows.slice(1).map((r) => {
     const dateStr = cell(r, col.orderedAt);
     const parsed = dateStr ? parseTaipei(dateStr) : null;
     const amountStr = cell(r, col.amount);
@@ -280,17 +294,19 @@ export async function parseOrderFile(buf: ArrayBuffer): Promise<ParsedRow[]> {
       phone: cell(r, col.phone),
       email: cell(r, col.email),
       amount: amount !== null && Number.isFinite(amount) ? amount : null,
+      meal: mealCol >= 0 ? parseMealValue(cell(r, mealCol)) : null,
       attendees: [
         { key: "buyer", name },
         ...companions.map((companion, index) => ({ key: `companion-${index + 1}`, name: companion })),
       ],
     };
   });
+  return { rows: parsedRows, mealColumnFound: mealCol >= 0 };
 }
 
 /** 依場次關鍵字歸類並寫入報名（冪等）；回傳匯入報告 */
 export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
-  const rows = await parseOrderFile(buf);
+  const { rows, mealColumnFound } = await parseOrderFile(buf);
   const sessions = await prisma.courseSession.findMany({
     select: { id: true, keywords: true },
   });
@@ -317,6 +333,8 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     canceledRemoved: 0,
     unmatched: [],
     invalid: 0,
+    mealColumnFound,
+    mealUnknown: 0,
   };
   const unmatchedRows = new Map<string, UnmatchedOrderRow[]>();
   const toCreate: {
@@ -329,8 +347,12 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     product: string;
     amount: number | null;
     orderedAt: Date | null;
+    meal: Meal | null;
   }[] = [];
   const cancelOrderNos: string[] = [];
+  // 已匯入過的列 createMany 會略過不更新——葷素另外回填（只補 meal 仍空的列，
+  // 不覆蓋後台手動標記；orderNo 全域唯一所以跨場次含延期列都會補到）
+  const mealBackfill: Record<Meal, string[]> = { VEG: [], MEAT: [] };
 
   for (const row of rows) {
     if (!row.orderNo || !row.name) {
@@ -357,11 +379,14 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
         phone: row.phone || null,
         amount: row.amount,
         orderedAt: row.orderedAt?.toISOString() ?? null,
+        meal: row.meal,
         attendees: row.attendees,
       });
       unmatchedRows.set(row.product, list);
       continue;
     }
+    if (mealColumnFound && row.meal === null) report.mealUnknown++;
+    if (row.meal) mealBackfill[row.meal].push(row.orderNo);
     for (const attendee of row.attendees) {
       if (!attendee.name) continue;
       toCreate.push({
@@ -375,6 +400,8 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
         product: row.product,
         amount: row.amount,
         orderedAt: row.orderedAt,
+        // 葷素是訂購人填的；同行者吃什麼未知，留未標由後台補
+        meal: attendee.key === "buyer" ? row.meal : null,
       });
     }
   }
@@ -392,6 +419,14 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     });
     report.imported = res.count;
     report.duplicate = toCreate.length - res.count;
+  }
+  // 葷素回填既有列：meal IS NULL 條件保證不覆蓋後台手動標記
+  for (const meal of ["VEG", "MEAT"] as const) {
+    if (mealBackfill[meal].length === 0) continue;
+    await prisma.sessionSignup.updateMany({
+      where: { orderNo: { in: mealBackfill[meal] }, attendeeKey: "buyer", meal: null },
+      data: { meal },
+    });
   }
   report.unmatched = [...unmatchedRows.entries()]
     .map(([product, rows]) => ({ product, count: rows.length, rows }))

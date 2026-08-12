@@ -67,7 +67,8 @@ async function filterOptedOut(
  *  跨場次重複報名的學員，{name} 必須穩定取到同一個值，否則預覽與實際發送會不一致。 */
 async function collectSessionSignups(sessionIds: string[]) {
   const rows = await prisma.sessionSignup.findMany({
-    where: { sessionId: { in: sessionIds } },
+    // 已延期到其他場次的不收原場次的上課提醒（新場次名單自然涵蓋他）
+    where: { sessionId: { in: sessionIds }, deferredToSessionId: null },
     select: { sessionId: true, name: true, phone: true },
   });
   const rank = new Map(sessionIds.map((id, i) => [id, i]));

@@ -39,6 +39,8 @@ function csvBuf(text: string): ArrayBuffer {
   return new TextEncoder().encode(text).buffer as ArrayBuffer;
 }
 
+const parseRows = async (buf: ArrayBuffer) => (await parseOrderFile(buf)).rows;
+
 async function expectThrow(name: string, buf: ArrayBuffer, msgPart: string) {
   try {
     await parseOrderFile(buf);
@@ -57,7 +59,7 @@ async function main() {
       ["A001", "2026-08-03 22:01:16", "已成立", "王小明", "量子課八月場", "已付款", "0912345678", "a@b.com", "3000"],
       ["A002", "2026-08-04 10:00:00", "已取消", "李小華", "量子課八月場", "已退款", "0922333444", "c@d.com", "3000"],
     ]);
-    const rows = await parseOrderFile(buf);
+    const rows = await parseRows(buf);
     check("解析 2 列", rows.length === 2, `得到 ${rows.length}`);
     check("欄位對應", rows[0]?.orderNo === "A001" && rows[0]?.name === "王小明" && rows[0]?.amount === 3000);
     check("日期補 +08:00", rows[0]?.orderedAt?.toISOString() === "2026-08-03T14:01:16.000Z",
@@ -73,14 +75,14 @@ async function main() {
       HEADER,
       ["B001", d, "已成立", "陳大文", "量子課八月場", "已付款", "", "", "1500"],
     ]);
-    const rows = await parseOrderFile(buf);
+    const rows = await parseRows(buf);
     check("Date cell 還原台北時間", rows[0]?.orderedAt?.toISOString() === "2026-08-03T14:01:16.000Z",
       String(rows[0]?.orderedAt?.toISOString()));
   }
 
   console.log("— CSV —");
   {
-    const rows = await parseOrderFile(csvBuf(
+    const rows = await parseRows(csvBuf(
       `${HEADER.join(",")}\n` +
       `C001,2026-08-05 09:30:00,已成立,"林,逗號","產品名稱\n含換行",已付款,0933111222,e@f.com,2500\n`,
     ));
@@ -96,7 +98,7 @@ async function main() {
     );
     const iconv = new TextDecoder("big5"); // 驗證環境支援 big5 即可，資料仍用 utf-8 測正常路徑
     void iconv;
-    const rows = await parseOrderFile(csvBuf(big5.toString("utf-8")));
+    const rows = await parseRows(csvBuf(big5.toString("utf-8")));
     check("CSV 基本列", rows.length === 1 && rows[0]?.name === "張三");
   }
 
@@ -126,7 +128,7 @@ async function main() {
     const wideHeader = [...HEADER, ...Array.from({ length: 61 }, (_, i) => `延伸欄位${i + 1}`)];
     const wideRow = ["W001", "2026-08-05 09:30:00", "已成立", "寬表測試", "量子課", "已付款", "", "", "100",
       ...Array.from({ length: 61 }, () => "")];
-    const rows = await parseOrderFile(csvBuf(`${wideHeader.join(",")}\n${wideRow.join(",")}\n`));
+    const rows = await parseRows(csvBuf(`${wideHeader.join(",")}\n${wideRow.join(",")}\n`));
     check("超過 60 欄的 1shop 原始訂單可解析", rows.length === 1 && rows[0]?.orderNo === "W001");
   }
   {
@@ -136,13 +138,39 @@ async function main() {
       "P001", "2026-08-05 09:30:00", "已成立", "訂購人", "量子課", "已付款", "", "", "200",
       "同行甲", "同行人姓名：同行乙",
     ];
-    const rows = await parseOrderFile(csvBuf(`${companionHeader.join(",")}\n${companionRow.join(",")}\n`));
+    const rows = await parseRows(csvBuf(`${companionHeader.join(",")}\n${companionRow.join(",")}\n`));
     check(
       "同行者獨立入列（自訂欄位與訂單資訊）",
       rows[0]?.attendees.map((a) => a.name).join("、") === "訂購人、同行甲、同行乙",
       JSON.stringify(rows[0]?.attendees),
     );
   }
+  console.log("— 葷素欄位 —");
+  {
+    // 1shop 自訂欄位「餐點/用餐」→ 值含素判素、非空判葷、空為未標
+    const mealHeader = [...HEADER, "餐點"];
+    const mk = (no: string, meal: string) =>
+      [no, "2026-08-05 09:30:00", "已成立", `顧客${no}`, "量子課", "已付款", "", "", "100", meal];
+    const { rows, mealColumnFound } = await parseOrderFile(csvBuf(
+      `${mealHeader.join(",")}\n${[mk("M1", "素食"), mk("M2", "葷食"), mk("M3", ""), mk("M4", "全素")]
+        .map((r) => r.join(","))
+        .join("\n")}\n`,
+    ));
+    check("偵測到葷素欄", mealColumnFound);
+    check(
+      "值判讀：素食/葷食/空/全素",
+      rows.map((r) => r.meal).join(",") === "VEG,MEAT,,VEG",
+      rows.map((r) => String(r.meal)).join(","),
+    );
+  }
+  {
+    // 沒有葷素欄：全部未標、mealColumnFound=false
+    const { rows, mealColumnFound } = await parseOrderFile(csvBuf(
+      `${HEADER.join(",")}\nN1,2026-08-05 09:30:00,已成立,無欄測試,量子課,已付款,,,100\n`,
+    ));
+    check("無葷素欄 → 未偵測且列為未標", !mealColumnFound && rows[0]?.meal === null);
+  }
+
   {
     // 亂資料（缺必要標頭）→ 友善錯誤而非 crash
     await expectThrow("缺標頭友善錯誤", csvBuf("哈囉,這不是,訂單檔\n1,2,3\n"), "無法辨識檔案格式");
@@ -150,7 +178,7 @@ async function main() {
   {
     // 超長 cell 被截斷不爆記憶體
     const long = "x".repeat(100_000);
-    const rows = await parseOrderFile(csvBuf(`${HEADER.join(",")}\nE001,,,${long},p,已付款,,,1\n`));
+    const rows = await parseRows(csvBuf(`${HEADER.join(",")}\nE001,,,${long},p,已付款,,,1\n`));
     check("超長欄位截斷", (rows[0]?.name.length ?? 0) <= 2_000, String(rows[0]?.name.length));
   }
 

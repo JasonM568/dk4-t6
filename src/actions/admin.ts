@@ -2180,7 +2180,7 @@ export async function importMemberPhonesAction(
 
   let rows;
   try {
-    rows = await parseOrderFile(await file.arrayBuffer());
+    ({ rows } = await parseOrderFile(await file.arrayBuffer()));
   } catch (e) {
     return { error: e instanceof Error ? e.message : "解析失敗，請確認檔案格式" };
   }

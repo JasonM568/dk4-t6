@@ -76,6 +76,8 @@ export default async function AdminSessionsPage() {
           <SessionCard
             key={s.id}
             canEdit={canEditNow}
+            // 延期目標選單與「延期→/延期自」徽章要能解析其他場次的名稱
+            sessionOptions={sessions.map((o) => ({ id: o.id, title: o.title }))}
             session={{
               id: s.id,
               title: s.title,
@@ -84,6 +86,7 @@ export default async function AdminSessionsPage() {
               keywords: s.keywords,
               isVisible: s.isVisible,
               adminNote: s.adminNote,
+              groupCap: s.groupCap,
               signups: s.signups.map((g) => ({
                 id: g.id,
                 orderNo: g.orderNo,
@@ -92,6 +95,10 @@ export default async function AdminSessionsPage() {
                 phone: g.phone,
                 product: g.product,
                 orderedAt: g.orderedAt?.toISOString() ?? null,
+                meal: g.meal,
+                groupNo: g.groupNo,
+                deferredToSessionId: g.deferredToSessionId,
+                deferredFromSessionId: g.deferredFromSessionId,
               })),
             }}
           />

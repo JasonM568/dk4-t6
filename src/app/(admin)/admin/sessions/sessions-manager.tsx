@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useRef, useState } from "react";
 import {
   createSessionAction,
   updateSessionAction,
@@ -10,6 +10,11 @@ import {
   uploadOrdersAction,
   assignUnmatchedAction,
   saveBoardCodeAction,
+  setSignupMealAction,
+  setSignupGroupAction,
+  autoGroupAction,
+  deferSignupAction,
+  undoDeferSignupAction,
   type SessionFormState,
   type UploadState,
 } from "@/actions/sessions";
@@ -17,6 +22,12 @@ import type { ImportReport } from "@/lib/session-import";
 import { formatDate } from "@/lib/format";
 import { formatMobile } from "@/lib/sms/phone";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import {
+  isRetrainProduct,
+  mealLabel,
+  computeRosterStats,
+  groupCountFor,
+} from "@/lib/session-roster";
 
 export type SignupRow = {
   id: string;
@@ -26,6 +37,10 @@ export type SignupRow = {
   phone: string | null;
   product: string | null;
   orderedAt: string | null;
+  meal: string | null;
+  groupNo: number | null;
+  deferredToSessionId: string | null;
+  deferredFromSessionId: string | null;
 };
 
 export type SessionRow = {
@@ -36,6 +51,7 @@ export type SessionRow = {
   keywords: string[];
   isVisible: boolean;
   adminNote: string | null;
+  groupCap: number;
   signups: SignupRow[];
 };
 
@@ -182,6 +198,16 @@ export function UploadOrdersForm({
             {state.report.invalid > 0 && `、資料不全 ${state.report.invalid}`}
             （檔案共 {state.report.totalRows} 列）
           </div>
+          {!state.report.mealColumnFound ? (
+            <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              檔案裡找不到葷素欄位（餐點／用餐／葷素…），本批全部以「未標」匯入——
+              統計時未標視為葷，可在名單上逐人改
+            </div>
+          ) : state.report.mealUnknown > 0 ? (
+            <div className="text-xs text-amber-700">
+              葷素未標 {state.report.mealUnknown} 筆（該欄空白；統計時視為葷）
+            </div>
+          ) : null}
           {state.report.unmatched.length > 0 && (
             <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
               <div className="font-medium">
@@ -365,6 +391,7 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
   const [email, setEmail] = useState("");
   // 只在「這次送出成功」那一刻清空一次（比對 state 物件變化，不能只看 success——
   // 它會留到下一輪，成功後再打的新資料會被誤清）
+  const [meal, setMeal] = useState<"MEAT" | "VEG">("MEAT");
   const [prevState, setPrevState] = useState(state);
   if (state !== prevState) {
     setPrevState(state);
@@ -372,6 +399,7 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
       setName("");
       setPhone("");
       setEmail("");
+      setMeal("MEAT");
     }
   }
   return (
@@ -418,6 +446,16 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
           <option value="new">新生</option>
           <option value="retrain">舊生（複訓）</option>
         </select>
+        {/* 受控理由同上：錯誤回來不能悄悄跳回葷 */}
+        <select
+          name="meal"
+          value={meal}
+          onChange={(e) => setMeal(e.target.value === "VEG" ? "VEG" : "MEAT")}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        >
+          <option value="MEAT">葷</option>
+          <option value="VEG">素</option>
+        </select>
         <input
           name="orderNo"
           placeholder="訂單編號（選填，留空自動編）"
@@ -447,14 +485,111 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** 場次卡片：報名名單 + 編輯 + 刪除 */
-export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit: boolean }) {
+/** 分組面板：每組上限 + 自動分組 + 各組摘要 */
+function GroupPanel({ session }: { session: SessionRow }) {
+  const [state, action, pending] = useActionState<SessionFormState, FormData>(
+    autoGroupAction.bind(null, session.id),
+    null,
+  );
+  const [cap, setCap] = useState(String(session.groupCap));
+  const active = session.signups.filter((s) => !s.deferredToSessionId);
+  const grouped = active.filter((s) => s.groupNo != null);
+
+  // 各組摘要：人數/新舊/素
+  const summary = new Map<number, { count: number; retrain: number; veg: number }>();
+  for (const s of grouped) {
+    const g = summary.get(s.groupNo!) ?? { count: 0, retrain: 0, veg: 0 };
+    g.count++;
+    if (isRetrainProduct(s.product)) g.retrain++;
+    if (s.meal === "VEG") g.veg++;
+    summary.set(s.groupNo!, g);
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+      <form
+        action={action}
+        onSubmit={(e) => {
+          if (
+            grouped.length > 0 &&
+            !confirm("重新分組會覆蓋所有手動調整過的組別，繼續？")
+          )
+            e.preventDefault();
+        }}
+        className="flex flex-wrap items-center gap-2 text-sm"
+      >
+        <span className="font-medium text-indigo-900">自動分組</span>
+        <label className="flex items-center gap-1.5 text-gray-600">
+          每組上限
+          <input
+            name="cap"
+            inputMode="numeric"
+            value={cap}
+            onChange={(e) => setCap(e.target.value)}
+            className="w-14 rounded-lg border border-gray-300 px-2 py-1 text-center text-sm focus:border-black focus:outline-none"
+          />
+          人
+        </label>
+        <span className="text-xs text-gray-400">
+          組數 = max(6, ⌈{active.length}÷上限⌉)；新舊生依報名順序平均散進各組
+        </span>
+        <button
+          disabled={pending || active.length === 0}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {pending ? "分組中…" : grouped.length > 0 ? "重新分組" : "自動分組"}
+        </button>
+      </form>
+      {summary.size > 0 && (
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {[...summary.entries()]
+            .sort(([a], [b]) => a - b)
+            .map(([groupNo, g]) => (
+              <span key={groupNo} className="rounded-full bg-white px-2 py-0.5 text-gray-600 ring-1 ring-indigo-100">
+                第 {groupNo} 組 {g.count} 人｜新 {g.count - g.retrain} 舊 {g.retrain}
+                {g.veg > 0 && `｜素 ${g.veg}`}
+              </span>
+            ))}
+          {grouped.length < active.length && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+              未分組 {active.length - grouped.length} 人
+            </span>
+          )}
+        </div>
+      )}
+      <Feedback state={state} />
+    </div>
+  );
+}
+
+/** 場次卡片：報名名單 + 編輯 + 刪除 + 分組 + 延期 */
+export function SessionCard({
+  session,
+  canEdit,
+  sessionOptions,
+}: {
+  session: SessionRow;
+  canEdit: boolean;
+  sessionOptions: { id: string; title: string }[];
+}) {
   const [editState, editAction, editing] = useActionState<SessionFormState, FormData>(
     updateSessionAction.bind(null, session.id),
     null,
   );
-  // 舊生 = 報名複訓方案（產品名含「複訓」）；與 /board 同一判別規則
-  const retrainCount = session.signups.filter((s) => s.product?.includes("複訓")).length;
+  const [deferState, deferDispatch] = useActionState<SessionFormState, FormData>(
+    deferSignupAction,
+    null,
+  );
+  const sessionTitle = (id: string | null) =>
+    sessionOptions.find((o) => o.id === id)?.title ?? "其他場次";
+  const stats = computeRosterStats(session.signups);
+  // 手動指定組別的選單範圍：已用到的最大組號與公式組數取大者
+  const maxGroupNo = Math.max(
+    groupCountFor(stats.total, session.groupCap),
+    ...session.signups.map((s) => s.groupNo ?? 0),
+  );
+  // 有效名單的流水編號（延出列不佔號）
+  let rowNum = 0;
   return (
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
@@ -463,10 +598,14 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
           <span className="text-sm text-gray-400">{formatDate(session.eventDate)}</span>
         )}
         <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-sm font-bold">
-          {session.signups.length} 人
+          {stats.total} 人
         </span>
         <span className="text-xs text-gray-400">
-          新生 {session.signups.length - retrainCount}｜舊生 {retrainCount}
+          新生 {stats.fresh}｜舊生 {stats.retrain}｜葷 {stats.meat} 素 {stats.veg}
+          {stats.mealUnknown > 0 && (
+            <span title="未標葷素，統計時視為葷">（未標 {stats.mealUnknown}）</span>
+          )}
+          {stats.deferredOut > 0 && `｜延期 ${stats.deferredOut}`}
         </span>
         {!session.isVisible && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
@@ -568,6 +707,20 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
 
         {canEdit && <AddSignupForm sessionId={session.id} />}
 
+        {canEdit && session.signups.length > 0 && (
+          <>
+            <GroupPanel session={session} />
+            <Feedback state={deferState} />
+            <a
+              href={`/api/admin/sessions/${session.id}/signin-sheet`}
+              download
+              className="inline-block rounded-lg border border-gray-400 px-3 py-1.5 text-sm transition hover:bg-gray-100"
+            >
+              ⬇︎ 匯出簽到表（Excel，依組別排序＋用餐彙總）
+            </a>
+          </>
+        )}
+
         {session.signups.length === 0 ? (
           <p className="text-sm text-gray-400">還沒有報名資料——上傳訂單檔後自動歸入，或用上方手動新增</p>
         ) : (
@@ -576,6 +729,8 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
               <tr>
                 <th className="px-2 py-1.5">#</th>
                 <th className="px-2 py-1.5">姓名</th>
+                <th className="px-2 py-1.5">葷素</th>
+                <th className="px-2 py-1.5">組別</th>
                 <th className="px-2 py-1.5">手機</th>
                 <th className="px-2 py-1.5">訂單編號</th>
                 <th className="px-2 py-1.5">產品</th>
@@ -584,10 +739,78 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {session.signups.map((s, i) => (
-                <tr key={s.id}>
-                  <td className="px-2 py-1.5 font-mono text-gray-400">{i + 1}</td>
-                  <td className="px-2 py-1.5">{s.name}</td>
+              {session.signups.map((s) => {
+                const deferredOut = !!s.deferredToSessionId;
+                return (
+                <tr key={s.id} className={deferredOut ? "opacity-50" : undefined}>
+                  <td className="px-2 py-1.5 font-mono text-gray-400">
+                    {deferredOut ? "—" : ++rowNum}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    {s.name}
+                    {isRetrainProduct(s.product) && (
+                      <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700">複訓</span>
+                    )}
+                    {deferredOut && (
+                      <span className="ml-1 rounded bg-gray-200 px-1.5 text-xs text-gray-500">
+                        延期→{sessionTitle(s.deferredToSessionId)}
+                      </span>
+                    )}
+                    {s.deferredFromSessionId && (
+                      <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs text-amber-700">
+                        延期自 {sessionTitle(s.deferredFromSessionId)}
+                      </span>
+                    )}
+                  </td>
+                  {/* 葷素：點按循環 葷→素→未標（延出列不給改） */}
+                  <td className="px-2 py-1.5 text-xs">
+                    {canEdit && !deferredOut ? (
+                      <button
+                        type="button"
+                        title="點按切換：葷 → 素 → 未標"
+                        onClick={() =>
+                          setSignupMealAction(
+                            s.id,
+                            s.meal === "MEAT" ? "VEG" : s.meal === "VEG" ? null : "MEAT",
+                          )
+                        }
+                        className={`rounded border px-2 py-0.5 transition hover:bg-gray-50 ${
+                          s.meal === "VEG"
+                            ? "border-green-300 text-green-700"
+                            : s.meal === "MEAT"
+                              ? "border-gray-300 text-gray-600"
+                              : "border-amber-300 text-amber-700"
+                        }`}
+                      >
+                        {mealLabel(s.meal)}
+                      </button>
+                    ) : (
+                      <span className="text-gray-500">{deferredOut ? "—" : mealLabel(s.meal)}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-xs">
+                    {canEdit && !deferredOut ? (
+                      <select
+                        value={s.groupNo ?? ""}
+                        onChange={(e) =>
+                          setSignupGroupAction(
+                            s.id,
+                            e.target.value ? Number(e.target.value) : null,
+                          )
+                        }
+                        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs focus:border-black focus:outline-none"
+                      >
+                        <option value="">未分組</option>
+                        {Array.from({ length: maxGroupNo }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>第 {n} 組</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-gray-500">
+                        {deferredOut ? "—" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組"}
+                      </span>
+                    )}
+                  </td>
                   <td
                     className={`px-2 py-1.5 font-mono text-xs ${
                       s.phone ? "text-gray-500" : "text-amber-600"
@@ -603,20 +826,66 @@ export function SessionCard({ session, canEdit }: { session: SessionRow; canEdit
                   </td>
                   {canEdit && (
                     <td className="px-2 py-1.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`移除 ${s.name}（${s.orderNo}）的報名紀錄？`))
-                            removeSignupAction(s.id);
-                        }}
-                        className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
-                      >
-                        移除
-                      </button>
+                      <span className="inline-flex items-center gap-1">
+                        {deferredOut ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm(`取消 ${s.name} 的延期？對方場次那筆會一併移除。`)) return;
+                              const res = await undoDeferSignupAction(s.id);
+                              if (res?.error) alert(res.error);
+                            }}
+                            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+                          >
+                            取消延期
+                          </button>
+                        ) : (
+                          sessionOptions.length > 1 && (
+                            <select
+                              value=""
+                              title="延期到其他場次"
+                              onChange={(e) => {
+                                const target = e.target.value;
+                                e.target.value = "";
+                                if (!target) return;
+                                if (
+                                  !confirm(
+                                    `把 ${s.name} 延期到「${sessionTitle(target)}」？\n本場次保留紀錄並標記延期，不再計入統計。`,
+                                  )
+                                )
+                                  return;
+                                const fd = new FormData();
+                                fd.set("signupId", s.id);
+                                fd.set("targetSessionId", target);
+                                startTransition(() => deferDispatch(fd));
+                              }}
+                              className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-500 focus:border-black focus:outline-none"
+                            >
+                              <option value="">延期…</option>
+                              {sessionOptions
+                                .filter((o) => o.id !== session.id)
+                                .map((o) => (
+                                  <option key={o.id} value={o.id}>{o.title}</option>
+                                ))}
+                            </select>
+                          )
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`移除 ${s.name}（${s.orderNo}）的報名紀錄？`))
+                              removeSignupAction(s.id);
+                          }}
+                          className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+                        >
+                          移除
+                        </button>
+                      </span>
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
