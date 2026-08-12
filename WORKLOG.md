@@ -2,6 +2,28 @@
 
 > 每日收工摘要（做了什麼／為什麼／未完成）。逐項細節與架構脈絡見 `HANDOFF.md`。
 
+## 2026-08-12
+
+**舊生複訓身分核對：email → 手機（已部署上線）**
+
+- 起因：蘇郁雅報名填的是先生陳建中的信箱（`tsung0906@gmail.com`）。email 是唯一鍵時
+  第二個人根本建不了檔；用 email 認領歷史紀錄則會把另一半的上課紀錄掛到自己帳號上。
+- 查到的事實：正式站 `StudentRecord` / `StudentCourseHistory` **都是 0 筆**——原本的
+  「查無此 Email 就擋」等於一律擋，任何人都加不了複訓。既有 25 筆複訓全是訂單檔匯入，沒經過這道閘。
+- 決策（Jason 拍板）：查無手機時**不硬擋**，勾「確認為舊生」即一併建檔，資料庫逐步累積。
+- 改動：phone 改唯一鍵、email 改選填不唯一；匯入以手機為 upsert 鍵（只有 email 的舊名單仍
+  可匯入，回報缺手機筆數）；認領手機優先、email 僅在只對到一筆時當備援、已認領的不搶；
+  會員中心歷史紀錄改認 `claimedUserId`。`scripts/test-student-claim.ts` 7 情境全過。
+
+**收尾：** 本機補套 `20260811090000_student_record_phone_index`（8/08 留的待辦）。
+
+**未完成／待辦：**
+- CSP Report-Only **沒有 report-uri／report-to**，違規只進瀏覽器 console 沒人收——
+  「觀察 1–2 週」實際上收不到任何資料。要切正式阻擋前得先補收集端點或人工掃頁。
+- `.mcp.json` 移除 Supabase MCP 的未 commit 修改仍待決（現改用 claude.ai Supabase connector，
+  今天查正式庫都走它，專案層設定等於冗餘）
+- 簡訊實測（/admin/sms 發一則給自己）、看板 4 位碼驗收，仍未做
+
 ## 2026-08-08
 
 **三案全部完成並部署上線：**
