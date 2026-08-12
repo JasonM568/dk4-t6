@@ -27,8 +27,9 @@ export type UnmatchedOrderRow = {
 export type OrderAttendee = {
   key: string;
   name: string;
-  // 同行欄常見「姓名＋電話」一起填（如「同行學員的聯絡資料：」），抽得到就帶上
+  // 同行欄常見「姓名＋電話」一起填（如「同行學員的聯絡資料」），有些還附信箱——抽得到就帶上
   phone?: string | null;
+  email?: string | null;
 };
 
 export type ImportReport = {
@@ -83,31 +84,68 @@ const COMPANION_IN_TEXT_RE = /(?:同行(?:者|人|友人)?|同伴|友人|朋友|
 // 片段裡的台灣手機（允許 - 與空白間隔）；先抽電話再清姓名，
 // 否則「王小美 0912345678」整段含數字會被姓名檢核整個丟掉
 const PHONE_IN_TEXT_RE = /09\d(?:[-\s]?\d){7}/;
-// 清掉學員照表單提示照抄的標籤字（「姓名：王小美 電話：09…」）
-const LABEL_TOKEN_RE = /(?:同行\s*)?(?:學員|友人)?\s*(?:姓名|名字|電話|手機|聯絡(?:方式|資料|電話)?)\s*[:：]?/g;
+// 「姓名緊鄰電話」成對抽取——多位同行者各自帶電話時（「歐洸熏/0975085939 曾照恩/0932647608」）
+// 逐片切開會把 A 的電話配給 B，成對抽取才配得對
+const NAME_PHONE_PAIR_RE = /([A-Za-zÀ-ɏ一-鿿·]{2,12})\s*[／/｜|]?\s*(09\d(?:[-\s]?\d){7})/g;
+const EMAIL_IN_TEXT_RE = /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g;
+// 清掉學員照表單提示照抄的標籤字（「姓名：王小美 電話：09…」「第二位：」）
+const LABEL_TOKEN_RE = /(?:同行\s*)?(?:學員|友人)?\s*(?:姓名|名字|電話|手機|信箱|聯絡(?:方式|資料|電話)?|第[一二三四五六七八九十0-9０-９]+位)\s*[:：]?/g;
+// 「無」「沒有」等填法不是姓名
+const COMPANION_STOPWORD_RE = /^(?:無|沒有|沒|none|n\/a|-+)$/i;
 
-type CompanionEntry = { name: string; phone: string | null };
+type CompanionEntry = { name: string; phone: string | null; email: string | null };
 
-/** 一段文字 → 同行者（姓名＋可有可無的電話）。
- *  片段以頓號/逗號/分號/斜線/換行切開；每片先抽電話、清標籤字，剩下當姓名。 */
+/** 一段文字 → 同行者（姓名＋可有可無的電話/信箱）。
+ *  順序：抽信箱 → 姓名+電話成對抽取 → 殘餘文字切片清洗撿沒電話的姓名。
+ *  實例（1shop「同行學員的聯絡資料」欄）：
+ *    「張育淇 0930431311」「潘月時／0929723747」
+ *    「歐洸熏/0975085939 曾照恩/0932647608」
+ *    「總共2位一起上課 第二位：李舜泰 /0968227682 /1993/02/17 台南永康區 信箱：xxx@gmail.com」 */
 function parseCompanionEntries(value: string): CompanionEntry[] {
   const entries: CompanionEntry[] = [];
-  for (const segment of value.split(/[、,，;；|／/\n\r]/)) {
-    const phoneMatch = segment.match(PHONE_IN_TEXT_RE);
-    const phone = phoneMatch ? normalizeMobile(phoneMatch[0]) : null;
-    const name = segment
-      .replace(PHONE_IN_TEXT_RE, " ")
+  const pushEntry = (name: string, phone: string | null) => {
+    const cleaned = name
       .replace(LABEL_TOKEN_RE, " ")
       .replace(/[()（）]/g, " ")
       .replace(/^[-－\s]+|[-－\s]+$/g, "")
       .trim();
-    // 姓名不可含 email/殘餘數字等明顯非姓名字元；保留中英文與常見姓名符號
-    if (name.length >= 2 && name.length <= 40 && !/[@\d]/.test(name)) {
-      entries.push({ name, phone });
-    } else if (phone && entries.length > 0 && !entries[entries.length - 1].phone) {
-      // 「王小美、0912345678」拆成兩片：電話片補回前一位沒電話的同行者
-      entries[entries.length - 1].phone = phone;
+    if (
+      cleaned.length >= 2 &&
+      cleaned.length <= 40 &&
+      !/[@\d]/.test(cleaned) &&
+      !COMPANION_STOPWORD_RE.test(cleaned)
+    ) {
+      entries.push({ name: cleaned, phone, email: null });
+      return true;
     }
+    return false;
+  };
+
+  // 1) 信箱先摘走（生日/地址混在同欄時，殘餘清洗不會誤傷）
+  const emails = value.match(EMAIL_IN_TEXT_RE) ?? [];
+  let rest = value.replace(EMAIL_IN_TEXT_RE, " ");
+
+  // 2) 姓名+電話成對抽取
+  for (const m of rest.matchAll(NAME_PHONE_PAIR_RE)) {
+    pushEntry(m[1], normalizeMobile(m[2]));
+  }
+  rest = rest.replace(NAME_PHONE_PAIR_RE, " ");
+
+  // 3) 殘餘：切片撿沒帶電話的姓名（「同行甲、同行乙」型）；孤立電話補給前一位
+  for (const segment of rest.split(/[、,，;；|｜／/\n\r]/)) {
+    const phoneMatch = segment.match(PHONE_IN_TEXT_RE);
+    const phone = phoneMatch ? normalizeMobile(phoneMatch[0]) : null;
+    const ok = pushEntry(segment.replace(PHONE_IN_TEXT_RE, " "), phone);
+    if (!ok && phone) {
+      const missing = entries.find((e) => !e.phone);
+      if (missing) missing.phone = phone;
+    }
+  }
+
+  // 4) 信箱依序補給還沒有信箱的同行者
+  for (const email of emails) {
+    const missing = entries.find((e) => !e.email);
+    if (missing) missing.email = email;
   }
   return entries;
 }
@@ -119,8 +157,10 @@ function findCompanions(header: string[], row: unknown[], buyerName: string): Co
     for (const entry of parseCompanionEntries(value)) {
       if (entry.name === buyerName) continue;
       const existing = found.find((f) => f.name === entry.name);
-      if (existing) existing.phone ??= entry.phone;
-      else found.push(entry);
+      if (existing) {
+        existing.phone ??= entry.phone;
+        existing.email ??= entry.email;
+      } else found.push(entry);
     }
   };
 
@@ -362,6 +402,7 @@ export async function parseOrderFile(
           key: `companion-${index + 1}`,
           name: companion.name,
           phone: companion.phone,
+          email: companion.email,
         })),
       ],
     };
@@ -422,7 +463,8 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
 
   for (const row of rows) {
     if (!row.orderNo || !row.name) {
-      report.invalid++;
+      // 1shop 匯出檔末尾的「總計」列不是資料，不計入噪音
+      if (!/總計/.test(row.orderNo)) report.invalid++;
       continue;
     }
     // 取消/退款 → 反向移除既有報名（訂單編號全域唯一，跨場次移除）
@@ -469,8 +511,8 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
         orderNo: row.orderNo,
         attendeeKey: attendee.key,
         name: attendee.name,
-        // email 只有訂購人有；同行者的手機若有填在同行欄就帶入（收上課提醒簡訊）
-        email: attendee.key === "buyer" ? row.email || null : null,
+        // 同行者的手機/信箱若有填在同行欄就帶入（收上課提醒簡訊）
+        email: attendee.key === "buyer" ? row.email || null : (attendee.email ?? null),
         phone:
           attendee.key === "buyer" ? normalizeMobile(row.phone) : (attendee.phone ?? null),
         product: row.product,
@@ -489,12 +531,26 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     report.canceledRemoved = del.count;
   }
   if (toCreate.length > 0) {
+    // 同單同名但識別鍵不同的既有列（管理員先手動補的人 manual-N、或欄位順序改變的
+    // companion-N）→ 不再重建，避免同一個人變兩筆
+    const existing = await prisma.sessionSignup.findMany({
+      where: { orderNo: { in: [...new Set(toCreate.map((t) => t.orderNo))] } },
+      select: { sessionId: true, orderNo: true, attendeeKey: true, name: true },
+    });
+    const tripleKeys = new Set(existing.map((e) => `${e.sessionId}|${e.orderNo}|${e.attendeeKey}`));
+    const nameKeys = new Set(existing.map((e) => `${e.sessionId}|${e.orderNo}|${e.name}`));
+    const kept = toCreate.filter(
+      (t) =>
+        tripleKeys.has(`${t.sessionId}|${t.orderNo}|${t.attendeeKey}`) || // 同鍵留給 skipDuplicates 計數
+        !nameKeys.has(`${t.sessionId}|${t.orderNo}|${t.name}`),
+    );
+    const nameDup = toCreate.length - kept.length;
     const res = await prisma.sessionSignup.createMany({
-      data: toCreate,
+      data: kept,
       skipDuplicates: true,
     });
     report.imported = res.count;
-    report.duplicate = toCreate.length - res.count;
+    report.duplicate = kept.length - res.count + nameDup;
   }
   // 葷素回填既有列：meal IS NULL 條件保證不覆蓋後台手動標記
   for (const meal of ["VEG", "MEAT"] as const) {

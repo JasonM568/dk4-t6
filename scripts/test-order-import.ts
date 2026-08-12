@@ -172,14 +172,50 @@ async function main() {
       rows[1]?.attendees[1]?.name === "李大同" && rows[1]?.attendees[1]?.phone === "0922333444",
       JSON.stringify(rows[1]?.attendees),
     );
-    check(
-      "頓號分隔多同行者（電話跟在最後一位）",
-      rows[2]?.attendees.map((a) => a.name).join("、") === "買家Q3、陳一、林二" &&
-        rows[2]?.attendees[2]?.phone === "0933444555",
-      JSON.stringify(rows[2]?.attendees),
-    );
+    {
+      // 「陳一、林二 0933444555」：電話配給緊鄰的林二；兩人都要在（順序不拘）
+      const att = rows[2]?.attendees ?? [];
+      const names = new Set(att.map((a) => a.name));
+      check(
+        "頓號分隔多同行者（電話配給緊鄰者）",
+        att.length === 3 && names.has("陳一") && names.has("林二") &&
+          att.find((a) => a.name === "林二")?.phone === "0933444555",
+        JSON.stringify(att),
+      );
+    }
     check("數量欄解析", rows[0]?.quantity === 2 && rows[3]?.quantity === 2);
     check("沒填同行者 → attendees 只有買家（不憑數量瞎猜）", rows[3]?.attendees.length === 1);
+  }
+  {
+    // 真實檔案（order_2026_08_12）出現過的格式，全部要解對
+    const h = [...HEADER, "同行學員的聯絡資料", "產品數量"];
+    const mk = (no: string, contact: string, qty: string) =>
+      [no, "2026-08-05 09:30:00", "已成立", `買家${no}`, "量子課", "已付款", "0911000111", "", "3000", `"${contact}"`, qty];
+    const { rows } = await parseOrderFile(csvBuf(
+      `${h.join(",")}\n` +
+      [
+        mk("R1", "潘月時／0929723747", "2"), // 全形斜線
+        mk("R2", "歐洸熏/0975085939 曾照恩/0932647608", "3"), // 兩組人各配各的電話
+        mk("R3", "總共2位一起上課 第二位：李舜泰 /0968227682 /1993/02/17 台南永康區 信箱：shunted517@gmail.com", "2"), // 生日/地址/信箱混雜
+        mk("R4", "無", "1"), // 「無」不是姓名
+      ].map((r) => r.join(",")).join("\n") + "\n",
+    ));
+    check("全形斜線分隔", rows[0]?.attendees[1]?.name === "潘月時" && rows[0]?.attendees[1]?.phone === "0929723747",
+      JSON.stringify(rows[0]?.attendees));
+    check(
+      "兩組姓名/電話成對抽取不錯配",
+      rows[1]?.attendees[1]?.name === "歐洸熏" && rows[1]?.attendees[1]?.phone === "0975085939" &&
+        rows[1]?.attendees[2]?.name === "曾照恩" && rows[1]?.attendees[2]?.phone === "0932647608",
+      JSON.stringify(rows[1]?.attendees),
+    );
+    check(
+      "生日/地址/信箱混雜仍抽出姓名＋電話＋信箱",
+      rows[2]?.attendees.length === 2 && rows[2]?.attendees[1]?.name === "李舜泰" &&
+        rows[2]?.attendees[1]?.phone === "0968227682" &&
+        rows[2]?.attendees[1]?.email === "shunted517@gmail.com",
+      JSON.stringify(rows[2]?.attendees),
+    );
+    check("「無」不是同行者", rows[3]?.attendees.length === 1, JSON.stringify(rows[3]?.attendees));
   }
   console.log("— 葷素欄位 —");
   {

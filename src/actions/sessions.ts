@@ -140,6 +140,24 @@ export async function addSignupAction(
   const orderNo =
     orderNoInput || `手動-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
+  // 兩人同報常見同一張訂單號（黃淑華＋李舜泰實例）：同單第二位起改用 manual-N
+  // 識別鍵，不會撞唯一鍵；manual- 前綴也永不與匯入產生的 companion-N 相撞。
+  let attendeeKey = "buyer";
+  if (orderNoInput) {
+    const existing = await prisma.sessionSignup.findMany({
+      where: { sessionId, orderNo: orderNoInput },
+      select: { attendeeKey: true, name: true },
+    });
+    if (existing.some((e) => e.name === name))
+      return { error: `${name} 已在這張訂單的名單裡` };
+    if (existing.length > 0) {
+      const keys = new Set(existing.map((e) => e.attendeeKey));
+      let n = 1;
+      while (keys.has(`manual-${n}`)) n++;
+      attendeeKey = `manual-${n}`;
+    }
+  }
+
   // 舊生判別全站統一（isRetrainProduct）——選舊生就自動補上「複訓」標記
   const base = note || "手動新增";
   const product = isRetrain && !isRetrainProduct(base) ? `複訓｜${base}` : base;
@@ -149,6 +167,7 @@ export async function addSignupAction(
       data: {
         sessionId,
         orderNo,
+        attendeeKey,
         name,
         email: email || null,
         phone,
@@ -191,7 +210,7 @@ export async function assignUnmatchedAction(
     amount: number | null;
     orderedAt: string | null;
     meal?: string | null;
-    attendees: { key: string; name: string; phone?: string | null }[];
+    attendees: { key: string; name: string; phone?: string | null; email?: string | null }[];
   }[];
   try {
     const parsed: unknown = JSON.parse(String(formData.get("rows") ?? "[]"));
@@ -231,8 +250,13 @@ export async function assignUnmatchedAction(
         orderNo: r.orderNo,
         attendeeKey: attendee.key,
         name: attendee.name,
-        email: attendee.key === "buyer" ? r.email || null : null,
-        // 同行者電話走 normalizeMobile 重新收斂（JSON 來回不信原值）
+        // 同行者電話/信箱走重新收斂（JSON 來回不信原值）
+        email:
+          attendee.key === "buyer"
+            ? r.email || null
+            : typeof attendee.email === "string" && attendee.email.includes("@")
+              ? attendee.email.trim().toLowerCase()
+              : null,
         phone:
           attendee.key === "buyer"
             ? normalizeMobile(r.phone)
