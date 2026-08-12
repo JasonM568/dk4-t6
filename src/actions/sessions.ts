@@ -191,7 +191,7 @@ export async function assignUnmatchedAction(
     amount: number | null;
     orderedAt: string | null;
     meal?: string | null;
-    attendees: { key: string; name: string }[];
+    attendees: { key: string; name: string; phone?: string | null }[];
   }[];
   try {
     const parsed: unknown = JSON.parse(String(formData.get("rows") ?? "[]"));
@@ -232,7 +232,11 @@ export async function assignUnmatchedAction(
         attendeeKey: attendee.key,
         name: attendee.name,
         email: attendee.key === "buyer" ? r.email || null : null,
-        phone: attendee.key === "buyer" ? normalizeMobile(r.phone) : null,
+        // 同行者電話走 normalizeMobile 重新收斂（JSON 來回不信原值）
+        phone:
+          attendee.key === "buyer"
+            ? normalizeMobile(r.phone)
+            : normalizeMobile(attendee.phone ?? null),
         product,
         amount: typeof r.amount === "number" ? r.amount : null,
         orderedAt: orderedAt && !Number.isNaN(orderedAt.getTime()) ? orderedAt : null,

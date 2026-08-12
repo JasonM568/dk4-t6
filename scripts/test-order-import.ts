@@ -145,6 +145,42 @@ async function main() {
       JSON.stringify(rows[0]?.attendees),
     );
   }
+
+  console.log("— 同行欄姓名＋電話混填（「同行學員的聯絡資料：」實例）—");
+  {
+    // 黃淑華案例：姓名＋電話寫同一欄，舊版整段含數字被丟掉 → 同行者消失
+    const h = [...HEADER, "同行學員的聯絡資料：", "訂單明細數量"];
+    const mk = (no: string, contact: string, qty: string) =>
+      [no, "2026-08-05 09:30:00", "已成立", `買家${no}`, "量子課", "已付款", "0911000111", "", "3000", `"${contact}"`, qty];
+    const { rows } = await parseOrderFile(csvBuf(
+      `${h.join(",")}\n` +
+      [
+        mk("Q1", "王小美 0912345678", "2"),
+        mk("Q2", "姓名：李大同 電話：0922-333-444", "2"),
+        mk("Q3", "陳一、林二 0933444555", "3"),
+        mk("Q4", "", "2"), // 沒填 → 需人工確認
+      ].map((r) => r.join(",")).join("\n") + "\n",
+    ));
+    check(
+      "姓名＋電話同欄可拆（電話入庫）",
+      rows[0]?.attendees.length === 2 &&
+        rows[0]?.attendees[1]?.name === "王小美" && rows[0]?.attendees[1]?.phone === "0912345678",
+      JSON.stringify(rows[0]?.attendees),
+    );
+    check(
+      "照表單提示抄的標籤字（姓名：/電話：）清得掉、電話分隔符可解",
+      rows[1]?.attendees[1]?.name === "李大同" && rows[1]?.attendees[1]?.phone === "0922333444",
+      JSON.stringify(rows[1]?.attendees),
+    );
+    check(
+      "頓號分隔多同行者（電話跟在最後一位）",
+      rows[2]?.attendees.map((a) => a.name).join("、") === "買家Q3、陳一、林二" &&
+        rows[2]?.attendees[2]?.phone === "0933444555",
+      JSON.stringify(rows[2]?.attendees),
+    );
+    check("數量欄解析", rows[0]?.quantity === 2 && rows[3]?.quantity === 2);
+    check("沒填同行者 → attendees 只有買家（不憑數量瞎猜）", rows[3]?.attendees.length === 1);
+  }
   console.log("— 葷素欄位 —");
   {
     // 1shop 自訂欄位「餐點/用餐」→ 值含素判素、非空判葷、空為未標

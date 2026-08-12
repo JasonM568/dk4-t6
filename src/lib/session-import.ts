@@ -27,6 +27,8 @@ export type UnmatchedOrderRow = {
 export type OrderAttendee = {
   key: string;
   name: string;
+  // 同行欄常見「姓名＋電話」一起填（如「同行學員的聯絡資料：」），抽得到就帶上
+  phone?: string | null;
 };
 
 export type ImportReport = {
@@ -39,6 +41,9 @@ export type ImportReport = {
   invalid: number; // 缺訂單編號/顧客的列
   mealColumnFound: boolean; // 檔案裡有沒有葷素欄位（餐點/用餐…）
   mealUnknown: number; // 有欄位但該列值空白（已付款且歸入場次的列才計）
+  // 訂單「數量」≥2 但辨識出的報名者不足：同行者資料可能沒填/格式認不得，
+  // 要人工確認補上（實例：黃淑華訂 2 位但同行欄格式解析失敗）
+  companionCheck: { orderNo: string; name: string; quantity: number; found: number }[];
 };
 
 type ParsedRow = {
@@ -52,6 +57,7 @@ type ParsedRow = {
   email: string;
   amount: number | null;
   meal: Meal | null;
+  quantity: number | null; // 訂單明細數量（有欄位才有值）
   attendees: OrderAttendee[];
 };
 
@@ -69,25 +75,52 @@ const HEADERS = {
 } as const;
 
 /** 1shop 的自訂欄位會直接成為匯出欄位。各銷售頁的命名不同，因此以欄位
- * 語意辨識同行者，而不是把欄位位置或某一個固定名稱寫死。 */
+ * 語意辨識同行者，而不是把欄位位置或某一個固定名稱寫死。
+ * 實例欄名：「同行學員的聯絡資料：」——學員常把姓名＋電話一起填。 */
 const COMPANION_HEADER_RE = /同行|同伴|友人|朋友|(?:學員|參加(?:者|人)?|報名(?:者|人)?)(?:\s*(?:姓名|名字|名稱)|[0-9０-９])/;
 const ORDER_INFO_HEADER_RE = /訂單資訊|訂單備註|顧客備註|備註/;
 const COMPANION_IN_TEXT_RE = /(?:同行(?:者|人|友人)?|同伴|友人|朋友|學員|參加者?)\s*(?:姓名)?\s*(?:[0-9０-９]+)?\s*[:：]\s*([^\n\r]+)/g;
+// 片段裡的台灣手機（允許 - 與空白間隔）；先抽電話再清姓名，
+// 否則「王小美 0912345678」整段含數字會被姓名檢核整個丟掉
+const PHONE_IN_TEXT_RE = /09\d(?:[-\s]?\d){7}/;
+// 清掉學員照表單提示照抄的標籤字（「姓名：王小美 電話：09…」）
+const LABEL_TOKEN_RE = /(?:同行\s*)?(?:學員|友人)?\s*(?:姓名|名字|電話|手機|聯絡(?:方式|資料|電話)?)\s*[:：]?/g;
 
-function cleanAttendeeNames(value: string): string[] {
-  return value
-    .split(/[、,，;；|／/]/)
-    .map((name) => name.replace(/^[-－\s]+|[-－\s]+$/g, "").trim())
-    // 姓名不可含 email/電話等明顯非姓名字元；保留中英文與常見姓名符號。
-    .filter((name) => name.length >= 2 && name.length <= 40 && !/[@\d]/.test(name));
+type CompanionEntry = { name: string; phone: string | null };
+
+/** 一段文字 → 同行者（姓名＋可有可無的電話）。
+ *  片段以頓號/逗號/分號/斜線/換行切開；每片先抽電話、清標籤字，剩下當姓名。 */
+function parseCompanionEntries(value: string): CompanionEntry[] {
+  const entries: CompanionEntry[] = [];
+  for (const segment of value.split(/[、,，;；|／/\n\r]/)) {
+    const phoneMatch = segment.match(PHONE_IN_TEXT_RE);
+    const phone = phoneMatch ? normalizeMobile(phoneMatch[0]) : null;
+    const name = segment
+      .replace(PHONE_IN_TEXT_RE, " ")
+      .replace(LABEL_TOKEN_RE, " ")
+      .replace(/[()（）]/g, " ")
+      .replace(/^[-－\s]+|[-－\s]+$/g, "")
+      .trim();
+    // 姓名不可含 email/殘餘數字等明顯非姓名字元；保留中英文與常見姓名符號
+    if (name.length >= 2 && name.length <= 40 && !/[@\d]/.test(name)) {
+      entries.push({ name, phone });
+    } else if (phone && entries.length > 0 && !entries[entries.length - 1].phone) {
+      // 「王小美、0912345678」拆成兩片：電話片補回前一位沒電話的同行者
+      entries[entries.length - 1].phone = phone;
+    }
+  }
+  return entries;
 }
 
 /** 從自訂同行欄位與訂單資訊文字找出同行者。未填就絕不根據數量猜名字。 */
-function findCompanionNames(header: string[], row: unknown[], buyerName: string): string[] {
-  const found: string[] = [];
+function findCompanions(header: string[], row: unknown[], buyerName: string): CompanionEntry[] {
+  const found: CompanionEntry[] = [];
   const add = (value: string) => {
-    for (const name of cleanAttendeeNames(value)) {
-      if (name !== buyerName && !found.includes(name)) found.push(name);
+    for (const entry of parseCompanionEntries(value)) {
+      if (entry.name === buyerName) continue;
+      const existing = found.find((f) => f.name === entry.name);
+      if (existing) existing.phone ??= entry.phone;
+      else found.push(entry);
     }
   };
 
@@ -299,13 +332,18 @@ export async function parseOrderFile(
   const cell = (r: unknown[], i: number | undefined) =>
     i === undefined ? "" : String(r[i] ?? "").trim();
 
+  // 「數量」欄（1shop 匯出名「訂單明細數量」之類）：≥2 而同行者辨識不足時要提醒人工確認
+  const qtyCol = header.findIndex((label) => !fixedLabels.has(label) && label.includes("數量"));
+
   const parsedRows = rows.slice(1).map((r) => {
     const dateStr = cell(r, col.orderedAt);
     const parsed = dateStr ? parseTaipei(dateStr) : null;
     const amountStr = cell(r, col.amount);
     const amount = amountStr ? Math.round(Number(amountStr)) : null;
+    const qtyStr = qtyCol >= 0 ? cell(r, qtyCol) : "";
+    const qty = qtyStr ? Math.round(Number(qtyStr)) : null;
     const name = cell(r, col.name);
-    const companions = findCompanionNames(header, r, name);
+    const companions = findCompanions(header, r, name);
     return {
       orderNo: cell(r, col.orderNo),
       orderedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed : null,
@@ -317,9 +355,14 @@ export async function parseOrderFile(
       email: cell(r, col.email),
       amount: amount !== null && Number.isFinite(amount) ? amount : null,
       meal: findMeal(r),
+      quantity: qty !== null && Number.isFinite(qty) && qty > 0 ? qty : null,
       attendees: [
         { key: "buyer", name },
-        ...companions.map((companion, index) => ({ key: `companion-${index + 1}`, name: companion })),
+        ...companions.map((companion, index) => ({
+          key: `companion-${index + 1}`,
+          name: companion.name,
+          phone: companion.phone,
+        })),
       ],
     };
   });
@@ -357,6 +400,7 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     invalid: 0,
     mealColumnFound,
     mealUnknown: 0,
+    companionCheck: [],
   };
   const unmatchedRows = new Map<string, UnmatchedOrderRow[]>();
   const toCreate: {
@@ -409,6 +453,15 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     }
     if (mealColumnFound && row.meal === null) report.mealUnknown++;
     if (row.meal) mealBackfill[row.meal].push(row.orderNo);
+    // 訂 2 位以上但辨識出的人數不足 → 同行者資料沒填或格式認不得，列出來人工補
+    if (row.quantity !== null && row.quantity >= 2 && row.attendees.length < row.quantity) {
+      report.companionCheck.push({
+        orderNo: row.orderNo,
+        name: row.name,
+        quantity: row.quantity,
+        found: row.attendees.length,
+      });
+    }
     for (const attendee of row.attendees) {
       if (!attendee.name) continue;
       toCreate.push({
@@ -416,9 +469,10 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
         orderNo: row.orderNo,
         attendeeKey: attendee.key,
         name: attendee.name,
-        // 同行者的聯絡資訊通常不在訂單中；只把訂購人的 email/手機帶入。
+        // email 只有訂購人有；同行者的手機若有填在同行欄就帶入（收上課提醒簡訊）
         email: attendee.key === "buyer" ? row.email || null : null,
-        phone: attendee.key === "buyer" ? normalizeMobile(row.phone) : null,
+        phone:
+          attendee.key === "buyer" ? normalizeMobile(row.phone) : (attendee.phone ?? null),
         product: row.product,
         amount: row.amount,
         orderedAt: row.orderedAt,
@@ -448,6 +502,14 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     await prisma.sessionSignup.updateMany({
       where: { orderNo: { in: mealBackfill[meal] }, attendeeKey: "buyer", meal: null },
       data: { meal },
+    });
+  }
+  // 同行者電話回填既有列（早期匯入的同行列 phone 一律 null）：同樣只補空值
+  for (const row of toCreate) {
+    if (row.attendeeKey === "buyer" || !row.phone) continue;
+    await prisma.sessionSignup.updateMany({
+      where: { orderNo: row.orderNo, attendeeKey: row.attendeeKey, phone: null },
+      data: { phone: row.phone },
     });
   }
   report.unmatched = [...unmatchedRows.entries()]

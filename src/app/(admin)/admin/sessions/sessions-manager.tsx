@@ -198,6 +198,21 @@ export function UploadOrdersForm({
             {state.report.invalid > 0 && `、資料不全 ${state.report.invalid}`}
             （檔案共 {state.report.totalRows} 列）
           </div>
+          {state.report.companionCheck.length > 0 && (
+            <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              <div className="font-medium">
+                ⚠️ {state.report.companionCheck.length} 張訂單的人數與辨識到的報名者不符——
+                同行學員資料可能沒填或格式認不得，請對照訂單原檔確認，缺的人用「手動新增」補：
+              </div>
+              <ul className="mt-1 space-y-0.5">
+                {state.report.companionCheck.map((c) => (
+                  <li key={c.orderNo}>
+                    {c.name}（{c.orderNo}）：訂 {c.quantity} 位、辨識到 {c.found} 位
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {!state.report.mealColumnFound ? (
             <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
               檔案裡找不到葷素欄位（餐點／用餐／葷素…），本批全部以「未標」匯入——
