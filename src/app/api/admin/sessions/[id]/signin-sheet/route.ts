@@ -26,10 +26,10 @@ export async function GET(
   });
   if (!session) return new Response("場次不存在", { status: 404 });
 
-  // 依組別排序（未分組排最後）→ 組內依報名時間
+  // 依組別排序（未分組其次、工作人員最後）→ 組內依報名時間
   const rows = [...session.signups].sort((a, b) => {
-    const ga = a.groupNo ?? Number.MAX_SAFE_INTEGER;
-    const gb = b.groupNo ?? Number.MAX_SAFE_INTEGER;
+    const ga = a.isStaff ? Number.MAX_SAFE_INTEGER : (a.groupNo ?? Number.MAX_SAFE_INTEGER - 1);
+    const gb = b.isStaff ? Number.MAX_SAFE_INTEGER : (b.groupNo ?? Number.MAX_SAFE_INTEGER - 1);
     if (ga !== gb) return ga - gb;
     const ta = a.orderedAt?.getTime() ?? a.createdAt.getTime();
     const tb = b.orderedAt?.getTime() ?? b.createdAt.getTime();
@@ -60,9 +60,9 @@ export async function GET(
 
   for (const s of rows) {
     const row = ws.addRow({
-      group: s.groupNo ? `第 ${s.groupNo} 組` : "未分組",
+      group: s.isStaff ? "工作人員" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組",
       name: s.name,
-      type: isRetrainProduct(s.product) ? "舊生" : "新生",
+      type: s.isStaff ? "工作人員" : isRetrainProduct(s.product) ? "舊生" : "新生",
       meal: mealLabel(s.meal),
       phone: s.phone ? formatMobile(s.phone) : "",
       sign: "",
@@ -83,8 +83,9 @@ export async function GET(
   // 用餐彙總（未標往安全側算葷）
   ws.addRow([]);
   const summary = ws.addRow([
-    `總人數 ${stats.total}｜新生 ${stats.fresh}｜舊生 ${stats.retrain}｜` +
-      `葷 ${stats.meat}（含未標 ${stats.mealUnknown}）｜素 ${stats.veg}`,
+    `學員 ${stats.total}（新生 ${stats.fresh}／舊生 ${stats.retrain}）` +
+      (stats.staff > 0 ? `｜工作人員 ${stats.staff}` : "") +
+      `｜用餐：葷 ${stats.meat}（含未標 ${stats.mealUnknown}）、素 ${stats.veg}（用餐統計含工作人員）`,
   ]);
   ws.mergeCells(summary.number, 1, summary.number, 6);
   summary.font = { bold: true };

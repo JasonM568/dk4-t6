@@ -37,36 +37,44 @@ export type RosterSignup = {
   meal: string | null;
   deferredToSessionId: string | null;
   groupNo: number | null;
+  isStaff?: boolean;
 };
 
 export type RosterStats = {
-  total: number; // 有效人數（不含延出）
+  total: number; // 學員數（不含延出、不含工作人員）
   fresh: number;
   retrain: number;
-  veg: number;
+  staff: number; // 工作人員（不分組、不算新舊生，但用餐要算）
+  veg: number; // 用餐統計含工作人員
   meat: number; // 含未標（訂餐數字往安全側算）
   mealUnknown: number;
   deferredOut: number;
-  ungrouped: number; // 有效但尚未分組
+  ungrouped: number; // 學員中尚未分組者（工作人員不算）
 };
 
 export function computeRosterStats(signups: RosterSignup[]): RosterStats {
   const stats: RosterStats = {
-    total: 0, fresh: 0, retrain: 0, veg: 0, meat: 0, mealUnknown: 0, deferredOut: 0, ungrouped: 0,
+    total: 0, fresh: 0, retrain: 0, staff: 0,
+    veg: 0, meat: 0, mealUnknown: 0, deferredOut: 0, ungrouped: 0,
   };
   for (const s of signups) {
     if (s.deferredToSessionId) {
       stats.deferredOut++;
       continue;
     }
-    stats.total++;
-    if (isRetrainProduct(s.product)) stats.retrain++;
-    else stats.fresh++;
+    // 用餐統計含工作人員（訂便當是全場的量）
     if (s.meal === "VEG") stats.veg++;
     else {
       stats.meat++;
       if (s.meal !== "MEAT") stats.mealUnknown++;
     }
+    if (s.isStaff) {
+      stats.staff++;
+      continue;
+    }
+    stats.total++;
+    if (isRetrainProduct(s.product)) stats.retrain++;
+    else stats.fresh++;
     if (s.groupNo == null) stats.ungrouped++;
   }
   return stats;
@@ -86,7 +94,14 @@ export type GroupableSignup = {
   deferredToSessionId: string | null;
   orderedAt: Date | null;
   createdAt: Date;
+  isStaff?: boolean; // 工作人員不列入分組
 };
+
+/** 第 g 組的實際上限：逐組覆寫（groupCaps，0 或缺值 = 用預設）優先於預設值 */
+export function capForGroup(g: number, defaultCap: number, groupCaps: number[] = []): number {
+  const override = groupCaps[g - 1];
+  return override && override > 0 ? override : Math.max(1, Math.floor(defaultCap));
+}
 
 /** 補分組：只分「未分組」的人，已分好的組別完全不動（每日更新名單後的新報名用）。
  *  逐人挑「同類（新生/舊生）人數最少 → 總人數最少 → 組號最小」且未滿上限的組，
@@ -95,12 +110,12 @@ export type GroupableSignup = {
 export function assignRemaining(
   signups: (GroupableSignup & { groupNo: number | null })[],
   cap: number,
+  groupCaps: number[] = [],
 ): { assignments: Map<string, number>; groupCount: number } {
-  const safeCap = Math.max(1, Math.floor(cap));
-  const active = signups.filter((s) => !s.deferredToSessionId);
+  const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
   const grouped = active.filter((s) => s.groupNo != null);
   // 還沒分過組 → 等同全量分組
-  if (grouped.length === 0) return assignGroups(active, safeCap);
+  if (grouped.length === 0) return assignGroups(active, cap, groupCaps);
 
   let groupCount = Math.max(MIN_GROUPS, ...grouped.map((s) => s.groupNo!));
   const stats = new Map<number, { total: number; fresh: number; retrain: number }>();
@@ -126,7 +141,7 @@ export function assignRemaining(
     let best: number | null = null;
     for (let g = 1; g <= groupCount; g++) {
       const st = stats.get(g)!;
-      if (st.total >= safeCap) continue;
+      if (st.total >= capForGroup(g, cap, groupCaps)) continue;
       if (best === null) {
         best = g;
         continue;
@@ -136,7 +151,7 @@ export function assignRemaining(
       if (cat(st) < cat(bs) || (cat(st) === cat(bs) && st.total < bs.total)) best = g;
     }
     if (best === null) {
-      // 全滿 → 開新組
+      // 全滿 → 開新組（新組吃預設上限）
       groupCount++;
       stats.set(groupCount, { total: 0, fresh: 0, retrain: 0 });
       best = groupCount;
@@ -150,15 +165,26 @@ export function assignRemaining(
   return { assignments, groupCount };
 }
 
-/** 自動分組：延出者排除；新生、舊生各自依 orderedAt/createdAt/id 穩定排序後
- *  round-robin 散進各組（舊生從新生停下的游標接續）——各組人數差 ≤1，
- *  且新舊比例鏡射整體名單（名單是 6:4 每組就約 6:4）。確定性：同輸入必同輸出。 */
+/** 自動分組：延出者與工作人員排除；新生、舊生各自依 orderedAt/createdAt/id 穩定
+ *  排序後 round-robin 散進各組（舊生從新生停下的游標接續）——上限內各組人數差 ≤1，
+ *  且新舊比例鏡射整體名單（名單是 6:4 每組就約 6:4）。
+ *  逐組上限（groupCaps）不同時：滿的組跳過，多出來的人自然流向上限大的組；
+ *  總容量不夠才開新組（新組吃預設上限）。確定性：同輸入必同輸出。 */
 export function assignGroups(
   signups: GroupableSignup[],
   cap: number,
+  groupCaps: number[] = [],
 ): { assignments: Map<string, number>; groupCount: number } {
-  const active = signups.filter((s) => !s.deferredToSessionId);
-  const groupCount = groupCountFor(active.length, cap);
+  const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
+  // 組數：至少 6 組，容量累計到裝得下所有人
+  let groupCount = MIN_GROUPS;
+  let capacity = 0;
+  for (let g = 1; g <= groupCount; g++) capacity += capForGroup(g, cap, groupCaps);
+  while (capacity < active.length) {
+    groupCount++;
+    capacity += capForGroup(groupCount, cap, groupCaps);
+  }
+
   const byTime = (a: GroupableSignup, b: GroupableSignup) => {
     const ta = a.orderedAt?.getTime() ?? a.createdAt.getTime();
     const tb = b.orderedAt?.getTime() ?? b.createdAt.getTime();
@@ -168,9 +194,19 @@ export function assignGroups(
   const retrain = active.filter((s) => isRetrainProduct(s.product)).sort(byTime);
 
   const assignments = new Map<string, number>();
+  const counts = Array.from({ length: groupCount + 1 }, () => 0);
   let cursor = 0;
   for (const s of [...fresh, ...retrain]) {
-    assignments.set(s.id, (cursor % groupCount) + 1);
+    // 循環找下一個未滿的組（容量足夠，必有）
+    let g = (cursor % groupCount) + 1;
+    let hops = 0;
+    while (counts[g] >= capForGroup(g, cap, groupCaps) && hops < groupCount) {
+      cursor++;
+      hops++;
+      g = (cursor % groupCount) + 1;
+    }
+    counts[g]++;
+    assignments.set(s.id, g);
     cursor++;
   }
   return { assignments, groupCount };

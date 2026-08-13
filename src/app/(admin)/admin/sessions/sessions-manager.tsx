@@ -12,6 +12,7 @@ import {
   saveBoardCodeAction,
   setSignupMealAction,
   setSignupGroupAction,
+  setGroupCapAction,
   autoGroupAction,
   deferSignupAction,
   undoDeferSignupAction,
@@ -39,6 +40,7 @@ export type SignupRow = {
   orderedAt: string | null;
   meal: string | null;
   groupNo: number | null;
+  isStaff: boolean;
   deferredToSessionId: string | null;
   deferredFromSessionId: string | null;
 };
@@ -52,6 +54,7 @@ export type SessionRow = {
   isVisible: boolean;
   adminNote: string | null;
   groupCap: number;
+  groupCaps: number[]; // 逐組上限覆寫（index 0 = 第 1 組；0 = 用預設）
   signups: SignupRow[];
 };
 
@@ -398,7 +401,8 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
     addSignupAction.bind(null, sessionId),
     null,
   );
-  const [isRetrain, setIsRetrain] = useState(false);
+  const [type, setType] = useState<"new" | "retrain" | "staff">("new");
+  const isRetrain = type === "retrain";
   // 受控欄位：React 19 表單在 action 完成後會重置未受控欄位——「查無手機→勾確認→重送」
   // 是設計好的正常路徑，錯誤回來把欄位清空會逼管理員整組重打
   const [name, setName] = useState("");
@@ -454,12 +458,13 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
             管理員重送就會被當新生寫入（不建檔、不標複訓）——用 state 鎖住選擇 */}
         <select
           name="type"
-          value={isRetrain ? "retrain" : "new"}
-          onChange={(e) => setIsRetrain(e.target.value === "retrain")}
+          value={type}
+          onChange={(e) => setType(e.target.value as "new" | "retrain" | "staff")}
           className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         >
           <option value="new">新生</option>
           <option value="retrain">舊生（複訓）</option>
+          <option value="staff">工作人員</option>
         </select>
         {/* 受控理由同上：錯誤回來不能悄悄跳回葷 */}
         <select
@@ -507,7 +512,8 @@ function GroupPanel({ session }: { session: SessionRow }) {
     null,
   );
   const [cap, setCap] = useState(String(session.groupCap));
-  const active = session.signups.filter((s) => !s.deferredToSessionId);
+  // 工作人員不列入分組
+  const active = session.signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
   const grouped = active.filter((s) => s.groupNo != null);
 
   // 各組摘要：人數/新舊/素
@@ -576,9 +582,32 @@ function GroupPanel({ session }: { session: SessionRow }) {
           {[...summary.entries()]
             .sort(([a], [b]) => a - b)
             .map(([groupNo, g]) => (
-              <span key={groupNo} className="rounded-full bg-white px-2 py-0.5 text-gray-600 ring-1 ring-indigo-100">
+              <span
+                key={groupNo}
+                className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-gray-600 ring-1 ring-indigo-100"
+              >
                 第 {groupNo} 組 {g.count} 人｜新 {g.count - g.retrain} 舊 {g.retrain}
                 {g.veg > 0 && `｜素 ${g.veg}`}
+                {/* 逐組上限：場地桌子大小不一時逐組調；留空 = 用場次預設，補分組/重新分組都吃這個 */}
+                <span className="text-gray-400">上限</span>
+                <input
+                  inputMode="numeric"
+                  defaultValue={session.groupCaps[groupNo - 1] || ""}
+                  placeholder={String(session.groupCap)}
+                  title="這一組的人數上限（留空用場次預設）"
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    const parsed = raw ? Math.floor(Number(raw)) : 0;
+                    const prev = session.groupCaps[groupNo - 1] || 0;
+                    if (raw && (!Number.isInteger(parsed) || parsed < 1 || parsed > 99)) {
+                      e.target.value = prev ? String(prev) : "";
+                      return;
+                    }
+                    if (parsed !== prev)
+                      startTransition(() => setGroupCapAction(session.id, groupNo, parsed));
+                  }}
+                  className="w-9 rounded border border-gray-200 px-1 py-0 text-center text-xs focus:border-black focus:outline-none"
+                />
               </span>
             ))}
           {grouped.length < active.length && (
@@ -632,7 +661,9 @@ export function SessionCard({
           {stats.total} 人
         </span>
         <span className="text-xs text-gray-400">
-          新生 {stats.fresh}｜舊生 {stats.retrain}｜葷 {stats.meat} 素 {stats.veg}
+          新生 {stats.fresh}｜舊生 {stats.retrain}
+          {stats.staff > 0 && `｜工作人員 ${stats.staff}`}
+          ｜葷 {stats.meat} 素 {stats.veg}
           {stats.mealUnknown > 0 && (
             <span title="未標葷素，統計時視為葷">（未標 {stats.mealUnknown}）</span>
           )}
@@ -775,13 +806,15 @@ export function SessionCard({
                 return (
                 <tr key={s.id} className={deferredOut ? "opacity-50" : undefined}>
                   <td className="px-2 py-1.5 font-mono text-gray-400">
-                    {deferredOut ? "—" : ++rowNum}
+                    {deferredOut || s.isStaff ? "—" : ++rowNum}
                   </td>
                   <td className="px-2 py-1.5">
                     {s.name}
-                    {isRetrainProduct(s.product) && (
+                    {s.isStaff ? (
+                      <span className="ml-1 rounded bg-indigo-100 px-1 text-xs text-indigo-700">工作人員</span>
+                    ) : isRetrainProduct(s.product) ? (
                       <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700">複訓</span>
-                    )}
+                    ) : null}
                     {deferredOut && (
                       <span className="ml-1 rounded bg-gray-200 px-1.5 text-xs text-gray-500">
                         延期→{sessionTitle(s.deferredToSessionId)}
@@ -823,7 +856,7 @@ export function SessionCard({
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-xs">
-                    {canEdit && !deferredOut ? (
+                    {canEdit && !deferredOut && !s.isStaff ? (
                       <select
                         value={s.groupNo ?? ""}
                         onChange={(e) =>
@@ -841,7 +874,7 @@ export function SessionCard({
                       </select>
                     ) : (
                       <span className="text-gray-500">
-                        {deferredOut ? "—" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組"}
+                        {deferredOut || s.isStaff ? "—" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組"}
                       </span>
                     )}
                   </td>

@@ -554,7 +554,8 @@ model CourseSession {
   isVisible Boolean   @default(true) // 顯示於 /board 看板
   adminNote String?   @db.Text // 僅後台管理用的場次備忘，不顯示於公開看板
   sortOrder Int       @default(0)
-  groupCap  Int       @default(8) // 每組人數上限（自動分組用；組數 = max(6, ⌈人數/上限⌉)）
+  groupCap  Int       @default(8) // 每組人數上限預設值（自動分組用；組數 = max(6, ⌈人數/上限⌉)）
+  groupCaps Int[]     @default([]) // 逐組上限覆寫（index 0 = 第 1 組；0 或缺值 = 用 groupCap）——場地桌子大小不一時逐組調
 
   signups SessionSignup[]
 
@@ -577,6 +578,7 @@ model SessionSignup {
   orderedAt DateTime? // 訂單建立日期
   meal      String? // 葷素："MEAT" 葷 / "VEG" 素 / null 未標（統計時往安全側算葷）
   groupNo   Int? // 自動/手動分組結果；null = 未分組
+  isStaff   Boolean @default(false) // 工作人員：不列入分組與新舊生統計，但計入用餐葷素
 
   // 延期：原列保留但標記（排除於統計/分組/看板/簡訊），目標場次建新列。
   // 新列沿用原 orderNo+attendeeKey（跨場不撞唯一鍵）——1shop 退款的全域刪除

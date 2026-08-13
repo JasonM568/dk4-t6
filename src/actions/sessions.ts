@@ -92,7 +92,9 @@ export async function addSignupAction(
   const note = String(formData.get("note") ?? "").trim();
   const phoneInput = String(formData.get("phone") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const isRetrain = String(formData.get("type")) === "retrain";
+  const type = String(formData.get("type"));
+  const isRetrain = type === "retrain";
+  const isStaff = type === "staff"; // 工作人員：不分組、不算新舊生，用餐要算
   const confirmOldStudent = formData.get("confirmOldStudent") === "on";
   const mealInput = String(formData.get("meal") ?? "");
   const meal: Meal = mealInput === "VEG" ? "VEG" : "MEAT"; // 白名單，預設葷
@@ -159,7 +161,7 @@ export async function addSignupAction(
   }
 
   // 舊生判別全站統一（isRetrainProduct）——選舊生就自動補上「複訓」標記
-  const base = note || "手動新增";
+  const base = note || (isStaff ? "工作人員" : "手動新增");
   const product = isRetrain && !isRetrainProduct(base) ? `複訓｜${base}` : base;
 
   try {
@@ -173,6 +175,7 @@ export async function addSignupAction(
         phone,
         product,
         meal,
+        isStaff,
         orderedAt: new Date(),
       },
     });
@@ -312,6 +315,25 @@ export async function setSignupMealAction(id: string, meal: Meal | null) {
   revalidatePath("/board");
 }
 
+/** 逐組人數上限覆寫（0 = 清除覆寫、改用場次預設）；場地桌子大小不一時用 */
+export async function setGroupCapAction(sessionId: string, groupNo: number, cap: number) {
+  await requireEditor();
+  if (!Number.isInteger(groupNo) || groupNo < 1 || groupNo > 99) return;
+  const value = Number.isInteger(cap) && cap >= 1 && cap <= 99 ? cap : 0;
+  const session = await prisma.courseSession.findUnique({
+    where: { id: sessionId },
+    select: { groupCaps: true },
+  });
+  if (!session) return;
+  const caps = [...session.groupCaps];
+  while (caps.length < groupNo) caps.push(0);
+  caps[groupNo - 1] = value;
+  // 尾端的 0 修掉，陣列不無限增長
+  while (caps.length > 0 && caps[caps.length - 1] === 0) caps.pop();
+  await prisma.courseSession.update({ where: { id: sessionId }, data: { groupCaps: caps } });
+  revalidatePath("/admin/sessions");
+}
+
 /** 手動指定單人組別（自動分組後的微調；null = 改回未分組） */
 export async function setSignupGroupAction(id: string, groupNo: number | null) {
   await requireEditor();
@@ -340,18 +362,23 @@ export async function autoGroupAction(
     return { error: "每組人數上限請填 1〜99" };
   const fillOnly = String(formData.get("mode")) === "fill";
 
-  const signups = await prisma.sessionSignup.findMany({
-    where: { sessionId },
-    select: {
-      id: true, product: true, deferredToSessionId: true, orderedAt: true, createdAt: true,
-      groupNo: true,
-    },
-  });
-  if (signups.every((s) => s.deferredToSessionId)) return { error: "沒有可分組的學員" };
+  const [session, signups] = await Promise.all([
+    prisma.courseSession.findUnique({ where: { id: sessionId }, select: { groupCaps: true } }),
+    prisma.sessionSignup.findMany({
+      where: { sessionId },
+      select: {
+        id: true, product: true, deferredToSessionId: true, orderedAt: true, createdAt: true,
+        groupNo: true, isStaff: true,
+      },
+    }),
+  ]);
+  const groupCaps = session?.groupCaps ?? [];
+  if (signups.every((s) => s.deferredToSessionId || s.isStaff))
+    return { error: "沒有可分組的學員" };
 
   const { assignments, groupCount } = fillOnly
-    ? assignRemaining(signups, cap)
-    : assignGroups(signups, cap);
+    ? assignRemaining(signups, cap, groupCaps)
+    : assignGroups(signups, cap, groupCaps);
   if (fillOnly && assignments.size === 0) return { error: "沒有未分組的學員" };
   // 反轉成「組 → 成員 id 清單」，一組一個 updateMany，交易內一次寫完
   const byGroup = new Map<number, string[]>();
@@ -363,9 +390,9 @@ export async function autoGroupAction(
     ...[...byGroup.entries()].map(([groupNo, ids]) =>
       prisma.sessionSignup.updateMany({ where: { id: { in: ids } }, data: { groupNo } }),
     ),
-    // 延出者不佔組
+    // 延出者與工作人員不佔組
     prisma.sessionSignup.updateMany({
-      where: { sessionId, deferredToSessionId: { not: null } },
+      where: { sessionId, OR: [{ deferredToSessionId: { not: null } }, { isStaff: true }] },
       data: { groupNo: null },
     }),
   ]);
@@ -414,6 +441,7 @@ export async function deferSignupAction(
           amount: signup.amount,
           orderedAt: signup.orderedAt,
           meal: signup.meal,
+          isStaff: signup.isStaff,
           groupNo: null,
           deferredFromSessionId: signup.sessionId,
         },

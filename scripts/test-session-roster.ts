@@ -158,6 +158,48 @@ function main() {
     check("無既有組 → 等同全量分組", assignments.size === 15 && groupCount === 6);
   }
 
+  console.log("— 逐組上限（場地桌子大小不一）—");
+  {
+    // 50 人、預設 8、第 1 組上限 10：容量 10+8*5=50 剛好 → 6 組，第 1 組收滿 10
+    const { assignments, groupCount } = assignGroups(makeSignups(30, 20), 8, [10]);
+    const sizes = groupSizes(assignments, groupCount);
+    check("第 1 組上限 10 收滿、其餘 8", groupCount === 6 && sizes[0] === 10 && sizes.slice(1).every((n) => n === 8), sizes.join(","));
+  }
+  {
+    // 逐組上限縮小 → 容量不足自動開新組：24 人、全組上限 3 → 8 組
+    const { assignments, groupCount } = assignGroups(makeSignups(16, 8), 8, [3, 3, 3, 3, 3, 3, 3, 3]);
+    const sizes = groupSizes(assignments, groupCount);
+    check("上限縮小自動加組數", groupCount === 8 && Math.max(...sizes) <= 3, `${groupCount}組 ${sizes.join(",")}`);
+  }
+  {
+    // 補分組吃逐組上限：第 1 組已滿（上限 4）→ 新人不進第 1 組
+    const base = makeSignups(24, 0);
+    const { assignments: first } = assignGroups(base, 4);
+    const grouped = base.map((s) => ({ ...s, groupNo: first.get(s.id)! }));
+    const extra = { ...makeSignups(1, 0)[0], id: "late", groupNo: null as number | null };
+    const { assignments } = assignRemaining([...grouped, extra], 8, [4, 4, 4, 4, 4, 8]);
+    // 前 5 組上限 4 全滿，只有第 6 組（上限 8）有位
+    check("補分組避開已滿的逐組上限", assignments.get("late") === 6, String(assignments.get("late")));
+  }
+
+  console.log("— 工作人員 —");
+  {
+    const staffRow = { ...makeSignups(1, 0)[0], id: "staff1", isStaff: true };
+    const { assignments } = assignGroups([...makeSignups(10, 5), staffRow], 8);
+    check("工作人員不列入分組", !assignments.has("staff1") && assignments.size === 15);
+    const stats = computeRosterStats([
+      { product: "量子課", meal: "MEAT", deferredToSessionId: null, groupNo: 1 },
+      { product: "工作人員", meal: "VEG", deferredToSessionId: null, groupNo: null, isStaff: true },
+      { product: "工作人員", meal: null, deferredToSessionId: null, groupNo: null, isStaff: true },
+    ]);
+    check(
+      "工作人員：不算學員/新舊生/未分組，但算用餐",
+      stats.total === 1 && stats.staff === 2 && stats.ungrouped === 0 &&
+        stats.veg === 1 && stats.meat === 2 && stats.mealUnknown === 1,
+      JSON.stringify(stats),
+    );
+  }
+
   console.log(`\n結果：${pass} 通過、${fail} 失敗`);
   if (fail > 0) process.exit(1);
 }

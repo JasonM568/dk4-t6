@@ -31,7 +31,7 @@ export default async function BoardPage() {
           where: { deferredToSessionId: null },
           orderBy: { orderedAt: "asc" },
           // 只給看板需要的最小欄位——刻意不含電話/信箱
-          select: { id: true, name: true, product: true, meal: true, groupNo: true },
+          select: { id: true, name: true, product: true, meal: true, groupNo: true, isStaff: true },
         },
       },
     }),
@@ -141,13 +141,16 @@ export default async function BoardPage() {
       )}
       <div className="space-y-6">
         {sessions.map((s) => {
-          const retrain = s.signups.filter((g) => isRetrain(g.product));
-          const fresh = s.signups.length - retrain.length;
+          // 工作人員獨立列（不分組、不算新舊生；用餐統計包含他們）
+          const staff = s.signups.filter((g) => g.isStaff);
+          const students = s.signups.filter((g) => !g.isStaff);
+          const retrain = students.filter((g) => isRetrain(g.product));
+          const fresh = students.length - retrain.length;
           const veg = s.signups.filter((g) => g.meal === "VEG").length;
           // 有任何人分了組 → 依組別分節顯示；全未分組 → 維持扁平名字雲
-          const hasGroups = s.signups.some((g) => g.groupNo != null);
+          const hasGroups = students.some((g) => g.groupNo != null);
           const groups = hasGroups
-            ? [...new Set(s.signups.map((g) => g.groupNo).filter((n): n is number => n != null))].sort(
+            ? [...new Set(students.map((g) => g.groupNo).filter((n): n is number => n != null))].sort(
                 (a, b) => a - b,
               )
             : [];
@@ -176,7 +179,7 @@ export default async function BoardPage() {
                 )}
                 <div className="ml-auto flex flex-wrap items-center gap-1.5">
                   <span className="rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
-                    {s.signups.length} 人
+                    {students.length} 人
                   </span>
                   <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-sm font-medium text-emerald-800">
                     新生 {fresh}
@@ -184,7 +187,12 @@ export default async function BoardPage() {
                   <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-medium text-amber-800">
                     舊生 {retrain.length}
                   </span>
-                  {/* 葷 = 非素（含未標，訂餐往安全側算） */}
+                  {staff.length > 0 && (
+                    <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-sm font-medium text-indigo-800">
+                      工作人員 {staff.length}
+                    </span>
+                  )}
+                  {/* 葷 = 非素（含未標，訂餐往安全側算）；用餐統計含工作人員 */}
                   <span className="rounded-full bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-600">
                     葷 {s.signups.length - veg}｜素 {veg}
                   </span>
@@ -192,32 +200,51 @@ export default async function BoardPage() {
               </div>
               {s.signups.length === 0 ? (
                 <p className="text-sm text-gray-400">尚無報名</p>
-              ) : hasGroups ? (
+              ) : (
                 <div className="space-y-3">
-                  {groups.map((groupNo) => {
-                    const members = s.signups.filter((g) => g.groupNo === groupNo);
-                    const groupVeg = members.filter((g) => g.meal === "VEG").length;
-                    return (
-                      <div key={groupNo}>
-                        <div className="mb-1.5 text-sm font-medium text-gray-500">
-                          第 {groupNo} 組 · {members.length} 人
-                          {groupVeg > 0 && ` · 素 ${groupVeg}`}
+                  {hasGroups ? (
+                    <>
+                      {groups.map((groupNo) => {
+                        const members = students.filter((g) => g.groupNo === groupNo);
+                        const groupVeg = members.filter((g) => g.meal === "VEG").length;
+                        return (
+                          <div key={groupNo}>
+                            <div className="mb-1.5 text-sm font-medium text-gray-500">
+                              第 {groupNo} 組 · {members.length} 人
+                              {groupVeg > 0 && ` · 素 ${groupVeg}`}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">{members.map(chip)}</div>
+                          </div>
+                        );
+                      })}
+                      {students.some((g) => g.groupNo == null) && (
+                        <div>
+                          <div className="mb-1.5 text-sm font-medium text-amber-600">未分組</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {students.filter((g) => g.groupNo == null).map(chip)}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">{members.map(chip)}</div>
-                      </div>
-                    );
-                  })}
-                  {s.signups.some((g) => g.groupNo == null) && (
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">{students.map(chip)}</div>
+                  )}
+                  {staff.length > 0 && (
                     <div>
-                      <div className="mb-1.5 text-sm font-medium text-amber-600">未分組</div>
+                      <div className="mb-1.5 text-sm font-medium text-indigo-600">工作人員</div>
                       <div className="flex flex-wrap gap-1.5">
-                        {s.signups.filter((g) => g.groupNo == null).map(chip)}
+                        {staff.map((g) => (
+                          <span
+                            key={g.id}
+                            className="rounded-full bg-indigo-50 px-2.5 py-1 text-sm text-indigo-800 ring-1 ring-indigo-200"
+                          >
+                            {g.name}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">{s.signups.map(chip)}</div>
               )}
             </section>
           );

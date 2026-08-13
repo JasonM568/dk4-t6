@@ -87,6 +87,7 @@ export default async function AdminSessionsPage() {
               isVisible: s.isVisible,
               adminNote: s.adminNote,
               groupCap: s.groupCap,
+              groupCaps: s.groupCaps,
               signups: s.signups.map((g) => ({
                 id: g.id,
                 orderNo: g.orderNo,
@@ -97,6 +98,7 @@ export default async function AdminSessionsPage() {
                 orderedAt: g.orderedAt?.toISOString() ?? null,
                 meal: g.meal,
                 groupNo: g.groupNo,
+                isStaff: g.isStaff,
                 deferredToSessionId: g.deferredToSessionId,
                 deferredFromSessionId: g.deferredFromSessionId,
               })),
