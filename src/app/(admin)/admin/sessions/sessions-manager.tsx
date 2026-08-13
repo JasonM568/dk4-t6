@@ -12,6 +12,7 @@ import {
   saveBoardCodeAction,
   setSignupMealAction,
   setSignupGroupAction,
+  setSignupNameAction,
   setGroupCapAction,
   autoGroupAction,
   deferSignupAction,
@@ -809,7 +810,27 @@ export function SessionCard({
                     {deferredOut || s.isStaff ? "—" : ++rowNum}
                   </td>
                   <td className="px-2 py-1.5">
-                    {s.name}
+                    {canEdit && !deferredOut ? (
+                      /* 姓名可編輯：學員常填英文名，離開欄位即存（例改成「Polly cheng（鄭寶莉）」）。
+                         key 用 s.name：存檔後 server 資料回來時讓 defaultValue 重掛 */
+                      <input
+                        key={s.name}
+                        defaultValue={s.name}
+                        title="點擊修改姓名（例：英文名補中文），離開欄位自動儲存"
+                        onBlur={(e) => {
+                          const value = e.target.value.trim();
+                          if (!value) {
+                            e.target.value = s.name;
+                            return;
+                          }
+                          if (value !== s.name)
+                            startTransition(() => setSignupNameAction(s.id, value));
+                        }}
+                        className="w-36 rounded border border-transparent px-1 py-0.5 hover:border-gray-300 focus:border-black focus:outline-none"
+                      />
+                    ) : (
+                      s.name
+                    )}
                     {s.isStaff ? (
                       <span className="ml-1 rounded bg-indigo-100 px-1 text-xs text-indigo-700">工作人員</span>
                     ) : isRetrainProduct(s.product) ? (

@@ -304,6 +304,19 @@ export async function removeSignupAction(id: string) {
   revalidatePath("/board");
 }
 
+/** 逐人改姓名（學員常填英文名，管理員手動標註中文；重匯不會覆蓋——
+ *  匯入對既有列一律 skipDuplicates 不更新） */
+export async function setSignupNameAction(id: string, name: string) {
+  await requireEditor();
+  const value = name.trim().slice(0, 60);
+  if (!value) return; // 不准清成空白
+  await prisma.sessionSignup
+    .update({ where: { id }, data: { name: value } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
 /** 逐人切換葷素（後台名單表格；匯入未標或同行者由這裡補） */
 export async function setSignupMealAction(id: string, meal: Meal | null) {
   await requireEditor();
