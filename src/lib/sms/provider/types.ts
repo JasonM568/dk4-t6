@@ -8,6 +8,21 @@ export type SmsSentResult =
   | { ok: true; messageId: string }
   | { ok: false; reason: string }; // 中文原因，會直接寫進 failedRecipients
 
+/** 逐筆送達狀態。QUEUED 待送／SENT 電信已接收／DELIVERED 已送達／FAILED 失敗／STOP 拒收退訂。
+ *  SENT 只代表電信接收，還不是送到手機——要等 DELIVERED 才算真的到。 */
+export type SmsDeliveryStatus = "QUEUED" | "SENT" | "DELIVERED" | "FAILED" | "STOP";
+
+export const FINAL_SMS_STATUSES: SmsDeliveryStatus[] = ["DELIVERED", "FAILED", "STOP"];
+
+export type SmsDeliveryState = {
+  messageId: string;
+  status: SmsDeliveryStatus;
+  deliveredAt?: Date | null;
+  error?: string | null;
+  segments?: number;
+  costCents?: number;
+};
+
 export interface SmsProvider {
   readonly name: string; // "dryrun" | 日後的簡訊商代號
   readonly label: string; // 後台顯示用
@@ -28,4 +43,8 @@ export interface SmsProvider {
 
   /** 查詢餘額（點數）；不支援的供應商可不實作 */
   queryBalance?(): Promise<number | null>;
+
+  /** 批次查詢送達狀態（supportsDeliveryReceipt=true 才需實作）。
+   *  只回查得到的，查不到的 id 直接略過——呼叫端據此保留原狀態。 */
+  queryDelivery?(messageIds: string[]): Promise<SmsDeliveryState[]>;
 }

@@ -282,6 +282,24 @@ export async function executeSmsBroadcast(broadcastId: string) {
 
   const r = await sendSms(recipients, renderText);
 
+  // 逐筆紀錄：之後靠 providerMessageId 向簡訊商查送達狀態。
+  // 重送同一筆 broadcast 不會發生（永不自動重寄），所以直接建立即可。
+  if (r.results.length > 0) {
+    await prisma.smsMessage.createMany({
+      data: r.results.map((x) => ({
+        broadcastId,
+        mobile: x.mobile,
+        name: x.name ?? null,
+        providerMessageId: x.messageId ?? null,
+        status: x.status,
+        segments: x.segments,
+        error: x.reason ?? null,
+        sentAt: x.status === "SENT" ? new Date() : null,
+      })),
+      skipDuplicates: true, // providerMessageId 唯一鍵兜底
+    });
+  }
+
   const unitPriceCents = toCents(settings.pricePerSegment);
   await prisma.smsBroadcast.update({
     where: { id: broadcastId },
@@ -305,6 +323,90 @@ export async function executeSmsBroadcast(broadcastId: string) {
     },
   });
   return r;
+}
+
+/** 向簡訊商更新送達狀態：只查還沒有最終結果的（QUEUED/SENT）。
+ *
+ *  兩條更新路徑並存：webhook（即時，需在簡訊商後台設定）與這支輪詢
+ *  （cron 每 5 分鐘＋後台手動按鈕）。webhook 沒設定時，靠輪詢也查得到，
+ *  不會出現「功能看得到卻沒資料」的空殼。
+ *
+ *  broadcastId 省略 = 掃全部近期未定案的（cron 用）。 */
+export async function refreshSmsDelivery(broadcastId?: string) {
+  const provider = getSmsProvider();
+  if (!provider.queryDelivery) return { checked: 0, updated: 0 };
+
+  const pending = await prisma.smsMessage.findMany({
+    where: {
+      status: { in: ["QUEUED", "SENT"] },
+      providerMessageId: { not: null },
+      ...(broadcastId
+        ? { broadcastId }
+        : // 沒指定就只掃近 7 天：更早的還沒定案代表電信端已放棄回報
+          { createdAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) } }),
+    },
+    select: { id: true, providerMessageId: true, broadcastId: true, mobile: true },
+    take: 300, // 單次上限，剩下的下一輪再查
+    orderBy: { createdAt: "desc" },
+  });
+  if (pending.length === 0) return { checked: 0, updated: 0 };
+
+  const states = await provider.queryDelivery(
+    pending.map((p) => p.providerMessageId!),
+  );
+  const byId = new Map(states.map((s) => [s.messageId, s]));
+
+  let updated = 0;
+  const touchedBroadcasts = new Set<string>();
+  const now = new Date();
+  for (const p of pending) {
+    const s = byId.get(p.providerMessageId!);
+    if (!s) continue;
+    await prisma.smsMessage.update({
+      where: { id: p.id },
+      data: {
+        status: s.status,
+        deliveredAt: s.deliveredAt ?? null,
+        error: s.error ?? null,
+        checkedAt: now,
+        ...(typeof s.segments === "number" ? { segments: s.segments } : {}),
+        ...(typeof s.costCents === "number" ? { costCents: s.costCents } : {}),
+      },
+    });
+    updated++;
+    touchedBroadcasts.add(p.broadcastId);
+    // 收件人明確拒收 → 進退訂名單，之後不再打擾（NCC 合規要求）。
+    // source=USER：只擋行銷推播，不擋已報名學員的上課提醒（履約通知）。
+    if (s.status === "STOP") {
+      await prisma.smsOptOut.upsert({
+        where: { mobile: p.mobile },
+        create: { mobile: p.mobile, source: "USER", reason: "簡訊回覆拒收" },
+        update: {}, // 已在名單就保留最早的來源與原因
+      });
+    }
+  }
+
+  for (const id of touchedBroadcasts) await syncBroadcastCounts(id);
+  return { checked: pending.length, updated };
+}
+
+/** 把逐筆狀態彙總回 SmsBroadcast（列表頁用一次查詢就看得到送達數） */
+export async function syncBroadcastCounts(broadcastId: string) {
+  const grouped = await prisma.smsMessage.groupBy({
+    by: ["status"],
+    where: { broadcastId },
+    _count: { _all: true },
+  });
+  const n = (s: string) =>
+    grouped.find((g) => g.status === s)?._count._all ?? 0;
+  await prisma.smsBroadcast.update({
+    where: { id: broadcastId },
+    data: {
+      deliveredCount: n("DELIVERED"),
+      // 拒收與失敗都算送不到：失敗數要跟著逐筆狀態走，不然畫面自相矛盾
+      failedCount: n("FAILED") + n("STOP"),
+    },
+  });
 }
 
 // 卡死回收門檻：認領後超過這時間仍停在 SENDING，視為發送中途失敗

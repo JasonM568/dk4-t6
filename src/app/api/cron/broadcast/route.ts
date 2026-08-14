@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { processDueBroadcasts } from "@/lib/email/dispatch";
-import { processDueSmsBroadcasts } from "@/lib/sms/dispatch";
+import { processDueSmsBroadcasts, refreshSmsDelivery } from "@/lib/sms/dispatch";
 
 // 大量群發（數百封分批＋退避重試）可能超過平台預設時限，明確給足 300s
 export const maxDuration = 300;
@@ -25,8 +25,17 @@ export async function GET(request: Request) {
     console.error("[sms cron] 處理排程簡訊時發生例外：", e);
   }
 
+  // 送達狀態回補：webhook 沒設定（或漏收）時，靠這條每 5 分鐘補齊
+  let delivery = { checked: 0, updated: 0 };
+  try {
+    delivery = await refreshSmsDelivery();
+  } catch (e) {
+    console.error("[sms cron] 更新送達狀態時發生例外：", e);
+  }
+
   return NextResponse.json({
     email: { processed: email.length, results: email },
     sms: { processed: sms.length, results: sms },
+    smsDelivery: delivery,
   });
 }

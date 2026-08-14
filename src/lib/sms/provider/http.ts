@@ -13,6 +13,15 @@ export const FETCH_TIMEOUT_MS = 15_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** GET 版：查詢送達狀態用。政策與 postWithRetry 完全一致，只是不帶 body。 */
+export async function getWithRetry(
+  url: string,
+  headers: Record<string, string>,
+  tag: string,
+): Promise<Response | { networkError: string }> {
+  return postWithRetry(url, { method: "GET", headers }, tag);
+}
+
 /** 429/5xx/網路錯誤自動退避重試；其他 4xx 不重試直接回傳失敗 response。
  *  網路錯誤回傳 discriminated union 而非 throw，呼叫端用 `"networkError" in res` 判斷。 */
 export async function postWithRetry(

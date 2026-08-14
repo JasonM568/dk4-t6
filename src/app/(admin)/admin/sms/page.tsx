@@ -134,14 +134,15 @@ export default async function SmsPage({
           </p>
         ) : (
           <div className="overflow-hidden rounded-xl border border-gray-200">
-            <table className="w-full text-sm">
+            {/* table-fixed + 逐欄寬度：內容欄很長，不固定寬度會把「對象」和「結果」擠成一團 */}
+            <table className="w-full table-fixed text-sm">
               <thead className="bg-gray-50 text-left text-gray-500">
                 <tr>
                   <th className="px-4 py-3">標題／內容</th>
-                  <th className="px-4 py-3">對象</th>
-                  <th className="px-4 py-3">結果</th>
-                  <th className="px-4 py-3">時間</th>
-                  <th className="px-4 py-3" />
+                  <th className="w-44 px-3 py-3">對象</th>
+                  <th className="w-40 px-3 py-3">結果</th>
+                  <th className="w-32 px-3 py-3">時間</th>
+                  <th className="w-32 px-3 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -153,9 +154,16 @@ export default async function SmsPage({
                   const when = h.sentAt ?? h.scheduledAt ?? h.createdAt;
                   return (
                     <tr key={h.id}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{h.title ?? "（未命名）"}</div>
-                        <div className="truncate text-xs text-gray-400">{h.body}</div>
+                      <td className="px-4 py-3 align-top">
+                        <Link
+                          href={`/admin/sms/${h.id}`}
+                          className="font-medium hover:text-indigo-600 hover:underline"
+                        >
+                          {h.title ?? "（未命名）"}
+                        </Link>
+                        <div className="truncate text-xs text-gray-400" title={h.body}>
+                          {h.body}
+                        </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           <span className={`rounded-full px-2 py-0.5 text-xs ${badge.cls}`}>
                             {badge.label}
@@ -168,23 +176,29 @@ export default async function SmsPage({
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
-                        {h.audienceLabel ?? "—"}
+                      <td className="px-3 py-3 align-top text-xs text-gray-500">
+                        <div className="break-words">{h.audienceLabel ?? "—"}</div>
                         {h.noMobileCount > 0 && (
                           <div className="text-amber-600">
                             {h.noMobileCount} 人無手機
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-xs">
+                      <td className="px-3 py-3 align-top text-xs">
                         {h.status === "SENT" || h.status === "FAILED" ? (
                           <>
                             <div>
-                              成功 {h.sentCount}
+                              送出 {h.sentCount}
                               {h.failedCount > 0 && (
                                 <span className="text-red-600"> · 失敗 {h.failedCount}</span>
                               )}
                             </div>
+                            {/* 送達數才是「真的到手機」，與送出數分開顯示 */}
+                            {h.deliveredCount > 0 && (
+                              <div className="text-green-700">
+                                已送達 {h.deliveredCount}
+                              </div>
+                            )}
                             <div className="text-gray-400">
                               {h.actualSegments} 則
                               {h.estimatedCostCents > 0 &&
@@ -200,11 +214,19 @@ export default async function SmsPage({
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
+                      <td className="px-3 py-3 align-top text-xs whitespace-nowrap text-gray-500">
                         {when.toLocaleString("zh-TW", TPE)}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="px-3 py-3 text-right align-top">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {(h.status === "SENT" || h.status === "FAILED") && (
+                          <Link
+                            href={`/admin/sms/${h.id}`}
+                            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                          >
+                            明細
+                          </Link>
+                        )}
                         {h.status === "DRAFT" ? (
                           <Link
                             href={`/admin/sms?draft=${h.id}`}

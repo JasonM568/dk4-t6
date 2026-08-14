@@ -748,6 +748,10 @@ model SmsBroadcast {
   sentBy      String? // 操作的管理員 email
   noticeAckBy String? // 勾選「這是履約通知，非行銷推播」的管理員 email
 
+  deliveredCount Int @default(0) // 電信回報已送達的人數（列表用；明細以 SmsMessage 為準）
+
+  messages SmsMessage[]
+
   createdAt DateTime @default(now())
 
   @@index([status, scheduledAt]) // cron 撈到期排程
@@ -760,6 +764,35 @@ model SmsBroadcast {
 //   INVALID  空號/停用/業者回報無法送達（行銷與履約通知一律過濾）
 //   PROVIDER 業者主動回報
 // 與 MailUnsubscribe 的差異：行銷退訂不得擋掉已報名學員的上課提醒（那是履約通知）
+/// 逐筆簡訊發送紀錄：一個收件人一列，追蹤到電信端的最終狀態。
+/// 沒有這張表就查不到送達情形——簡訊商的 message_id 以前送出後就丟掉了。
+model SmsMessage {
+  id          String       @id @default(cuid())
+  broadcastId String
+  broadcast   SmsBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  mobile String // normalizeMobile 後的 09XXXXXXXX
+  name   String? // 發送當下的姓名快照（名單之後改名也查得回原樣）
+
+  /// 簡訊商的 message id（MAAC Go 為 sms_xxx）；連 API 都沒送出去時為 null
+  providerMessageId String? @unique
+  /// QUEUED 待送 / SENT 電信已接收 / DELIVERED 已送達 / FAILED 失敗 / STOP 拒收退訂
+  status    String  @default("QUEUED")
+  segments  Int     @default(0)
+  costCents Int     @default(0)
+  error     String? // 失敗原因（簡訊商回的英文碼會轉成中文顯示）
+
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  checkedAt   DateTime? // 最後一次向簡訊商查詢狀態的時間
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([broadcastId])
+  @@index([status]) // 定期只查還沒有最終狀態的（QUEUED/SENT）
+}
+
 model SmsOptOut {
   mobile    String   @id // 一律存 normalizeMobile 後的 09XXXXXXXX
   reason    String?

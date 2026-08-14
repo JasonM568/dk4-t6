@@ -13,6 +13,7 @@ import { sendSms } from "@/lib/sms/send";
 import {
   executeSmsBroadcast,
   previewSmsAudience,
+  refreshSmsDelivery,
 } from "@/lib/sms/dispatch";
 import {
   EMPTY_SMS_AUDIENCE_PREVIEW,
@@ -332,6 +333,24 @@ export async function sendSmsAction(
       ? `已發送 ${r.sent} 人${r.failed > 0 ? `（${r.failed} 筆失敗）` : ""}`
       : `測試模式：已模擬發送 ${r.sent} 人（未實際送出、未計費）`,
     broadcastId: rec.id,
+  };
+}
+
+/** 手動向簡訊商更新送達狀態（明細頁按鈕）。
+ *  平常 cron 每 5 分鐘會自動更新，這是「我現在就想知道」時用的。 */
+export async function refreshSmsDeliveryAction(id: string): Promise<SmsState> {
+  await requireEditor();
+  const provider = getSmsProvider();
+  if (!provider.queryDelivery)
+    return { error: `目前的簡訊商（${provider.label}）不支援查詢送達狀態` };
+  const r = await refreshSmsDelivery(id);
+  revalidatePath(`/admin/sms/${id}`);
+  revalidatePath("/admin/sms");
+  return {
+    success:
+      r.checked === 0
+        ? "所有簡訊都已有最終狀態，沒有需要更新的"
+        : `已向簡訊商查詢 ${r.checked} 筆，更新 ${r.updated} 筆`,
   };
 }
 
