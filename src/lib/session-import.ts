@@ -1,7 +1,13 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { normalizeMobile } from "@/lib/sms/phone";
-import { MEAL_HEADER_RE, MEAL_IN_TEXT_RE, parseMealValue, type Meal } from "@/lib/session-roster";
+import {
+  MEAL_HEADER_RE,
+  MEAL_IN_TEXT_RE,
+  parseMealValue,
+  isSamePerson,
+  type Meal,
+} from "@/lib/session-roster";
 
 // 1shop 訂單檔匯入 → 場次報名歸類。
 // 規則：金流狀態含「已付款」的列，依「產品」欄比對場次關鍵字歸入（最長關鍵字優先）；
@@ -45,6 +51,15 @@ export type ImportReport = {
   // 訂單「數量」≥2 但辨識出的報名者不足：同行者資料可能沒填/格式認不得，
   // 要人工確認補上（實例：黃淑華訂 2 位但同行欄格式解析失敗）
   companionCheck: { orderNo: string; name: string; quantity: number; found: number }[];
+  // 同一場次同一個人以「不同訂單編號」再次進來 → 沒有建新列（唯一鍵抓不到這種重複）。
+  // 實例：歐洸熏 8/7 手動補進名單、8/10 重匯時同行欄解析成功又要建一筆。
+  // 萬一其實是同名的不同人，看這份清單手動補回來。
+  dupSkipped: {
+    name: string;
+    orderNo: string;
+    existingOrderNo: string;
+    sessionTitle: string;
+  }[];
 };
 
 type ParsedRow = {
@@ -414,8 +429,9 @@ export async function parseOrderFile(
 export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
   const { rows, mealColumnFound } = await parseOrderFile(buf);
   const sessions = await prisma.courseSession.findMany({
-    select: { id: true, keywords: true },
+    select: { id: true, title: true, keywords: true },
   });
+  const sessionTitle = new Map(sessions.map((s) => [s.id, s.title]));
 
   // 最長關鍵字優先：一列同時命中多場次時，取最具體（字最長）的關鍵字
   const matchSession = (product: string): string | null => {
@@ -442,6 +458,7 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     mealColumnFound,
     mealUnknown: 0,
     companionCheck: [],
+    dupSkipped: [],
   };
   const unmatchedRows = new Map<string, UnmatchedOrderRow[]>();
   const toCreate: {
@@ -531,26 +548,89 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     report.canceledRemoved = del.count;
   }
   if (toCreate.length > 0) {
-    // 同單同名但識別鍵不同的既有列（管理員先手動補的人 manual-N、或欄位順序改變的
-    // companion-N）→ 不再重建，避免同一個人變兩筆
+    // 重複防線分兩層：
+    //  1) 唯一鍵（場次+訂單編號+參加者鍵）——同一張訂單重匯，交給 skipDuplicates
+    //  2) 同場次同一人但訂單編號不同（手動先補、同一人下兩張單、同行者又自己下單）
+    //     ——唯一鍵抓不到，這裡靠姓名＋手機比對擋掉，並列進報告
+    // 撈這批會動到的場次全部名單（判重複用）＋同訂單編號的列（延期複本也要回填空欄位）
     const existing = await prisma.sessionSignup.findMany({
-      where: { orderNo: { in: [...new Set(toCreate.map((t) => t.orderNo))] } },
-      select: { sessionId: true, orderNo: true, attendeeKey: true, name: true },
+      where: {
+        OR: [
+          { sessionId: { in: [...new Set(toCreate.map((t) => t.sessionId))] } },
+          { orderNo: { in: [...new Set(toCreate.map((t) => t.orderNo))] } },
+        ],
+      },
+      select: {
+        id: true, sessionId: true, orderNo: true, attendeeKey: true,
+        name: true, phone: true, email: true, deferredToSessionId: true,
+      },
     });
-    const tripleKeys = new Set(existing.map((e) => `${e.sessionId}|${e.orderNo}|${e.attendeeKey}`));
-    const nameKeys = new Set(existing.map((e) => `${e.sessionId}|${e.orderNo}|${e.name}`));
-    const kept = toCreate.filter(
-      (t) =>
-        tripleKeys.has(`${t.sessionId}|${t.orderNo}|${t.attendeeKey}`) || // 同鍵留給 skipDuplicates 計數
-        !nameKeys.has(`${t.sessionId}|${t.orderNo}|${t.name}`),
+    type ExistingRow = (typeof existing)[number];
+    const byTriple = new Set(
+      existing.map((e) => `${e.sessionId}|${e.orderNo}|${e.attendeeKey}`),
     );
-    const nameDup = toCreate.length - kept.length;
+    // 同一張訂單的同一位參加者可能有多列（延期時原場次留一列、目標場次一列）
+    const byPair = new Map<string, ExistingRow[]>();
+    for (const e of existing) {
+      const key = `${e.orderNo}|${e.attendeeKey}`;
+      byPair.set(key, [...(byPair.get(key) ?? []), e]);
+    }
+    // 各場次「已在名單的人」；延出者不算——人不來這場了，重新報名要能建新列
+    const roster = new Map<string, { name: string; phone: string | null; orderNo: string; row?: ExistingRow }[]>();
+    for (const e of existing) {
+      if (e.deferredToSessionId) continue;
+      const list = roster.get(e.sessionId) ?? [];
+      list.push({ name: e.name, phone: e.phone, orderNo: e.orderNo, row: e });
+      roster.set(e.sessionId, list);
+    }
+
+    // 既有列的空欄位回填（只補 null，不覆蓋任何已填值——後台手改過的一律保留）
+    const fills = new Map<string, { phone?: string; email?: string }>();
+    const planFill = (row: ExistingRow, t: (typeof toCreate)[number]) => {
+      const data = fills.get(row.id) ?? {};
+      if (!row.phone && t.phone) data.phone = t.phone;
+      if (!row.email && t.email) data.email = t.email;
+      if (data.phone || data.email) fills.set(row.id, data);
+    };
+
+    const kept: typeof toCreate = [];
+    for (const t of toCreate) {
+      if (byTriple.has(`${t.sessionId}|${t.orderNo}|${t.attendeeKey}`)) {
+        for (const row of byPair.get(`${t.orderNo}|${t.attendeeKey}`) ?? []) planFill(row, t);
+        kept.push(t); // 同鍵：留給 skipDuplicates 計入「已在名單」
+        continue;
+      }
+      const people = roster.get(t.sessionId) ?? [];
+      const dup = people.find((p) => isSamePerson(p, t));
+      if (dup) {
+        report.dupSkipped.push({
+          name: t.name,
+          orderNo: t.orderNo,
+          existingOrderNo: dup.orderNo,
+          sessionTitle: sessionTitle.get(t.sessionId) ?? "",
+        });
+        if (dup.row) planFill(dup.row, t);
+        continue;
+      }
+      // 同一檔案裡的重複（同一人兩張單）也要擋：接受的人即時進名單
+      people.push({ name: t.name, phone: t.phone, orderNo: t.orderNo });
+      roster.set(t.sessionId, people);
+      kept.push(t);
+    }
+
     const res = await prisma.sessionSignup.createMany({
       data: kept,
       skipDuplicates: true,
     });
     report.imported = res.count;
-    report.duplicate = kept.length - res.count + nameDup;
+    report.duplicate = kept.length - res.count + report.dupSkipped.length;
+    if (fills.size > 0) {
+      await prisma.$transaction(
+        [...fills.entries()].map(([id, data]) =>
+          prisma.sessionSignup.update({ where: { id }, data }),
+        ),
+      );
+    }
   }
   // 葷素回填既有列：meal IS NULL 條件保證不覆蓋後台手動標記
   for (const meal of ["VEG", "MEAT"] as const) {
@@ -558,14 +638,6 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     await prisma.sessionSignup.updateMany({
       where: { orderNo: { in: mealBackfill[meal] }, attendeeKey: "buyer", meal: null },
       data: { meal },
-    });
-  }
-  // 同行者電話回填既有列（早期匯入的同行列 phone 一律 null）：同樣只補空值
-  for (const row of toCreate) {
-    if (row.attendeeKey === "buyer" || !row.phone) continue;
-    await prisma.sessionSignup.updateMany({
-      where: { orderNo: row.orderNo, attendeeKey: row.attendeeKey, phone: null },
-      data: { phone: row.phone },
     });
   }
   report.unmatched = [...unmatchedRows.entries()]

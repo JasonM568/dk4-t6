@@ -7,6 +7,8 @@ import {
   assignGroups,
   assignRemaining,
   groupCountFor,
+  normalizePersonName,
+  isSamePerson,
   type GroupableSignup,
 } from "../src/lib/session-roster";
 
@@ -53,6 +55,34 @@ function main() {
   check("空/null → null（未標）", parseMealValue("") === null && parseMealValue(null) === null);
   check("已知取捨：不吃素含「素」字判 VEG", parseMealValue("不吃素") === "VEG");
   check("label", mealLabel("VEG") === "素" && mealLabel("MEAT") === "葷" && mealLabel(null) === "葷（未標）");
+
+  console.log("— 同一人判定（跨訂單重複防線）—");
+  check("去空白／括號註記／大小寫", normalizePersonName("Polly  cheng（鄭寶莉）") === "pollycheng");
+  check(
+    "同名、兩邊都沒手機 → 同一人（團報名單常態）",
+    isSamePerson({ name: "歐洸熏" }, { name: "歐洸熏", phone: null }),
+  );
+  check(
+    "同名、一邊有手機 → 同一人",
+    isSamePerson({ name: "歐洸熏", phone: "0975085939" }, { name: "歐洸熏", phone: null }),
+  );
+  check(
+    "同名、同手機 → 同一人",
+    isSamePerson({ name: "歐 洸熏", phone: "0975085939" }, { name: "歐洸熏", phone: "0975085939" }),
+  );
+  check(
+    "同名、手機不同 → 不同人（照常入列）",
+    !isSamePerson({ name: "陳建中", phone: "0911111111" }, { name: "陳建中", phone: "0922222222" }),
+  );
+  check(
+    "不同名、同手機 → 不算同一人（夫妻共用號碼）",
+    !isSamePerson({ name: "王小明", phone: "0911111111" }, { name: "王小美", phone: "0911111111" }),
+  );
+  check("空姓名不亂配對", !isSamePerson({ name: "" }, { name: "" }));
+  check(
+    "括號註記後仍認得（管理員補中文名）",
+    isSamePerson({ name: "Polly cheng（鄭寶莉）" }, { name: "Polly Cheng" }),
+  );
 
   console.log("— 統計 —");
   {

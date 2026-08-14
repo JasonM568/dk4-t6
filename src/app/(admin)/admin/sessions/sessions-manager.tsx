@@ -13,6 +13,7 @@ import {
   setSignupMealAction,
   setSignupGroupAction,
   setSignupNameAction,
+  setSignupPhoneAction,
   setGroupCapAction,
   autoGroupAction,
   deferSignupAction,
@@ -22,7 +23,7 @@ import {
 } from "@/actions/sessions";
 import type { ImportReport } from "@/lib/session-import";
 import { formatDate } from "@/lib/format";
-import { formatMobile } from "@/lib/sms/phone";
+import { formatMobile, normalizeMobile } from "@/lib/sms/phone";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import {
   isRetrainProduct,
@@ -212,6 +213,22 @@ export function UploadOrdersForm({
                 {state.report.companionCheck.map((c) => (
                   <li key={c.orderNo}>
                     {c.name}（{c.orderNo}）：訂 {c.quantity} 位、辨識到 {c.found} 位
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {state.report.dupSkipped.length > 0 && (
+            <div className="rounded bg-gray-100 px-2 py-1.5 text-xs text-gray-600">
+              <div className="font-medium">
+                同一場次同一個人、但訂單編號不同 → 沒有重複建列（{state.report.dupSkipped.length} 筆）。
+                名單上已有那個人，這是正常的；只有在「其實是同名的不同人」時才要手動新增：
+              </div>
+              <ul className="mt-1 space-y-0.5">
+                {state.report.dupSkipped.map((d) => (
+                  <li key={`${d.orderNo}-${d.name}`}>
+                    {d.name}（本次訂單 {d.orderNo}）－ 名單上那筆是訂單 {d.existingOrderNo}
+                    {d.sessionTitle && `｜${d.sessionTitle}`}
                   </li>
                 ))}
               </ul>
@@ -795,6 +812,7 @@ export function SessionCard({
                 <th className="px-2 py-1.5">葷素</th>
                 <th className="px-2 py-1.5">組別</th>
                 <th className="px-2 py-1.5">手機</th>
+                <th className="px-2 py-1.5">Email</th>
                 <th className="px-2 py-1.5">訂單編號</th>
                 <th className="px-2 py-1.5">產品</th>
                 <th className="px-2 py-1.5">訂單日期</th>
@@ -899,13 +917,52 @@ export function SessionCard({
                       </span>
                     )}
                   </td>
-                  <td
-                    className={`px-2 py-1.5 font-mono text-xs ${
-                      s.phone ? "text-gray-500" : "text-amber-600"
-                    }`}
-                    title={s.phone ? undefined : "沒有手機號碼，收不到上課提醒簡訊"}
-                  >
-                    {s.phone ? formatMobile(s.phone) : "無"}
+                  {/* 手機：團報名單匯入時整批沒號碼，管理員在這裡逐人補（補上才收得到上課提醒簡訊）。
+                      離開欄位即存、清空＝未填；格式由 server action 驗（09 開頭 10 碼）。
+                      key 用 s.phone：存檔後 server 資料回來時讓 defaultValue 重掛 */}
+                  <td className="px-2 py-1.5 font-mono text-xs">
+                    {canEdit && !deferredOut ? (
+                      <input
+                        key={s.phone ?? ""}
+                        defaultValue={s.phone ? formatMobile(s.phone) : ""}
+                        placeholder="補手機"
+                        title={
+                          s.phone
+                            ? "點擊修改手機，離開欄位自動儲存（清空＝未填）"
+                            : "沒有手機號碼，收不到上課提醒簡訊——點這裡補，離開欄位自動儲存"
+                        }
+                        onBlur={async (e) => {
+                          const raw = e.target.value.trim();
+                          const next = raw ? normalizeMobile(raw) : null;
+                          // 沒動或只改了分隔符 → 還原成標準顯示，不打 server
+                          const unchanged = raw ? next !== null && next === s.phone : !s.phone;
+                          if (unchanged) {
+                            e.target.value = next ? formatMobile(next) : "";
+                            return;
+                          }
+                          const res = await setSignupPhoneAction(s.id, raw);
+                          if (res?.error) {
+                            alert(res.error);
+                            e.target.focus(); // 留著原輸入讓管理員直接改
+                          }
+                        }}
+                        className={`w-28 rounded border border-transparent px-1 py-0.5 font-mono hover:border-gray-300 focus:border-black focus:outline-none ${
+                          s.phone
+                            ? "text-gray-500"
+                            : "text-amber-600 placeholder:text-amber-600"
+                        }`}
+                      />
+                    ) : (
+                      <span className={s.phone ? "text-gray-500" : "text-amber-600"}>
+                        {s.phone ? formatMobile(s.phone) : "無"}
+                      </span>
+                    )}
+                  </td>
+                  {/* Email：同行者多半沒有（訂單只有訂購人填），顯示用；寄信名單以此為準 */}
+                  <td className="px-2 py-1.5 text-xs text-gray-500">
+                    <span className="block max-w-[13rem] truncate" title={s.email ?? undefined}>
+                      {s.email ?? "—"}
+                    </span>
                   </td>
                   <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{s.orderNo}</td>
                   <td className="px-2 py-1.5 text-xs text-gray-500">{s.product ?? "—"}</td>

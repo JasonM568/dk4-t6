@@ -32,6 +32,29 @@ export function mealLabel(meal: string | null | undefined): string {
   return "葷（未標）";
 }
 
+/** 人別比對用的姓名正規化：去空白、去括號註記（管理員常補「Polly cheng（鄭寶莉）」）、
+ *  英文一律小寫。只用於重複偵測，不動顯示用的姓名。 */
+export function normalizePersonName(name: string | null | undefined): string {
+  return (name ?? "")
+    .replace(/[（(][^）)]*[）)]/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+export type PersonLike = { name: string; phone?: string | null };
+
+/** 同一場次內是不是同一個人（跨訂單編號的重複判定）：
+ *  姓名（正規化後）相同 且 手機沒有互相矛盾 → 同一人。
+ *  兩邊手機都有且不同 → 同名的不同人，各自入列。
+ *  不用「手機相同」當主判準的理由：團報／手動補的名單整批沒手機，靠手機認不出人。 */
+export function isSamePerson(a: PersonLike, b: PersonLike): boolean {
+  const key = normalizePersonName(a.name);
+  if (!key || key !== normalizePersonName(b.name)) return false;
+  const pa = a.phone?.trim();
+  const pb = b.phone?.trim();
+  return !(pa && pb && pa !== pb);
+}
+
 export type RosterSignup = {
   product: string | null;
   meal: string | null;

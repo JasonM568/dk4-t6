@@ -6,7 +6,13 @@ import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
 import { explainMobile, normalizeMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { findStudentByPhone } from "@/lib/student-history";
-import { isRetrainProduct, assignGroups, assignRemaining, type Meal } from "@/lib/session-roster";
+import {
+  isRetrainProduct,
+  assignGroups,
+  assignRemaining,
+  isSamePerson,
+  type Meal,
+} from "@/lib/session-roster";
 
 // 課程場次看板：後台管理 actions（場次 CRUD / 訂單匯入 / 看板 4 位碼）
 
@@ -112,6 +118,18 @@ export async function addSignupAction(
     phone = mobile;
   }
 
+  // 同場次同一人只能有一列（跨訂單編號的重複＝名單最常見的髒資料來源）。
+  // 判定同匯入端：姓名相同且手機不衝突；延出者不算（人不來這場了，可重新報名）
+  const roster = await prisma.sessionSignup.findMany({
+    where: { sessionId, deferredToSessionId: null },
+    select: { name: true, phone: true, orderNo: true },
+  });
+  const already = roster.find((r) => isSamePerson(r, { name, phone }));
+  if (already)
+    return {
+      error: `${name} 已在這個場次的名單裡（訂單 ${already.orderNo}）。若確定是同名的不同人，請填上他本人的手機，或在姓名加註記（例：${name}2）再送出`,
+    };
+
   // 舊生資格核對改用手機（Email 常見夫妻／親子共用，對不到本人）。
   // 資料庫查無這支號碼時不硬擋——學員資料庫是逐步累積的，勾「確認為舊生」
   // 即一併建檔，下次同一支號碼就查得到。
@@ -148,10 +166,8 @@ export async function addSignupAction(
   if (orderNoInput) {
     const existing = await prisma.sessionSignup.findMany({
       where: { sessionId, orderNo: orderNoInput },
-      select: { attendeeKey: true, name: true },
+      select: { attendeeKey: true },
     });
-    if (existing.some((e) => e.name === name))
-      return { error: `${name} 已在這張訂單的名單裡` };
     if (existing.length > 0) {
       const keys = new Set(existing.map((e) => e.attendeeKey));
       let n = 1;
@@ -273,8 +289,21 @@ export async function assignUnmatchedAction(
       };
     }),
   );
+  // 同場次同一人跨訂單編號的重複（同匯入端規則）：擋掉，不建新列
+  const roster = await prisma.sessionSignup.findMany({
+    where: { sessionId: session.id, deferredToSessionId: null },
+    select: { name: true, phone: true, orderNo: true, attendeeKey: true },
+  });
+  const people = roster.map((r) => ({ name: r.name, phone: r.phone, orderNo: r.orderNo }));
+  const tripleKeys = new Set(roster.map((r) => `${r.orderNo}|${r.attendeeKey}`));
+  const kept = attendees.filter((a) => {
+    if (tripleKeys.has(`${a.orderNo}|${a.attendeeKey}`)) return true; // 交給 skipDuplicates 計數
+    if (people.some((p) => isSamePerson(p, a))) return false;
+    people.push({ name: a.name, phone: a.phone, orderNo: a.orderNo });
+    return true;
+  });
   const res = await prisma.sessionSignup.createMany({
-    data: attendees,
+    data: kept,
     skipDuplicates: true,
   });
 
@@ -312,6 +341,29 @@ export async function setSignupNameAction(id: string, name: string) {
   if (!value) return; // 不准清成空白
   await prisma.sessionSignup
     .update({ where: { id }, data: { name: value } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
+/** 逐人補手機（團報名單匯入時整批沒號碼，管理員事後補；重匯不會覆蓋——
+ *  匯入對既有列一律 skipDuplicates 不更新）。
+ *  空字串 = 清成未填（號碼填錯時要能拿掉，不然錯號會一直收到提醒簡訊）。 */
+export async function setSignupPhoneAction(id: string, phone: string) {
+  await requireEditor();
+  const input = phone.trim();
+  let value: string | null = null;
+  if (input) {
+    // 同 addSignupAction：存得進去卻發不出簡訊，比留空更糟
+    const { mobile, reject } = explainMobile(input);
+    if (!mobile)
+      return {
+        error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼，或清空）`,
+      };
+    value = mobile;
+  }
+  await prisma.sessionSignup
+    .update({ where: { id }, data: { phone: value } })
     .catch(() => undefined);
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
