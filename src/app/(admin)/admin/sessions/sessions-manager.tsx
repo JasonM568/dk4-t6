@@ -14,6 +14,7 @@ import {
   setSignupGroupAction,
   setSignupNameAction,
   setSignupPhoneAction,
+  setSignupTypeAction,
   setGroupCapAction,
   autoGroupAction,
   deferSignupAction,
@@ -26,7 +27,7 @@ import { formatDate } from "@/lib/format";
 import { formatMobile, normalizeMobile } from "@/lib/sms/phone";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import {
-  isRetrainProduct,
+  isRetrainSignup,
   mealLabel,
   computeRosterStats,
   groupCountFor,
@@ -43,6 +44,7 @@ export type SignupRow = {
   meal: string | null;
   groupNo: number | null;
   isStaff: boolean;
+  isRetrain: boolean | null; // 新舊生人工覆寫；null = 依產品名自動判斷
   deferredToSessionId: string | null;
   deferredFromSessionId: string | null;
 };
@@ -556,7 +558,7 @@ function GroupPanel({ session }: { session: SessionRow }) {
   for (const s of grouped) {
     const g = summary.get(s.groupNo!) ?? { count: 0, retrain: 0, veg: 0 };
     g.count++;
-    if (isRetrainProduct(s.product)) g.retrain++;
+    if (isRetrainSignup(s)) g.retrain++;
     if (s.meal === "VEG") g.veg++;
     summary.set(s.groupNo!, g);
   }
@@ -866,9 +868,40 @@ export function SessionCard({
                     ) : (
                       s.name
                     )}
-                    {s.isStaff ? (
+                    {/* 身分（新生／舊生／工作人員）：訂單買錯方案、家人代訂、事後才查出是舊生，
+                        產品名判不出來——這裡直接改，統計、分組、簽到表、看板都跟著走。
+                        延出列與唯讀角色只顯示徽章不給改。 */}
+                    {canEdit && !deferredOut ? (
+                      <select
+                        value={s.isStaff ? "staff" : isRetrainSignup(s) ? "retrain" : "fresh"}
+                        title="改身分：新生／舊生（複訓）／工作人員"
+                        onChange={(e) => {
+                          const next = e.target.value as "fresh" | "retrain" | "staff";
+                          if (
+                            next === "staff" &&
+                            s.groupNo != null &&
+                            !confirm(`把 ${s.name} 改為工作人員？工作人員不列入分組，現在的第 ${s.groupNo} 組會被清掉。`)
+                          ) {
+                            e.target.value = s.isStaff ? "staff" : isRetrainSignup(s) ? "retrain" : "fresh";
+                            return;
+                          }
+                          startTransition(() => setSignupTypeAction(s.id, next));
+                        }}
+                        className={`ml-1 rounded border bg-white px-1 py-0.5 text-xs focus:border-black focus:outline-none ${
+                          s.isStaff
+                            ? "border-indigo-300 text-indigo-700"
+                            : isRetrainSignup(s)
+                              ? "border-amber-300 text-amber-700"
+                              : "border-gray-300 text-gray-500"
+                        }`}
+                      >
+                        <option value="fresh">新生</option>
+                        <option value="retrain">舊生（複訓）</option>
+                        <option value="staff">工作人員</option>
+                      </select>
+                    ) : s.isStaff ? (
                       <span className="ml-1 rounded bg-indigo-100 px-1 text-xs text-indigo-700">工作人員</span>
-                    ) : isRetrainProduct(s.product) ? (
+                    ) : isRetrainSignup(s) ? (
                       <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700">複訓</span>
                     ) : null}
                     {deferredOut && (

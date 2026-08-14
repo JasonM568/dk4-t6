@@ -99,6 +99,7 @@ export default async function AdminSessionsPage() {
                 meal: g.meal,
                 groupNo: g.groupNo,
                 isStaff: g.isStaff,
+                isRetrain: g.isRetrain,
                 deferredToSessionId: g.deferredToSessionId,
                 deferredFromSessionId: g.deferredFromSessionId,
               })),

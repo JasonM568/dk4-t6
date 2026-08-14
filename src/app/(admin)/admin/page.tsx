@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { countProfiles } from "@/lib/supabase/admin";
 import { formatNT, formatDate } from "@/lib/format";
-import { isRetrainProduct } from "@/lib/session-roster";
+import { isRetrainSignup } from "@/lib/session-roster";
 
 export const metadata = { title: "後台總覽" };
 
@@ -44,6 +44,7 @@ export default async function AdminDashboard() {
         id: true,
         name: true,
         product: true,
+        isRetrain: true,
         createdAt: true,
         session: { select: { title: true } },
       },
@@ -124,7 +125,7 @@ export default async function AdminDashboard() {
                   <li key={g.id} className="flex items-center justify-between gap-2">
                     <span className="truncate">
                       {g.name}
-                      {isRetrainProduct(g.product) && (
+                      {isRetrainSignup(g) && (
                         <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700">
                           複訓
                         </span>

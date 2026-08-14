@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { formatMobile } from "@/lib/sms/phone";
-import { isRetrainProduct, mealLabel, computeRosterStats } from "@/lib/session-roster";
+import { isRetrainSignup, mealLabel, computeRosterStats } from "@/lib/session-roster";
 
 // 場次簽到表匯出（Excel）：依組別排序、含葷素與新舊生標記、末尾用餐彙總。
 // 用 requireEditor（throw → 403）而非 pageGuardEditor（redirect）——下載連結吃 3xx 會存到錯誤內容。
@@ -62,7 +62,7 @@ export async function GET(
     const row = ws.addRow({
       group: s.isStaff ? "工作人員" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組",
       name: s.name,
-      type: s.isStaff ? "工作人員" : isRetrainProduct(s.product) ? "舊生" : "新生",
+      type: s.isStaff ? "工作人員" : isRetrainSignup(s) ? "舊生" : "新生",
       meal: mealLabel(s.meal),
       phone: s.phone ? formatMobile(s.phone) : "",
       sign: "",

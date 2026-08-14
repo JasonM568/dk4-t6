@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { boardAuthStatus } from "@/lib/board-auth";
-import { isRetrainProduct } from "@/lib/session-roster";
+import { isRetrainSignup } from "@/lib/session-roster";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { boardLogoutAction } from "@/actions/board";
 import { BoardLoginForm, AutoRefresh } from "./board-client";
@@ -31,7 +31,10 @@ export default async function BoardPage() {
           where: { deferredToSessionId: null },
           orderBy: { orderedAt: "asc" },
           // 只給看板需要的最小欄位——刻意不含電話/信箱
-          select: { id: true, name: true, product: true, meal: true, groupNo: true, isStaff: true },
+          select: {
+            id: true, name: true, product: true, isRetrain: true,
+            meal: true, groupNo: true, isStaff: true,
+          },
         },
       },
     }),
@@ -57,8 +60,8 @@ export default async function BoardPage() {
   const webinars = allWebinars.filter(
     (w) => !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > now),
   );
-  // 舊生 = 報名複訓方案；判別規則統一在 session-roster
-  const isRetrain = (product: string | null) => isRetrainProduct(product);
+  // 舊生 = 報名複訓方案或後台改過身分；判別規則統一在 session-roster
+  const isRetrain = isRetrainSignup;
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -144,7 +147,7 @@ export default async function BoardPage() {
           // 工作人員獨立列（不分組、不算新舊生；用餐統計包含他們）
           const staff = s.signups.filter((g) => g.isStaff);
           const students = s.signups.filter((g) => !g.isStaff);
-          const retrain = students.filter((g) => isRetrain(g.product));
+          const retrain = students.filter((g) => isRetrain(g));
           const fresh = students.length - retrain.length;
           const veg = s.signups.filter((g) => g.meal === "VEG").length;
           // 有任何人分了組 → 依組別分節顯示；全未分組 → 維持扁平名字雲
@@ -154,8 +157,8 @@ export default async function BoardPage() {
                 (a, b) => a - b,
               )
             : [];
-          const chip = (g: { id: string; name: string; product: string | null }) =>
-            isRetrain(g.product) ? (
+          const chip = (g: { id: string; name: string; product: string | null; isRetrain: boolean | null }) =>
+            isRetrain(g) ? (
               <span
                 key={g.id}
                 className="rounded-full bg-amber-50 px-2.5 py-1 text-sm text-amber-800 ring-1 ring-amber-200"

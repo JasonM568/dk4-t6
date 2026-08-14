@@ -9,6 +9,7 @@ import {
   groupCountFor,
   normalizePersonName,
   isSamePerson,
+  isRetrainSignup,
   type GroupableSignup,
 } from "../src/lib/session-roster";
 
@@ -98,6 +99,38 @@ function main() {
         stats.veg === 1 && stats.meat === 2 && stats.mealUnknown === 1 &&
         stats.deferredOut === 1 && stats.ungrouped === 1,
       JSON.stringify(stats),
+    );
+  }
+
+  console.log("— 新舊生人工覆寫 —");
+  {
+    check("null → 沿用產品名判別（複訓）", isRetrainSignup({ product: "量子課（複訓）", isRetrain: null }));
+    check("null → 沿用產品名判別（新生）", !isRetrainSignup({ product: "量子課" }));
+    check("覆寫 true 蓋過產品名", isRetrainSignup({ product: "量子課", isRetrain: true }));
+    check("覆寫 false 蓋過「複訓」產品名", !isRetrainSignup({ product: "量子課（複訓）", isRetrain: false }));
+    const stats = computeRosterStats([
+      { product: "量子課", isRetrain: true, meal: "MEAT", deferredToSessionId: null, groupNo: 1 },
+      { product: "複訓｜手動", isRetrain: false, meal: "MEAT", deferredToSessionId: null, groupNo: 1 },
+      { product: "量子課", meal: "MEAT", deferredToSessionId: null, groupNo: 1 },
+    ]);
+    check(
+      "統計吃覆寫值",
+      stats.total === 3 && stats.retrain === 1 && stats.fresh === 2,
+      JSON.stringify(stats),
+    );
+    // 分組的新舊生均衡也要吃覆寫：10 人全是「產品名新生」但半數被改成舊生
+    const rows = makeSignups(10, 0).map((r, i) => ({ ...r, isRetrain: i % 2 === 1 }));
+    const { assignments } = assignGroups(rows, 8);
+    const perGroup = new Map<number, number>();
+    for (const r of rows) {
+      if (!isRetrainSignup(r)) continue;
+      const g = assignments.get(r.id)!;
+      perGroup.set(g, (perGroup.get(g) ?? 0) + 1);
+    }
+    check(
+      "分組依覆寫後的新舊生散開（每組舊生 ≤1）",
+      [...perGroup.values()].every((n) => n <= 1),
+      JSON.stringify([...perGroup]),
     );
   }
 

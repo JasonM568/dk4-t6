@@ -383,6 +383,41 @@ export async function setSignupPhoneAction(id: string, phone: string) {
   revalidatePath("/board");
 }
 
+/** 逐人改身分：新生 / 舊生（複訓）/ 工作人員。
+ *
+ *  訂單買錯方案、家人代訂、事後才查出是舊生等情況，光靠產品名判不出來——
+ *  這裡寫進 isRetrain 覆寫欄（判別統一走 isRetrainSignup），product 原值不動保留追溯。
+ *  選到與產品名自動判別相同的值就存回 null（回歸自動判斷），不留無意義的覆寫。
+ *  改成工作人員會一併清掉組別（工作人員不列入分組）；原本的新舊生覆寫保留，
+ *  改回學員時直接復原。 */
+export async function setSignupTypeAction(id: string, type: "fresh" | "retrain" | "staff") {
+  await requireEditor();
+  if (type !== "fresh" && type !== "retrain" && type !== "staff") return; // 白名單
+  if (type === "staff") {
+    await prisma.sessionSignup
+      .update({ where: { id }, data: { isStaff: true, groupNo: null } })
+      .catch(() => undefined);
+  } else {
+    const signup = await prisma.sessionSignup.findUnique({
+      where: { id },
+      select: { product: true },
+    });
+    if (!signup) return;
+    const want = type === "retrain";
+    await prisma.sessionSignup
+      .update({
+        where: { id },
+        data: {
+          isStaff: false,
+          isRetrain: want === isRetrainProduct(signup.product) ? null : want,
+        },
+      })
+      .catch(() => undefined);
+  }
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
 /** 逐人切換葷素（後台名單表格；匯入未標或同行者由這裡補） */
 export async function setSignupMealAction(id: string, meal: Meal | null) {
   await requireEditor();

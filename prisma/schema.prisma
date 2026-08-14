@@ -579,6 +579,10 @@ model SessionSignup {
   meal      String? // 葷素："MEAT" 葷 / "VEG" 素 / null 未標（統計時往安全側算葷）
   groupNo   Int? // 自動/手動分組結果；null = 未分組
   isStaff   Boolean @default(false) // 工作人員：不列入分組與新舊生統計，但計入用餐葷素
+  // 新舊生人工覆寫：null = 依 product 是否含「複訓」自動判斷（預設）；
+  // true/false = 管理員在後台改過，一律以此為準（訂單買錯方案、代訂、事後才知道是舊生）。
+  // 判別入口統一走 session-roster.isRetrainSignup，勿在別處自行讀這兩個欄位。
+  isRetrain Boolean?
 
   // 延期：原列保留但標記（排除於統計/分組/看板/簡訊），目標場次建新列。
   // 新列沿用原 orderNo+attendeeKey（跨場不撞唯一鍵）——1shop 退款的全域刪除

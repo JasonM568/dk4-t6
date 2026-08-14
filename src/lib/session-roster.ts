@@ -9,6 +9,14 @@ export function isRetrainProduct(product: string | null | undefined): boolean {
   return !!product?.includes("複訓");
 }
 
+export type RetrainLike = { product: string | null; isRetrain?: boolean | null };
+
+/** 逐人的新舊生判定：管理員在後台改過（isRetrain 非 null）就以人工為準，
+ *  否則回退到產品名判別。**所有**顯示／統計／分組一律走這裡，別直接讀 product。 */
+export function isRetrainSignup(s: RetrainLike): boolean {
+  return s.isRetrain ?? isRetrainProduct(s.product);
+}
+
 /** 1shop 訂單檔的葷素欄位名。每個銷售頁的自訂欄位在匯出檔**各自成一欄**
  *  （實例：AI課程頁「用餐」、量子2.0頁「課程用餐葷素」），所以匯入端要
  *  收集**所有**命中的欄，逐列取第一個非空值，不能只讀第一欄。 */
@@ -57,6 +65,7 @@ export function isSamePerson(a: PersonLike, b: PersonLike): boolean {
 
 export type RosterSignup = {
   product: string | null;
+  isRetrain?: boolean | null;
   meal: string | null;
   deferredToSessionId: string | null;
   groupNo: number | null;
@@ -96,7 +105,7 @@ export function computeRosterStats(signups: RosterSignup[]): RosterStats {
       continue;
     }
     stats.total++;
-    if (isRetrainProduct(s.product)) stats.retrain++;
+    if (isRetrainSignup(s)) stats.retrain++;
     else stats.fresh++;
     if (s.groupNo == null) stats.ungrouped++;
   }
@@ -114,6 +123,7 @@ export function groupCountFor(activeCount: number, cap: number): number {
 export type GroupableSignup = {
   id: string;
   product: string | null;
+  isRetrain?: boolean | null;
   deferredToSessionId: string | null;
   orderedAt: Date | null;
   createdAt: Date;
@@ -146,7 +156,7 @@ export function assignRemaining(
   for (const s of grouped) {
     const st = stats.get(s.groupNo!) ?? { total: 0, fresh: 0, retrain: 0 };
     st.total++;
-    if (isRetrainProduct(s.product)) st.retrain++;
+    if (isRetrainSignup(s)) st.retrain++;
     else st.fresh++;
     stats.set(s.groupNo!, st);
   }
@@ -160,7 +170,7 @@ export function assignRemaining(
 
   const assignments = new Map<string, number>();
   for (const s of ungrouped) {
-    const retrain = isRetrainProduct(s.product);
+    const retrain = isRetrainSignup(s);
     let best: number | null = null;
     for (let g = 1; g <= groupCount; g++) {
       const st = stats.get(g)!;
@@ -213,8 +223,8 @@ export function assignGroups(
     const tb = b.orderedAt?.getTime() ?? b.createdAt.getTime();
     return ta - tb || a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id);
   };
-  const fresh = active.filter((s) => !isRetrainProduct(s.product)).sort(byTime);
-  const retrain = active.filter((s) => isRetrainProduct(s.product)).sort(byTime);
+  const fresh = active.filter((s) => !isRetrainSignup(s)).sort(byTime);
+  const retrain = active.filter((s) => isRetrainSignup(s)).sort(byTime);
 
   const assignments = new Map<string, number>();
   const counts = Array.from({ length: groupCount + 1 }, () => 0);

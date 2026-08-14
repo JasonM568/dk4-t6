@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { getAuthUser } from "@/lib/supabase/server";
-import { getProfileRole } from "@/lib/supabase/admin";
-import { isAdminRole } from "@/lib/auth/role";
+import { getStaffRole } from "@/lib/auth/staff";
+import { canAccessAdmin } from "@/lib/auth/role";
 import { getPageStates } from "@/lib/site-pages";
 import { prisma } from "@/lib/db";
 import { LogoutButton } from "./logout-button";
 
 export async function Navbar() {
   const user = await getAuthUser();
-  // admin 連結：查 profiles.role（proxy 不驗角色，這裡只影響顯示，後台另有 layout 守門）
-  const isAdmin = user ? isAdminRole(await getProfileRole(user.id)) : false;
+  // 後台連結：三級角色都要看得到（admin 走 QBC profiles.role，operator/coach 走 StaffRole）——
+  // 只查 profiles.role 的話，新指派的操作人員／總教練進得去卻看不到入口。
+  // 這裡只影響顯示，真正守門在 (admin)/layout。
+  const staffRole = user ? await getStaffRole(user.id) : null;
+  const isStaff = canAccessAdmin(staffRole);
   // 前台分頁（量子講師群/知識專區/講座邀約）：後台「分頁管理」可開關
   const sitePages = (await getPageStates()).filter((p) => p.enabled);
   // 自訂分頁（分頁管理自建）：navbar 在 root layout，查詢失敗降級為不顯示、不炸整站
@@ -81,7 +84,7 @@ export async function Navbar() {
               訂閱專區
             </Link>
           )}
-          {isAdmin && (
+          {isStaff && (
             <Link
               href="/admin"
               className="text-sm font-medium text-indigo-600 transition hover:text-indigo-800"
