@@ -206,13 +206,30 @@ export function UploadOrdersForm({
           {state.report.companionCheck.length > 0 && (
             <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
               <div className="font-medium">
-                ⚠️ {state.report.companionCheck.length} 張訂單的人數與辨識到的報名者不符——
+                ⚠️ {state.report.companionCheck.length} 張訂單買的席次比辨識到的人多——
                 同行學員資料可能沒填或格式認不得，請對照訂單原檔確認，缺的人用「手動新增」補：
               </div>
               <ul className="mt-1 space-y-0.5">
                 {state.report.companionCheck.map((c) => (
                   <li key={c.orderNo}>
                     {c.name}（{c.orderNo}）：訂 {c.quantity} 位、辨識到 {c.found} 位
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {state.report.seatOverflow.length > 0 && (
+            <div className="rounded bg-gray-100 px-2 py-1.5 text-xs text-gray-600">
+              <div className="font-medium">
+                只買 1 席卻在同行欄填了名字（{state.report.seatOverflow.length} 張訂單）——
+                那是「跟誰一起上課」，不是多買位子，所以沒有列入名單（對方多半自己下單）。
+                若對方確實沒下單卻要來，請用「手動新增」補：
+              </div>
+              <ul className="mt-1 space-y-0.5">
+                {state.report.seatOverflow.map((o) => (
+                  <li key={`${o.orderNo}-${o.dropped.join()}`}>
+                    {o.name}（{o.orderNo}）買 {o.seats} 席，同行欄填了 {o.dropped.join("、")}
+                    {o.sessionTitle && `｜${o.sessionTitle}`}
                   </li>
                 ))}
               </ul>

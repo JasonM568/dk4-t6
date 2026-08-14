@@ -229,6 +229,7 @@ export async function assignUnmatchedAction(
     amount: number | null;
     orderedAt: string | null;
     meal?: string | null;
+    seats?: number | null;
     attendees: { key: string; name: string; phone?: string | null; email?: string | null }[];
   }[];
   try {
@@ -261,8 +262,21 @@ export async function assignUnmatchedAction(
   });
   if (!session) return { error: "場次不存在（可能剛被刪除），請重新選擇" };
 
-  const attendees = rows.flatMap((r) =>
-    r.attendees.map((attendee) => {
+  const attendees = rows.flatMap((r) => {
+    // 席次規則同匯入端：訂購人佔 1 席，同行者最多 席次-1 位。
+    // 只買 1 席卻填了同行者＝「跟誰一起上課」，對方多半自己下單，不建列。
+    // seats 經前端 JSON 來回，非正整數一律當「檔案沒有數量欄」→ 維持全收。
+    const seats = typeof r.seats === "number" && Number.isInteger(r.seats) && r.seats > 0 ? r.seats : null;
+    const list = seats === null
+      ? r.attendees
+      : [
+          ...r.attendees.filter((a) => a.key === "buyer"),
+          ...r.attendees
+            .filter((a) => a.key !== "buyer")
+            .slice(0, Math.max(0, seats - 1))
+            .map((a, i) => ({ ...a, key: `companion-${i + 1}` })),
+        ];
+    return list.map((attendee) => {
       const orderedAt = r.orderedAt ? new Date(r.orderedAt) : null;
       return {
         sessionId: session.id,
@@ -287,8 +301,8 @@ export async function assignUnmatchedAction(
         meal:
           attendee.key === "buyer" && (r.meal === "VEG" || r.meal === "MEAT") ? r.meal : null,
       };
-    }),
-  );
+    });
+  });
   // 同場次同一人跨訂單編號的重複（同匯入端規則）：擋掉，不建新列
   const roster = await prisma.sessionSignup.findMany({
     where: { sessionId: session.id, deferredToSessionId: null },

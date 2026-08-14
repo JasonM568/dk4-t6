@@ -47,6 +47,16 @@ async function xlsx(orders: Order[]): Promise<ArrayBuffer> {
   return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
 }
 
+/** 沒有「數量」欄的舊匯出檔：辨識不到席次，同行者要全收（不能因此漏人） */
+async function xlsxNoQty(orders: Order[]): Promise<ArrayBuffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("orders");
+  const keep = HEADER.filter((h) => h !== "數量");
+  ws.addRow(keep);
+  for (const o of orders) ws.addRow(row(o).slice(0, keep.length));
+  return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+}
+
 async function main() {
   const session = await prisma.courseSession.create({
     data: { title: KEYWORD, keywords: [KEYWORD], isVisible: false },
@@ -116,11 +126,57 @@ async function main() {
       ming?.name === "王小明（小明哥）" && ming?.meal === "MEAT", JSON.stringify(ming));
     check("總人數 6（含手動補的歐洸熏）", r2.length === 6, JSON.stringify(r2.map((s) => s.name)));
 
+    console.log("— 席次決定建幾列 —");
+    {
+      const rep = await importOrders(
+        await xlsx([
+          // 只買 1 席卻填同行者＝「跟誰一起上課」，對方多半自己下單 → 不建列
+          { orderNo: "B001", name: "買一席", phone: "0961111111", email: "b1@x.com", companions: "朋友甲/0962222222" },
+          // 2 席填了 2 位同行 → 只收 1 位（席次 2 = 買家 + 1）
+          { orderNo: "B002", name: "買兩席", phone: "0963333333", email: "b2@x.com", qty: 2, companions: "朋友乙/0964444444 朋友丙/0965555555" },
+          // 同一張訂單分兩筆明細（複訓×2 + 新生×1 = 3 席）→ 買家 + 2 位同行
+          { orderNo: "B003", name: "莊秀玲2", phone: "0966666666", email: "b3@x.com", qty: 2, companions: "同行甲/0967777777 同行乙/0968888888" },
+          { orderNo: "B003", name: "莊秀玲2", phone: "0966666666", email: "b3@x.com", qty: 1, companions: "同行甲/0967777777 同行乙/0968888888" },
+        ]),
+      );
+      const r = await roster();
+      check("1 席 + 同行欄有人 → 只建買家 1 列", r.filter((s) => s.orderNo === "B001").length === 1);
+      check(
+        "沒入列的那位有列進報告（可人工確認）",
+        rep.seatOverflow.some((o) => o.orderNo === "B001" && o.dropped.includes("朋友甲")),
+        JSON.stringify(rep.seatOverflow),
+      );
+      check("2 席 → 買家 + 1 位同行（多的不入列）", r.filter((s) => s.orderNo === "B002").length === 2);
+      check(
+        "同一訂單分兩列（2+1=3 席）→ 建 3 列，第 3 位不會被丟掉",
+        r.filter((s) => s.orderNo === "B003").length === 3,
+        JSON.stringify(r.filter((s) => s.orderNo === "B003")),
+      );
+      check(
+        "同行者編號連續（companion-1、companion-2）",
+        r.filter((s) => s.orderNo === "B003" && s.attendeeKey.startsWith("companion-")).length === 2,
+      );
+    }
+
+    console.log("— 舊匯出檔沒有數量欄 → 同行者全收（不能漏人）—");
+    {
+      await importOrders(
+        await xlsxNoQty([
+          { orderNo: "C001", name: "無數量欄", phone: "0971111111", email: "c1@x.com", companions: "老檔同行/0972222222" },
+        ]),
+      );
+      const r = await roster();
+      check("沒有數量欄仍建出 2 列", r.filter((s) => s.orderNo === "C001").length === 2);
+    }
+
     console.log("— 退款/取消反向移除 —");
     const day3 = await importOrders(
       await xlsx([{ orderNo: "A005", name: "李小華", phone: "0955555555", email: "i@j.com", pay: "已退款" }]),
     );
-    check("退款移除 1 筆", day3.canceledRemoved === 1 && (await roster()).length === 5);
+    check(
+      "退款移除 1 筆（李小華整張訂單退出名單）",
+      day3.canceledRemoved === 1 && !(await roster()).some((s) => s.orderNo === "A005"),
+    );
   } finally {
     await prisma.courseSession.delete({ where: { id: session.id } });
   }

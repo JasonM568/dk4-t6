@@ -27,6 +27,7 @@ export type UnmatchedOrderRow = {
   amount: number | null;
   orderedAt: string | null;
   meal: Meal | null; // 葷素（管理員指定歸類寫入時一併帶上）
+  seats: number | null; // 訂單數量＝席次（null = 檔案沒有數量欄）；同行者最多建 席次-1 列
   attendees: OrderAttendee[];
 };
 
@@ -48,9 +49,18 @@ export type ImportReport = {
   invalid: number; // 缺訂單編號/顧客的列
   mealColumnFound: boolean; // 檔案裡有沒有葷素欄位（餐點/用餐…）
   mealUnknown: number; // 有欄位但該列值空白（已付款且歸入場次的列才計）
-  // 訂單「數量」≥2 但辨識出的報名者不足：同行者資料可能沒填/格式認不得，
+  // 席次（訂單數量加總）比辨識出的報名者多：同行者資料可能沒填/格式認不得，
   // 要人工確認補上（實例：黃淑華訂 2 位但同行欄格式解析失敗）
   companionCheck: { orderNo: string; name: string; quantity: number; found: number }[];
+  // 只買 1 席卻在同行欄填了人 → 那是「跟誰一起上課」，不是多買位子（對方多半自己下單）。
+  // 沒有入列，但列出來讓管理員確認：萬一對方真的沒下單卻要來，要手動補。
+  seatOverflow: {
+    orderNo: string;
+    name: string;
+    seats: number;
+    dropped: string[];
+    sessionTitle: string;
+  }[];
   // 同一場次同一個人以「不同訂單編號」再次進來 → 沒有建新列（唯一鍵抓不到這種重複）。
   // 實例：歐洸熏 8/7 手動補進名單、8/10 重匯時同行欄解析成功又要建一筆。
   // 萬一其實是同名的不同人，看這份清單手動補回來。
@@ -330,7 +340,7 @@ async function parseXlsxRows(buf: ArrayBuffer): Promise<string[][]> {
 
 export async function parseOrderFile(
   buf: ArrayBuffer,
-): Promise<{ rows: ParsedRow[]; mealColumnFound: boolean }> {
+): Promise<{ rows: ParsedRow[]; mealColumnFound: boolean; quantityColumnFound: boolean }> {
   // 不相信副檔名/瀏覽器 MIME，用 magic bytes 判型：
   //   PK\x03\x04 = zip 容器（xlsx）；D0 CF 11 E0 = 舊版 .xls（拒收）；其他當 CSV 文字
   const head = new Uint8Array(buf.slice(0, 4));
@@ -341,7 +351,8 @@ export async function parseOrderFile(
     throw new Error("不支援舊版 .xls 格式，請從 1shop 重新匯出 .xlsx 或 .csv");
 
   const rows = isZip ? await parseXlsxRows(buf) : parseCsvRows(decodeCsvText(buf));
-  if (rows.length < 2) return { rows: [], mealColumnFound: false };
+  if (rows.length < 2)
+    return { rows: [], mealColumnFound: false, quantityColumnFound: false };
 
   const header = rows[0].map((h) => String(h ?? "").trim());
   const col: Partial<Record<keyof typeof HEADERS, number>> = {};
@@ -422,12 +433,16 @@ export async function parseOrderFile(
       ],
     };
   });
-  return { rows: parsedRows, mealColumnFound: mealCols.length > 0 };
+  return {
+    rows: parsedRows,
+    mealColumnFound: mealCols.length > 0,
+    quantityColumnFound: qtyCol >= 0,
+  };
 }
 
 /** 依場次關鍵字歸類並寫入報名（冪等）；回傳匯入報告 */
 export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
-  const { rows, mealColumnFound } = await parseOrderFile(buf);
+  const { rows, mealColumnFound, quantityColumnFound } = await parseOrderFile(buf);
   const sessions = await prisma.courseSession.findMany({
     select: { id: true, title: true, keywords: true },
   });
@@ -458,6 +473,7 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     mealColumnFound,
     mealUnknown: 0,
     companionCheck: [],
+    seatOverflow: [],
     dupSkipped: [],
   };
   const unmatchedRows = new Map<string, UnmatchedOrderRow[]>();
@@ -473,6 +489,23 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     orderedAt: Date | null;
     meal: Meal | null;
   }[] = [];
+  // 同一張訂單在同一場次的所有明細列合併成一筆（席次加總、同行者去重）
+  const orders = new Map<
+    string,
+    {
+      sessionId: string;
+      orderNo: string;
+      buyerName: string;
+      email: string | null;
+      phone: string | null;
+      product: string;
+      amount: number | null;
+      orderedAt: Date | null;
+      meal: Meal | null;
+      seats: number;
+      companions: OrderAttendee[];
+    }
+  >();
   const cancelOrderNos: string[] = [];
   // 已匯入過的列 createMany 會略過不更新——葷素另外回填（只補 meal 仍空的列，
   // 不覆蓋後台手動標記；orderNo 全域唯一所以跨場次含延期列都會補到）
@@ -505,6 +538,7 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
         amount: row.amount,
         orderedAt: row.orderedAt?.toISOString() ?? null,
         meal: row.meal,
+        seats: quantityColumnFound ? (row.quantity ?? 1) : null,
         attendees: row.attendees,
       });
       unmatchedRows.set(row.product, list);
@@ -512,31 +546,82 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     }
     if (mealColumnFound && row.meal === null) report.mealUnknown++;
     if (row.meal) mealBackfill[row.meal].push(row.orderNo);
-    // 訂 2 位以上但辨識出的人數不足 → 同行者資料沒填或格式認不得，列出來人工補
-    if (row.quantity !== null && row.quantity >= 2 && row.attendees.length < row.quantity) {
-      report.companionCheck.push({
-        orderNo: row.orderNo,
-        name: row.name,
-        quantity: row.quantity,
-        found: row.attendees.length,
+
+    // 一張訂單在同一場次可能有多筆明細列（實例：莊秀玲「複訓×2 + 新生×1」＝3 席，
+    // 分兩列匯出且兩列的同行欄內容相同）。席次與同行者都要**按訂單加總**再決定
+    // 建幾列——逐列判斷會把第 3 位丟掉。
+    const key = `${sessionId}|${row.orderNo}`;
+    const g = orders.get(key) ?? {
+      sessionId,
+      orderNo: row.orderNo,
+      buyerName: row.name,
+      email: row.email || null,
+      phone: normalizeMobile(row.phone),
+      product: row.product,
+      amount: row.amount,
+      orderedAt: row.orderedAt,
+      meal: row.meal,
+      seats: 0,
+      companions: [] as OrderAttendee[],
+    };
+    g.seats += row.quantity ?? 1;
+    g.meal ??= row.meal;
+    for (const a of row.attendees) {
+      if (a.key === "buyer" || !a.name) continue;
+      const same = g.companions.find((c) => c.name === a.name);
+      if (same) {
+        same.phone ??= a.phone ?? null;
+        same.email ??= a.email ?? null;
+      } else g.companions.push({ ...a });
+    }
+    orders.set(key, g);
+  }
+
+  for (const g of orders.values()) {
+    // 席次 = 買了幾個位子；訂購人佔 1 席，其餘才是同行者。
+    // 席次 1 卻在同行欄填了名字＝「我跟某某一起上課」（對方多半自己下單），
+    // 不是多買一個位子——照建列會把人數灌水，也是名單重複的來源。
+    // 沒有數量欄的舊匯出檔（辨識不到席次）維持原行為，全部收下。
+    const allowed = quantityColumnFound ? Math.max(0, g.seats - 1) : g.companions.length;
+    const taken = g.companions.slice(0, allowed);
+    const dropped = g.companions.slice(allowed);
+    if (dropped.length > 0) {
+      report.seatOverflow.push({
+        orderNo: g.orderNo,
+        name: g.buyerName,
+        seats: g.seats,
+        dropped: dropped.map((d) => d.name),
+        sessionTitle: sessionTitle.get(g.sessionId) ?? "",
       });
     }
-    for (const attendee of row.attendees) {
-      if (!attendee.name) continue;
+    // 席次比辨識到的人多 → 同行者沒填或格式認不得，列出來人工補
+    if (quantityColumnFound && g.seats >= 2 && 1 + taken.length < g.seats) {
+      report.companionCheck.push({
+        orderNo: g.orderNo,
+        name: g.buyerName,
+        quantity: g.seats,
+        found: 1 + taken.length,
+      });
+    }
+    const attendees: OrderAttendee[] = [
+      { key: "buyer", name: g.buyerName, phone: g.phone, email: g.email },
+      // 重新編號：席次上限砍掉的人不佔號，companion-N 才不會跳號
+      ...taken.map((c, i) => ({ ...c, key: `companion-${i + 1}` })),
+    ];
+    for (const a of attendees) {
       toCreate.push({
-        sessionId,
-        orderNo: row.orderNo,
-        attendeeKey: attendee.key,
-        name: attendee.name,
+        sessionId: g.sessionId,
+        orderNo: g.orderNo,
+        attendeeKey: a.key,
+        name: a.name,
         // 同行者的手機/信箱若有填在同行欄就帶入（收上課提醒簡訊）
-        email: attendee.key === "buyer" ? row.email || null : (attendee.email ?? null),
-        phone:
-          attendee.key === "buyer" ? normalizeMobile(row.phone) : (attendee.phone ?? null),
-        product: row.product,
-        amount: row.amount,
-        orderedAt: row.orderedAt,
+        email: a.email ?? null,
+        phone: a.phone ?? null,
+        product: g.product,
+        amount: g.amount,
+        orderedAt: g.orderedAt,
         // 葷素是訂購人填的；同行者吃什麼未知，留未標由後台補
-        meal: attendee.key === "buyer" ? row.meal : null,
+        meal: a.key === "buyer" ? g.meal : null,
       });
     }
   }
