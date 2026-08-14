@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/db";
 import { boardAuthStatus } from "@/lib/board-auth";
-import { isRetrainSignup } from "@/lib/session-roster";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { boardLogoutAction } from "@/actions/board";
 import { BoardLoginForm, AutoRefresh } from "./board-client";
+import { BoardRoster } from "./board-roster";
 
 export const metadata = { title: "課程報名看板", robots: { index: false } };
 // 即時看板：每次請求都撈最新資料（cookies 判斷已使頁面動態化，明示保險）
@@ -57,11 +57,17 @@ export default async function BoardPage() {
   // 結束日（場次以 endDate ?? eventDate 為準）過了隔天自動下架；沒填日期 = 永遠顯示
   const sessions = allSessions.filter((s) => !hasEndedInTaipei(s.endDate ?? s.eventDate));
   const now = new Date();
-  const webinars = allWebinars.filter(
-    (w) => !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > now),
-  );
-  // 舊生 = 報名複訓方案或後台改過身分；判別規則統一在 session-roster
-  const isRetrain = isRetrainSignup;
+  const webinars = allWebinars
+    .filter((w) => !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > now))
+    .map((w) => ({ id: w.id, title: w.title, requests: w.requests }));
+  // 日期在 server 端就格式化成台北時間字串，避免丟 Date 給 client 後時區/水合不一致
+  const boardSessions = sessions.map((s) => ({
+    id: s.id,
+    title: s.title,
+    dateLabel:
+      s.eventDate?.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }) ?? null,
+    signups: s.signups,
+  }));
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -96,164 +102,13 @@ export default async function BoardPage() {
           </form>
         </div>
       </header>
-
-      {sessions.length === 0 && webinars.length === 0 && (
+      {sessions.length === 0 && webinars.length === 0 ? (
         <p className="rounded-2xl border border-gray-200 px-6 py-12 text-center text-gray-400">
           目前沒有開放中的場次或講座
         </p>
+      ) : (
+        <BoardRoster sessions={boardSessions} webinars={webinars} />
       )}
-
-      {/* 講座索取狀況（第一順位）：訪客留 email 索取講座連結的名單 */}
-      {webinars.length > 0 && (
-        <div className="mb-10">
-          <h2 className="mb-4 text-lg font-bold text-gray-700">🎤 講座報名（Email 索取）</h2>
-          <div className="space-y-6">
-            {webinars.map((w) => (
-              <section key={w.id} className="rounded-2xl border border-gray-200 p-5">
-                <div className="mb-3 flex flex-wrap items-center gap-3">
-                  <h3 className="text-lg font-bold">{w.title}</h3>
-                  <span className="ml-auto rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
-                    {w.requests.length} 人索取
-                  </span>
-                </div>
-                {w.requests.length === 0 ? (
-                  <p className="text-sm text-gray-400">尚無人索取</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {w.requests.map((r) => (
-                      <span
-                        key={r.id}
-                        className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700"
-                      >
-                        {r.name ?? r.email}
-                        {r.name && (
-                          <span className="ml-1 text-xs text-gray-400">{r.email}</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </section>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {sessions.length > 0 && webinars.length > 0 && (
-        <h2 className="mb-4 text-lg font-bold text-gray-700">📚 課程場次</h2>
-      )}
-      <div className="space-y-6">
-        {sessions.map((s) => {
-          // 工作人員獨立列（不分組、不算新舊生；用餐統計包含他們）
-          const staff = s.signups.filter((g) => g.isStaff);
-          const students = s.signups.filter((g) => !g.isStaff);
-          const retrain = students.filter((g) => isRetrain(g));
-          const fresh = students.length - retrain.length;
-          const veg = s.signups.filter((g) => g.meal === "VEG").length;
-          // 有任何人分了組 → 依組別分節顯示；全未分組 → 維持扁平名字雲
-          const hasGroups = students.some((g) => g.groupNo != null);
-          const groups = hasGroups
-            ? [...new Set(students.map((g) => g.groupNo).filter((n): n is number => n != null))].sort(
-                (a, b) => a - b,
-              )
-            : [];
-          const chip = (g: { id: string; name: string; product: string | null; isRetrain: boolean | null }) =>
-            isRetrain(g) ? (
-              <span
-                key={g.id}
-                className="rounded-full bg-amber-50 px-2.5 py-1 text-sm text-amber-800 ring-1 ring-amber-200"
-              >
-                {g.name}
-                <span className="ml-1 text-xs text-amber-500">複訓</span>
-              </span>
-            ) : (
-              <span key={g.id} className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-700">
-                {g.name}
-              </span>
-            );
-          return (
-            <section key={s.id} className="rounded-2xl border border-gray-200 p-5">
-              <div className="mb-3 flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-bold">{s.title}</h2>
-                {s.eventDate && (
-                  <span className="text-sm text-gray-400">
-                    {s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}
-                  </span>
-                )}
-                <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
-                    {students.length} 人
-                  </span>
-                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-sm font-medium text-emerald-800">
-                    新生 {fresh}
-                  </span>
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-medium text-amber-800">
-                    舊生 {retrain.length}
-                  </span>
-                  {staff.length > 0 && (
-                    <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-sm font-medium text-indigo-800">
-                      工作人員 {staff.length}
-                    </span>
-                  )}
-                  {/* 葷 = 非素（含未標，訂餐往安全側算）；用餐統計含工作人員 */}
-                  <span className="rounded-full bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-600">
-                    葷 {s.signups.length - veg}｜素 {veg}
-                  </span>
-                </div>
-              </div>
-              {s.signups.length === 0 ? (
-                <p className="text-sm text-gray-400">尚無報名</p>
-              ) : (
-                <div className="space-y-3">
-                  {hasGroups ? (
-                    <>
-                      {groups.map((groupNo) => {
-                        const members = students.filter((g) => g.groupNo === groupNo);
-                        const groupVeg = members.filter((g) => g.meal === "VEG").length;
-                        return (
-                          <div key={groupNo}>
-                            <div className="mb-1.5 text-sm font-medium text-gray-500">
-                              第 {groupNo} 組 · {members.length} 人
-                              {groupVeg > 0 && ` · 素 ${groupVeg}`}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">{members.map(chip)}</div>
-                          </div>
-                        );
-                      })}
-                      {students.some((g) => g.groupNo == null) && (
-                        <div>
-                          <div className="mb-1.5 text-sm font-medium text-amber-600">未分組</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {students.filter((g) => g.groupNo == null).map(chip)}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">{students.map(chip)}</div>
-                  )}
-                  {staff.length > 0 && (
-                    <div>
-                      <div className="mb-1.5 text-sm font-medium text-indigo-600">工作人員</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {staff.map((g) => (
-                          <span
-                            key={g.id}
-                            className="rounded-full bg-indigo-50 px-2.5 py-1 text-sm text-indigo-800 ring-1 ring-indigo-200"
-                          >
-                            {g.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
-
     </main>
   );
 }
