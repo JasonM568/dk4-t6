@@ -17,15 +17,29 @@ type SessionOption = { id: string; title: string; signupCount: number };
 
 type PreviewData = Awaited<ReturnType<typeof previewSmsAudienceAction>>;
 
+/** 帶入既有內容：草稿（可改同一筆）或複製既有紀錄（id=null，另存新的一則） */
+export type SmsInitial = {
+  id: string | null;
+  title: string;
+  body: string;
+  audience: "session" | "manual";
+  sessionIds: string[];
+  manualList: string;
+  scheduledAt: string; // datetime-local 格式（台北時間）；過期或複製時給空字串
+  copiedFrom?: string | null; // 複製來源的標題，畫面上標示用
+};
+
 type Props = {
   sessions: SessionOption[];
   brandPrefix: string;
   isLive: boolean;
   providerLabel: string;
+  initial?: SmsInitial | null;
 };
 
-/** 簡訊發送表單：選對象（場次／手動）→ 即時試算人數與金額 → 測試發送 → 正式發送／排程 */
-export function SmsForm({ sessions, brandPrefix, isLive, providerLabel }: Props) {
+/** 簡訊發送表單：選對象（場次／手動）→ 即時試算人數與金額 → 測試發送 → 正式發送／排程。
+ *  帶 initial 時是「編輯草稿／複製既有紀錄」——草稿存回同一筆，複製則另存新的。 */
+export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial }: Props) {
   const [state, formAction, pending] = useActionState<SmsState, FormData>(
     sendSmsAction,
     null,
@@ -36,11 +50,18 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel }: Props)
   );
   const formRef = useRef<HTMLFormElement>(null);
 
-  const [audience, setAudience] = useState<"session" | "manual">("session");
-  const [pickedSessions, setPickedSessions] = useState<string[]>([]);
-  const [manualList, setManualList] = useState("");
-  const [body, setBody] = useState("");
+  const [audience, setAudience] = useState<"session" | "manual">(
+    initial?.audience ?? "session",
+  );
+  const [pickedSessions, setPickedSessions] = useState<string[]>(initial?.sessionIds ?? []);
+  const [manualList, setManualList] = useState(initial?.manualList ?? "");
+  const [body, setBody] = useState(initial?.body ?? "");
   const [noticeAck, setNoticeAck] = useState(false);
+  // 存過一次之後就一直改同一筆草稿——不然每按一次「存草稿」就多一則
+  const [draftId, setDraftId] = useState(initial?.id ?? "");
+  if (state?.isDraft && state.broadcastId && state.broadcastId !== draftId) {
+    setDraftId(state.broadcastId);
+  }
 
   const [preview, setPreview] = useState<{ key: string; data: PreviewData } | null>(
     null,
@@ -96,8 +117,32 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel }: Props)
         </div>
       )}
 
+      {(draftId || initial) && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-900">
+          <span>
+            {draftId ? (
+              <>
+                正在編輯草稿——按「更新草稿」存回同一則，內容確定後直接「
+                {isLive ? "正式發送" : "模擬發送"}」即可
+              </>
+            ) : (
+              <>
+                已帶入
+                {initial?.copiedFrom ? `「${initial.copiedFrom}」` : "既有紀錄"}
+                的內容（複製，不會動到原紀錄）——改完可存成新草稿或直接發送
+              </>
+            )}
+          </span>
+          <Link href="/admin/sms" className="ml-auto text-xs text-indigo-600 underline">
+            清空，改寫新的一則
+          </Link>
+        </div>
+      )}
+
       <form ref={formRef} action={formAction} className="space-y-4">
         <input type="hidden" name="messageType" value={messageType} />
+        {/* 有值 = 改既有草稿（server action 會確認它仍是 DRAFT 才寫） */}
+        <input type="hidden" name="draftId" value={draftId} />
 
         <div>
           <label className="mb-1 block text-sm font-medium">
@@ -105,6 +150,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel }: Props)
           </label>
           <input
             name="title"
+            defaultValue={initial?.title ?? ""}
             placeholder="例：8/20 台北場 上課前一日提醒"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
@@ -259,6 +305,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel }: Props)
           <input
             type="datetime-local"
             name="scheduledAt"
+            defaultValue={initial?.scheduledAt ?? ""}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
         </div>
@@ -319,7 +366,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel }: Props)
             disabled={pending}
             className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
           >
-            {pending ? "處理中…" : "存草稿"}
+            {pending ? "處理中…" : draftId ? "更新草稿" : "存草稿"}
           </button>
         </div>
 

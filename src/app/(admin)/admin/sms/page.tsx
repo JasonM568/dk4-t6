@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { getSmsSettings, formatCents } from "@/lib/sms/settings";
 import { getSmsProvider } from "@/lib/sms/provider";
 import { cancelScheduledSmsAction, deleteSmsDraftAction } from "@/actions/sms";
-import { SmsForm } from "./sms-form";
+import { SmsForm, type SmsInitial } from "./sms-form";
 import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "簡訊發送 — 管理後台" };
@@ -25,14 +25,60 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 
 const PAGE_SIZE = 20;
 
+/** manualRows（JSON）→ 手動名單輸入框的文字：一行一筆「手機,姓名」。
+ *  資料庫來的 JSON 一律防禦性讀取，壞資料就跳過那一筆。 */
+function manualRowsToText(rows: unknown): string {
+  if (!Array.isArray(rows)) return "";
+  return rows
+    .map((r) => {
+      if (!r || typeof r !== "object") return "";
+      const { mobile, name } = r as { mobile?: unknown; name?: unknown };
+      if (typeof mobile !== "string" || !mobile) return "";
+      return typeof name === "string" && name ? `${mobile},${name}` : mobile;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Date → datetime-local 的值（台北時間）。已過期就回空字串，不要帶入送不出去的時間 */
+function toTaipeiLocalInput(d: Date | null): string {
+  if (!d || d.getTime() < Date.now() + 60_000) return "";
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Taipei",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d);
+  return parts.replace(" ", "T");
+}
+
 export default async function SmsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; draft?: string; copy?: string }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw } = await searchParams;
+  const { page: pageRaw, draft: draftParam, copy: copyParam } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
+
+  // 草稿：載回表單改同一筆；複製：帶內容另存新的一則（原紀錄不動）
+  const loadId = draftParam || copyParam;
+  const source = loadId
+    ? await prisma.smsBroadcast.findUnique({ where: { id: loadId } })
+    : null;
+  const editable = !!draftParam && source?.status === "DRAFT";
+  const initial: SmsInitial | null = source
+    ? {
+        id: editable ? source.id : null,
+        title: source.title ?? "",
+        body: source.body,
+        audience: source.audienceType === "MANUAL" ? "manual" : "session",
+        sessionIds: source.sessionIds,
+        manualList: manualRowsToText(source.manualRows),
+        // 複製既有紀錄不沿用排程時間（多半已過期），只有編輯草稿才帶回
+        scheduledAt: editable ? toTaipeiLocalInput(source.scheduledAt) : "",
+        copiedFrom: editable ? null : (source.title ?? "既有紀錄"),
+      }
+    : null;
 
   const provider = getSmsProvider();
   const [settings, sessions, history, total] = await Promise.all([
@@ -59,7 +105,9 @@ export default async function SmsPage({
         重複報名多場的學員只會收到一則。
       </p>
 
+      {/* key：切換草稿/複製來源時強制重掛，表單內的狀態才會換成新內容 */}
       <SmsForm
+        key={initial?.id ?? loadId ?? "new"}
         sessions={sessions.map((s) => ({
           id: s.id,
           title: s.title,
@@ -68,6 +116,7 @@ export default async function SmsPage({
         brandPrefix={settings.brandPrefix}
         isLive={provider.isLive}
         providerLabel={provider.label}
+        initial={initial}
       />
 
       <div className="mt-10">
@@ -155,6 +204,23 @@ export default async function SmsPage({
                         {when.toLocaleString("zh-TW", TPE)}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                        {h.status === "DRAFT" ? (
+                          <Link
+                            href={`/admin/sms?draft=${h.id}`}
+                            className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50"
+                          >
+                            編輯
+                          </Link>
+                        ) : (
+                          /* 上課提醒每場都差不多：複製既有內容改日期就能再發一次 */
+                          <Link
+                            href={`/admin/sms?copy=${h.id}`}
+                            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+                          >
+                            複製
+                          </Link>
+                        )}
                         {h.status === "SCHEDULED" && (
                           <form action={cancelScheduledSmsAction.bind(null, h.id)}>
                             <SubmitButton
@@ -175,6 +241,7 @@ export default async function SmsPage({
                             </SubmitButton>
                           </form>
                         )}
+                        </div>
                       </td>
                     </tr>
                   );

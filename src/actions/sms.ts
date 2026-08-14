@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
@@ -23,6 +24,7 @@ export type SmsState = {
   error?: string;
   success?: string;
   broadcastId?: string;
+  isDraft?: boolean; // 表單據此把後續的「存草稿」導回同一筆，不會每按一次就多一則
 } | null;
 
 /** 手動貼入的名單：一行一筆，可「手機,姓名」。回傳可用列與無法辨識的行數 */
@@ -217,6 +219,8 @@ export async function sendSmsAction(
   const title = String(formData.get("title") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const mode = String(formData.get("mode") ?? "draft");
+  // 有值 = 正在編輯既有草稿：改同一筆，不另建新的
+  const draftId = String(formData.get("draftId") ?? "").trim();
   const messageType = String(formData.get("messageType") ?? "NOTICE");
   const audience = String(formData.get("audience") ?? "session");
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
@@ -232,6 +236,19 @@ export async function sendSmsAction(
       };
     if (messageType === "NOTICE" && !noticeAck)
       return { error: "請勾選確認這是與已報名學員的履約通知" };
+  }
+
+  // 只有草稿可以改：已送出/排程中的紀錄是憑證，要重用請按「複製」另存一則
+  if (draftId) {
+    const existing = await prisma.smsBroadcast.findUnique({
+      where: { id: draftId },
+      select: { status: true },
+    });
+    if (!existing) return { error: "找不到這則草稿（可能已被刪除），請重新整理頁面" };
+    if (existing.status !== "DRAFT")
+      return {
+        error: "這則已經送出或排程了，不能再改——請用發送紀錄上的「複製」建立新的一則",
+      };
   }
 
   const { error, data } = await resolveSmsAudience(
@@ -258,21 +275,39 @@ export async function sendSmsAction(
     noticeAckBy: messageType === "NOTICE" && noticeAck ? (admin?.email ?? null) : null,
     unitPriceCents: toCents(settings.pricePerSegment),
     ...data,
-    manualRows: data.manualRows ?? undefined,
+    // 改草稿時對象可能從手動名單換成場次：要清成 JSON null，不能給 undefined（那是「不更動」）
+    manualRows: data.manualRows ?? Prisma.DbNull,
   };
 
-  if (mode === "draft") {
-    const rec = await prisma.smsBroadcast.create({
-      data: { ...base, status: "DRAFT" },
+  /** 編輯中的草稿改同一筆；否則建新的。status 用 updateMany 當樂觀鎖——
+   *  兩個人同時開同一則草稿時，後按的人不會把已送出的紀錄覆寫回去。 */
+  const saveDraft = async (patch: { status: string; scheduledAt?: Date | null; claimedAt?: Date }) => {
+    if (!draftId) {
+      const rec = await prisma.smsBroadcast.create({ data: { ...base, ...patch } });
+      return { id: rec.id, ok: true };
+    }
+    const r = await prisma.smsBroadcast.updateMany({
+      where: { id: draftId, status: "DRAFT" },
+      data: { ...base, scheduledAt: null, ...patch },
     });
+    return { id: draftId, ok: r.count > 0 };
+  };
+  const staleDraft = { error: "這則草稿剛被其他人送出或刪除了，請重新整理頁面" };
+
+  if (mode === "draft") {
+    const rec = await saveDraft({ status: "DRAFT" });
+    if (!rec.ok) return staleDraft;
     revalidatePath("/admin/sms");
-    return { success: "已存成草稿", broadcastId: rec.id };
+    return {
+      success: draftId ? "草稿已更新" : "已存成草稿",
+      broadcastId: rec.id,
+      isDraft: true,
+    };
   }
 
   if (scheduledAt) {
-    const rec = await prisma.smsBroadcast.create({
-      data: { ...base, status: "SCHEDULED", scheduledAt },
-    });
+    const rec = await saveDraft({ status: "SCHEDULED", scheduledAt });
+    if (!rec.ok) return staleDraft;
     revalidatePath("/admin/sms");
     const shown = scheduledAt.toLocaleString("zh-TW", {
       timeZone: "Asia/Taipei",
@@ -286,9 +321,8 @@ export async function sendSmsAction(
 
   // 立即發送：先建紀錄再送，結果回寫同一筆。
   // claimedAt 必填：cron 會把「SENDING 且 claimedAt=null」視為卡死回收標 FAILED
-  const rec = await prisma.smsBroadcast.create({
-    data: { ...base, status: "SENDING", claimedAt: new Date() },
-  });
+  const rec = await saveDraft({ status: "SENDING", claimedAt: new Date() });
+  if (!rec.ok) return staleDraft;
   const r = await executeSmsBroadcast(rec.id);
   revalidatePath("/admin/sms");
   if (r.sent === 0) return { error: r.error ?? "發送失敗", broadcastId: rec.id };
