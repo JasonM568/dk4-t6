@@ -27,6 +27,15 @@ export type SmsInitial = {
   manualList: string;
   scheduledAt: string; // datetime-local 格式（台北時間）；過期或複製時給空字串
   copiedFrom?: string | null; // 複製來源的標題，畫面上標示用
+  /** 補發模式：帶入「這場還沒收到的人」的手動名單快照（已收到的不重寄） */
+  followUp?: {
+    sourceTitle: string;
+    count: number;
+    alreadySent: number;
+    noMobileCount: number;
+    retryFailed: { mobile: string; name?: string; reason: string | null }[];
+    error?: string | null;
+  } | null;
 };
 
 type Props = {
@@ -117,7 +126,72 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
         </div>
       )}
 
-      {(draftId || initial) && (
+      {/* 補發模式：先把「為什麼是這些人」講清楚，管理員才敢直接按發送 */}
+      {initial?.followUp && !draftId && (
+        <div
+          className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+            initial.followUp.error || initial.followUp.count === 0
+              ? "border-gray-300 bg-gray-50 text-gray-700"
+              : "border-amber-300 bg-amber-50 text-amber-900"
+          }`}
+        >
+          {initial.followUp.error ? (
+            <span>⚠️ {initial.followUp.error}</span>
+          ) : initial.followUp.count === 0 ? (
+            <span>
+              「{initial.followUp.sourceTitle}」目前名單上<strong>沒有漏發的人</strong>
+              ——有手機的都已經收到了
+              {initial.followUp.noMobileCount > 0 && (
+                <>
+                  ；另有 <strong>{initial.followUp.noMobileCount} 人沒有手機號碼</strong>，
+                  補了號碼再回來按一次「補發」才收得到
+                </>
+              )}
+              。
+            </span>
+          ) : (
+            <>
+              <div>
+                📮 補發「{initial.followUp.sourceTitle}」：名單上還沒收到的{" "}
+                <strong>{initial.followUp.count} 人</strong>已帶入下方手動名單
+                （發送後才報名、事後才補手機、上次送失敗的人）。
+              </div>
+              <div className="mt-1 text-xs">
+                已收到的 {initial.followUp.alreadySent} 人不在名單裡，不會重複收到、不會重複計費；
+                名單可自行刪減後再送出。
+                {initial.followUp.noMobileCount > 0 && (
+                  <span className="ml-1 font-medium">
+                    另有 {initial.followUp.noMobileCount} 人沒有手機號碼，請先到場次名單補號碼。
+                  </span>
+                )}
+              </div>
+              {/* 上次送失敗多半是空號：直接再送還是會失敗又要付錢，先讓人看到號碼與原因 */}
+              {initial.followUp.retryFailed.length > 0 && (
+                <div className="mt-1.5 rounded-lg bg-white/60 px-2 py-1.5 text-xs">
+                  ⚠️ 其中 <strong>{initial.followUp.retryFailed.length} 人是上次送失敗的號碼</strong>
+                  ，直接再送很可能還是失敗——建議先到場次名單確認號碼：
+                  <ul className="mt-0.5 list-inside list-disc">
+                    {initial.followUp.retryFailed.slice(0, 5).map((r) => (
+                      <li key={r.mobile}>
+                        {r.name ?? "（無姓名）"} {r.mobile}
+                        {r.reason ? `　${r.reason}` : ""}
+                      </li>
+                    ))}
+                    {initial.followUp.retryFailed.length > 5 && (
+                      <li>等 {initial.followUp.retryFailed.length} 人</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+          <Link href="/admin/sms" className="mt-1 block text-xs text-indigo-600 underline">
+            清空，改寫新的一則
+          </Link>
+        </div>
+      )}
+
+      {(draftId || (initial && !initial.followUp)) && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-900">
           <span>
             {draftId ? (

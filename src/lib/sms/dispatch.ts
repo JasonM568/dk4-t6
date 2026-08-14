@@ -206,6 +206,80 @@ export async function previewSmsAudience(input: {
   return EMPTY_SMS_AUDIENCE_PREVIEW;
 }
 
+/** 補發名單：某筆已發送紀錄「當時沒收到、現在該收到」的人。
+ *
+ *  場次名單是活的（發完才報名、事後才補手機、上次送失敗），但簡訊**永不自動重寄**
+ *  ——多送一封就是多收一次錢。所以補發一律走這裡算出差集，
+ *  轉成「手動名單」快照讓管理員逐筆看過再送，不是重跑原名單。
+ *
+ *  排除誰：上次已送出／已送達／已排入佇列的號碼、明確拒收（STOP）的號碼。
+ *  納入誰：新加入名單的人、事後才補手機的人、上次送**失敗**的人。 */
+export async function resolveSmsFollowUp(broadcastId: string): Promise<{
+  error?: string;
+  sourceTitle: string;
+  rows: SmsManualRow[];
+  alreadySent: number; // 上次已送到／拒收，這次不再送的號碼數
+  noMobileCount: number; // 目前名單仍沒有可用手機的人數（補發也救不到，要先去補號碼）
+  /** 補發名單中「上次送失敗」的號碼與原因——多半是空號，直接再送多半還是失敗，
+   *  要讓管理員看到原因、先去改號碼，而不是白花錢重送 */
+  retryFailed: { mobile: string; name?: string; reason: string | null }[];
+}> {
+  const empty = {
+    sourceTitle: "",
+    rows: [],
+    alreadySent: 0,
+    noMobileCount: 0,
+    retryFailed: [],
+  };
+  const record = await prisma.smsBroadcast.findUnique({ where: { id: broadcastId } });
+  if (!record) return { ...empty, error: "找不到這筆發送紀錄" };
+  const sourceTitle = record.title ?? "（未命名）";
+  if (record.audienceType !== "SESSION")
+    return {
+      ...empty,
+      sourceTitle,
+      error: "只有「場次」對象的紀錄能算補發名單（手動名單請用「複製」再發）",
+    };
+
+  const sessionIds = broadcastSessionIds(record);
+  if (sessionIds.length === 0)
+    return { ...empty, sourceTitle, error: "這筆紀錄沒有場次資料" };
+
+  const signups = await collectSessionSignups(sessionIds);
+  const { recipients, noMobileCount } = dedupeByMobile(
+    signups.map((s) => ({ mobile: s.phone, name: s.name })),
+  );
+  const { kept } = await filterOptedOut(recipients, record.messageType);
+
+  // 逐筆紀錄優先（能把上次失敗的挑回來補），早期沒有逐筆紀錄的就退回 recipients 快照
+  const messages = await prisma.smsMessage.findMany({
+    where: { broadcastId },
+    select: { mobile: true, status: true, error: true },
+  });
+  const done = new Set(
+    messages.length > 0
+      ? messages.filter((m) => m.status !== "FAILED").map((m) => m.mobile)
+      : record.recipients,
+  );
+  const failedReason = new Map(
+    messages.filter((m) => m.status === "FAILED").map((m) => [m.mobile, m.error]),
+  );
+
+  const rows = kept
+    .filter((r) => !done.has(r.mobile))
+    .map((r) => (r.name ? { mobile: r.mobile, name: r.name } : { mobile: r.mobile }));
+
+  return {
+    sourceTitle,
+    rows,
+    alreadySent: done.size,
+    noMobileCount,
+    retryFailed: rows
+      .filter((r) => failedReason.has(r.mobile))
+      .map((r) => ({ ...r, reason: failedReason.get(r.mobile) ?? null })),
+  };
+}
+
 /** 今日（台北時間）已送出的則數總和，供每日上限判斷 */
 async function todaySegments(): Promise<number> {
   const nowTaipei = new Date(

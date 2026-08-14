@@ -3,6 +3,7 @@ import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { getSmsSettings, formatCents } from "@/lib/sms/settings";
 import { getSmsProvider } from "@/lib/sms/provider";
+import { resolveSmsFollowUp } from "@/lib/sms/dispatch";
 import { cancelScheduledSmsAction, deleteSmsDraftAction } from "@/actions/sms";
 import { SmsForm, type SmsInitial } from "./sms-form";
 import { SubmitButton } from "@/components/admin/submit-button";
@@ -54,29 +55,61 @@ function toTaipeiLocalInput(d: Date | null): string {
 export default async function SmsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; draft?: string; copy?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    draft?: string;
+    copy?: string;
+    followup?: string;
+  }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw, draft: draftParam, copy: copyParam } = await searchParams;
+  const {
+    page: pageRaw,
+    draft: draftParam,
+    copy: copyParam,
+    followup: followUpParam,
+  } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
-  // 草稿：載回表單改同一筆；複製：帶內容另存新的一則（原紀錄不動）
-  const loadId = draftParam || copyParam;
+  // 草稿：載回表單改同一筆；複製／補發：帶內容另存新的一則（原紀錄不動）
+  const loadId = draftParam || copyParam || followUpParam;
   const source = loadId
     ? await prisma.smsBroadcast.findUnique({ where: { id: loadId } })
     : null;
   const editable = !!draftParam && source?.status === "DRAFT";
+  // 補發：把「名單上還沒收到的人」算成手動名單快照帶進表單，
+  // 管理員逐筆看得到號碼、可自行刪減後再送——不重跑原場次名單，避免整批重寄。
+  const followUp = followUpParam ? await resolveSmsFollowUp(followUpParam) : null;
+
   const initial: SmsInitial | null = source
     ? {
         id: editable ? source.id : null,
-        title: source.title ?? "",
+        title: followUp ? `${source.title ?? "（未命名）"}（補發）` : (source.title ?? ""),
         body: source.body,
-        audience: source.audienceType === "MANUAL" ? "manual" : "session",
-        sessionIds: source.sessionIds,
-        manualList: manualRowsToText(source.manualRows),
+        audience: followUp
+          ? "manual"
+          : source.audienceType === "MANUAL"
+            ? "manual"
+            : "session",
+        sessionIds: followUp ? [] : source.sessionIds,
+        manualList: followUp
+          ? followUp.rows
+              .map((r) => (r.name ? `${r.mobile},${r.name}` : r.mobile))
+              .join("\n")
+          : manualRowsToText(source.manualRows),
         // 複製既有紀錄不沿用排程時間（多半已過期），只有編輯草稿才帶回
         scheduledAt: editable ? toTaipeiLocalInput(source.scheduledAt) : "",
-        copiedFrom: editable ? null : (source.title ?? "既有紀錄"),
+        copiedFrom: editable || followUp ? null : (source.title ?? "既有紀錄"),
+        followUp: followUp
+          ? {
+              sourceTitle: followUp.sourceTitle,
+              count: followUp.rows.length,
+              alreadySent: followUp.alreadySent,
+              noMobileCount: followUp.noMobileCount,
+              retryFailed: followUp.retryFailed,
+              error: followUp.error ?? null,
+            }
+          : null,
       }
     : null;
 
@@ -243,6 +276,18 @@ export default async function SmsPage({
                             複製
                           </Link>
                         )}
+                        {/* 補發：發送後才報名／才補手機／上次送失敗的人，
+                            算出差集帶進表單（已收到的絕不重寄） */}
+                        {(h.status === "SENT" || h.status === "FAILED") &&
+                          h.audienceType === "SESSION" && (
+                            <Link
+                              href={`/admin/sms?followup=${h.id}`}
+                              title="把這場名單上「還沒收到」的人帶進表單（新報名、事後補手機、上次送失敗）"
+                              className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50"
+                            >
+                              補發
+                            </Link>
+                          )}
                         {h.status === "SCHEDULED" && (
                           <form action={cancelScheduledSmsAction.bind(null, h.id)}>
                             <SubmitButton
