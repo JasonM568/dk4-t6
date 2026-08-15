@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { isRetrainSignup } from "@/lib/session-roster";
+// 比對規則與後台場次名單共用（@/lib/roster-search），同一關鍵字兩邊結果一致
+import { normalizeQuery as norm, matchesText as matches, matchesTag } from "@/lib/roster-search";
 
 export type BoardSignup = {
   id: string;
@@ -25,40 +27,6 @@ export type BoardWebinar = {
   title: string;
   requests: { id: string; email: string; name: string | null }[];
 };
-
-/** 搜尋比對用的正規化：只去空白＋英文小寫。
- *  刻意**不用** normalizePersonName——那支會把括號註記整段刪掉（去重比對用），
- *  但「Polly cheng（鄭寶莉）」正是要能用「鄭寶莉」搜到，括號內容不能丟。 */
-function norm(s: string | null | undefined): string {
-  return (s ?? "").replace(/\s+/g, "").toLowerCase();
-}
-
-function matches(query: string, ...fields: (string | null | undefined)[]): boolean {
-  return fields.some((f) => f && norm(f).includes(query));
-}
-
-/** 身分／餐別關鍵字：**只在整串完全相等時**才當篩選條件。
- *  用 includes 會壞事——「素」「芬」這類字常出現在姓名裡（陳素娥、張淑芬），
- *  查人名時不該把全場素食者一起撈出來。 */
-function matchesTag(query: string, g: BoardSignup): boolean {
-  switch (query) {
-    case "素":
-    case "素食":
-      return g.meal === "VEG";
-    case "葷":
-    case "葷食":
-      return g.meal !== "VEG";
-    case "複訓":
-    case "舊生":
-      return !g.isStaff && isRetrain(g);
-    case "新生":
-      return !g.isStaff && !isRetrain(g);
-    case "工作人員":
-      return g.isStaff;
-    default:
-      return false;
-  }
-}
 
 const isRetrain = isRetrainSignup;
 

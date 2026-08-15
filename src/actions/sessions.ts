@@ -590,7 +590,7 @@ export async function undoDeferSignupAction(signupId: string): Promise<SessionFo
         attendeeKey: signup.attendeeKey,
       },
     },
-    select: { id: true, deferredToSessionId: true },
+    select: { id: true, deferredToSessionId: true, meal: true, phone: true },
   });
   if (targetRow?.deferredToSessionId)
     return { error: "對方場次那筆又再延期了，請先到該場次取消後續延期" };
@@ -599,7 +599,12 @@ export async function undoDeferSignupAction(signupId: string): Promise<SessionFo
     ...(targetRow ? [prisma.sessionSignup.delete({ where: { id: targetRow.id } })] : []),
     prisma.sessionSignup.update({
       where: { id: signup.id },
-      data: { deferredToSessionId: null },
+      data: {
+        deferredToSessionId: null,
+        // 延期期間在對方場次改過的葷素／手機要帶回來，否則人回到原場次、
+        // 便當數卻還是延期前的舊值（原列在延出期間是唯讀的，改不到）
+        ...(targetRow ? { meal: targetRow.meal, phone: targetRow.phone } : {}),
+      },
     }),
   ]);
   revalidatePath("/admin/sessions");

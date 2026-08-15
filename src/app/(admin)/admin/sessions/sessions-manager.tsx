@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import {
   createSessionAction,
   updateSessionAction,
@@ -32,6 +32,8 @@ import {
   computeRosterStats,
   groupCountFor,
 } from "@/lib/session-roster";
+// 比對規則與公開看板（/board）共用，同一關鍵字兩邊查出同一批人
+import { normalizeQuery, matchesText, matchesTag } from "@/lib/roster-search";
 
 export type SignupRow = {
   id: string;
@@ -685,8 +687,33 @@ export function SessionCard({
     groupCountFor(stats.total, session.groupCap),
     ...session.signups.map((s) => s.groupNo ?? 0),
   );
-  // 有效名單的流水編號（延出列不佔號）
-  let rowNum = 0;
+
+  // 名單搜尋（client 端過濾，不打 DB）。只影響表格顯示——
+  // 上方統計、分組面板、簽到表匯出一律走完整名單，數字不會被搜尋條件帶偏。
+  const [rawQuery, setRawQuery] = useState("");
+  const query = normalizeQuery(rawQuery);
+  const searching = query.length > 0;
+
+  // 流水編號**先於過濾**算好：搜尋後仍顯示該人在完整名單中的號碼，
+  // 否則同一個人搜尋前後號碼不同，跟簽到表對不起來。延出列與工作人員不佔號。
+  const rowNumbers = useMemo(() => {
+    const map = new Map<string, number>();
+    let n = 0;
+    for (const s of session.signups) {
+      if (!s.deferredToSessionId && !s.isStaff) map.set(s.id, ++n);
+    }
+    return map;
+  }, [session.signups]);
+
+  const visibleSignups = useMemo(() => {
+    if (!searching) return session.signups;
+    return session.signups.filter(
+      (s) =>
+        matchesText(query, s.name, s.product, s.orderNo, s.email, s.phone, s.phone ? formatMobile(s.phone) : null) ||
+        matchesTag(query, s),
+    );
+  }, [session.signups, query, searching]);
+
   return (
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
@@ -823,6 +850,41 @@ export function SessionCard({
         {session.signups.length === 0 ? (
           <p className="text-sm text-gray-400">還沒有報名資料——上傳訂單檔後自動歸入，或用上方手動新增</p>
         ) : (
+          <>
+          {/* 這一場的名單搜尋：名單長了要找特定學員（改葷素、補手機、調組別）得整表用眼睛掃 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-64 flex-1">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                🔍
+              </span>
+              <input
+                value={rawQuery}
+                onChange={(e) => setRawQuery(e.target.value)}
+                placeholder="搜尋這場名單：姓名、手機、Email、訂單編號、方案，或「素」「複訓」「未分組」「第3組」"
+                aria-label={`搜尋「${session.title}」的名單`}
+                className="w-full rounded-lg border border-gray-300 py-1.5 pl-9 pr-16 text-sm focus:border-black focus:outline-none"
+              />
+              {rawQuery && (
+                <button
+                  type="button"
+                  onClick={() => setRawQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-100"
+                >
+                  清除
+                </button>
+              )}
+            </div>
+            {searching && (
+              <span className="text-xs text-gray-500">
+                符合 {visibleSignups.length} 筆／共 {session.signups.length} 筆
+              </span>
+            )}
+          </div>
+          {searching && visibleSignups.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">
+              這場沒有符合「{rawQuery}」的名單
+            </p>
+          ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-gray-400">
               <tr>
@@ -839,12 +901,12 @@ export function SessionCard({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {session.signups.map((s) => {
+              {visibleSignups.map((s) => {
                 const deferredOut = !!s.deferredToSessionId;
                 return (
                 <tr key={s.id} className={deferredOut ? "opacity-50" : undefined}>
                   <td className="px-2 py-1.5 font-mono text-gray-400">
-                    {deferredOut || s.isStaff ? "—" : ++rowNum}
+                    {rowNumbers.get(s.id) ?? "—"}
                   </td>
                   <td className="px-2 py-1.5">
                     {canEdit && !deferredOut ? (
@@ -1083,6 +1145,8 @@ export function SessionCard({
               })}
             </tbody>
           </table>
+          )}
+          </>
         )}
       </div>
     </details>
