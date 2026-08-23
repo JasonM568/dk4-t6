@@ -35,7 +35,7 @@ import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
 import { TRACKING_KEYS } from "@/lib/tracking";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { parseOrderFile } from "@/lib/session-import";
-import { normalizeMobile } from "@/lib/sms/phone";
+import { normalizeContactPhone } from "@/lib/sms/phone";
 import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { autoEnrollGroupCourses } from "@/lib/zone-enroll";
 import {
@@ -2191,7 +2191,11 @@ export async function importMemberPhonesAction(
   for (const r of rows) {
     const email = r.email.trim().toLowerCase();
     if (!email || !email.includes("@")) continue;
-    const phone = normalizeMobile(r.phone);
+    // normalizeContactPhone 而非 normalizeMobile：海外會員訂單填的 +60... 也要回填。
+    // MemberProfile 存得下 E.164（2026-08-23 起），這裡若還用 normalizeMobile，
+    // 海外會員會被算進「無法辨識」丟掉——他們正是最需要預填號碼的一群
+    //（自己填得出來，但補填頁一片空白時最容易放棄）。
+    const phone = normalizeContactPhone(r.phone);
     if (!phone) {
       if (r.phone.trim()) invalidPhone++;
       continue;
