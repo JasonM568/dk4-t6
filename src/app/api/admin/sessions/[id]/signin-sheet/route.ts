@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
-import { formatMobile } from "@/lib/sms/phone";
+import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
 import { isRetrainSignup, mealLabel, computeRosterStats } from "@/lib/session-roster";
 
 // 場次簽到表匯出（Excel）：依組別排序、含葷素與新舊生標記、末尾用餐彙總。
@@ -44,7 +44,7 @@ export async function GET(
     { header: "姓名", key: "name", width: 16 },
     { header: "新舊生", key: "type", width: 8 },
     { header: "葷素", key: "meal", width: 10 },
-    { header: "手機", key: "phone", width: 16 },
+    { header: "手機", key: "phone", width: 22 }, // 22：海外門號要塞得下號碼＋「海外·Email」註記
     { header: "簽名", key: "sign", width: 28 },
   ];
 
@@ -64,7 +64,13 @@ export async function GET(
       name: s.name,
       type: s.isStaff ? "工作人員" : isRetrainSignup(s) ? "舊生" : "新生",
       meal: mealLabel(s.meal),
-      phone: s.phone ? formatMobile(s.phone) : "",
+      // 海外門號當場註記：現場拿這張表打電話／補通知的人，要一眼看出
+      // 這支號碼不會收到提醒簡訊、得改寄 Email
+      phone: s.phone
+        ? isOverseasPhone(s.phone)
+          ? `${s.phone}（海外·Email）`
+          : formatMobile(s.phone)
+        : "",
       sign: "",
     });
     row.height = 26; // 留手寫簽名空間

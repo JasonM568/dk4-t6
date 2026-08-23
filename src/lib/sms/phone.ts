@@ -100,6 +100,19 @@ export function normalizeInternational(raw: unknown): string | null {
   return explainMobile(raw).overseas ?? null;
 }
 
+/** 「聯絡得上的號碼」：台灣號回 09XXXXXXXX，海外號回 E.164，都不是回 null。
+ *
+ *  名單類寫入端（場次報名、訂單匯入）用這支，不要直接用 normalizeMobile——
+ *  海外學員訂單填的 +60... 會被 normalizeMobile 判 null，那個人在名單上就變成
+ *  一格空白，寄通知的人既不知道他是誰、也不知道他其實有聯絡方式。
+ *
+ *  簡訊發送端（dispatch / audience）則相反，必須繼續用 normalizeMobile：
+ *  那條路上的 null 代表「這支號碼不能發簡訊」，是刻意的擋門。 */
+export function normalizeContactPhone(raw: unknown): string | null {
+  const r = explainMobile(raw);
+  return r.mobile ?? r.overseas ?? null;
+}
+
 /** 這個號碼是不是海外門號（存成 E.164 的那些）。
  *  後台名單、簽到表要用來標示「這個人不寄簡訊，上課通知走 Email」。 */
 export function isOverseasPhone(p: string | null | undefined): boolean {

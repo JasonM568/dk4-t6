@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
-import { explainMobile, normalizeMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
+import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { findStudentByPhone } from "@/lib/student-history";
 import {
   isRetrainProduct,
@@ -107,15 +107,18 @@ export async function addSignupAction(
   if (!name) return { error: "請填寫姓名" };
   if (email && !email.includes("@")) return { error: "Email 格式不正確" };
 
-  // 手機選填；但填了就一定要是能收簡訊的號碼——存進去卻發不出簡訊比留空更糟
+  // 手機選填；但填了就一定要是能收簡訊的號碼——存進去卻發不出簡訊比留空更糟。
+  // 海外門號例外：存 E.164，名單上標成「海外·Email」。
+  // 留空與存海外號差很多——留空是「不知道怎麼聯絡他」，存海外號是
+  // 「知道他是誰、只是要改用 Email 通知」，寄通知的人需要看得出這個差別。
   let phone: string | null = null;
   if (phoneInput) {
-    const { mobile, reject } = explainMobile(phoneInput);
-    if (!mobile)
+    const { mobile, reject, overseas } = explainMobile(phoneInput);
+    if (!mobile && !overseas)
       return {
-        error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼，或留空）`,
+        error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼、海外門號加國碼如 +60123456789，或留空）`,
       };
-    phone = mobile;
+    phone = mobile ?? overseas!;
   }
 
   // 同場次同一人只能有一列（跨訂單編號的重複＝名單最常見的髒資料來源）。
@@ -290,10 +293,12 @@ export async function assignUnmatchedAction(
             : typeof attendee.email === "string" && attendee.email.includes("@")
               ? attendee.email.trim().toLowerCase()
               : null,
+        // 海外學員訂單填的是 +60... 之類：normalizeMobile 會回 null，
+        // 若不接住就整個掉成「無手機」，這個人在名單上會變成聯絡不到的空白
         phone:
           attendee.key === "buyer"
-            ? normalizeMobile(r.phone)
-            : normalizeMobile(attendee.phone ?? null),
+            ? normalizeContactPhone(r.phone)
+            : normalizeContactPhone(attendee.phone ?? null),
         product,
         amount: typeof r.amount === "number" ? r.amount : null,
         orderedAt: orderedAt && !Number.isNaN(orderedAt.getTime()) ? orderedAt : null,
@@ -368,13 +373,13 @@ export async function setSignupPhoneAction(id: string, phone: string) {
   const input = phone.trim();
   let value: string | null = null;
   if (input) {
-    // 同 addSignupAction：存得進去卻發不出簡訊，比留空更糟
-    const { mobile, reject } = explainMobile(input);
-    if (!mobile)
+    // 同 addSignupAction：存得進去卻發不出簡訊，比留空更糟；海外門號存 E.164
+    const { mobile, reject, overseas } = explainMobile(input);
+    if (!mobile && !overseas)
       return {
-        error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼，或清空）`,
+        error: `手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼、海外門號加國碼如 +60123456789，或清空）`,
       };
-    value = mobile;
+    value = mobile ?? overseas!;
   }
   await prisma.sessionSignup
     .update({ where: { id }, data: { phone: value } })

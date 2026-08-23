@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
-import { normalizeMobile } from "@/lib/sms/phone";
+import { normalizeMobile, normalizeContactPhone } from "@/lib/sms/phone";
 import {
   MEAL_HEADER_RE,
   MEAL_IN_TEXT_RE,
@@ -556,7 +556,11 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
       orderNo: row.orderNo,
       buyerName: row.name,
       email: row.email || null,
-      phone: normalizeMobile(row.phone),
+      // 買家主號接受海外門號（存 E.164）。
+      // 同行者欄位（自由文字，走 PHONE_IN_TEXT_RE / NAME_PHONE_PAIR_RE）刻意仍只認
+      // 09 開頭台灣號：在一團自由文字裡辨識國際號碼太容易誤抓，寧可漏掉讓管理員
+      // 事後用名單的逐人補號碼補（那條路已接受海外號），也不要抓錯一個號碼。
+      phone: normalizeContactPhone(row.phone),
       product: row.product,
       amount: row.amount,
       orderedAt: row.orderedAt,

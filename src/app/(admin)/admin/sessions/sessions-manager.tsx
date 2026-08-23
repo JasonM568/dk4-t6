@@ -24,7 +24,7 @@ import {
 } from "@/actions/sessions";
 import type { ImportReport } from "@/lib/session-import";
 import { formatDate } from "@/lib/format";
-import { formatMobile, normalizeMobile } from "@/lib/sms/phone";
+import { formatMobile, normalizeContactPhone, isOverseasPhone } from "@/lib/sms/phone";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import {
   isRetrainSignup,
@@ -1030,7 +1030,8 @@ export function SessionCard({
                     )}
                   </td>
                   {/* 手機：團報名單匯入時整批沒號碼，管理員在這裡逐人補（補上才收得到上課提醒簡訊）。
-                      離開欄位即存、清空＝未填；格式由 server action 驗（09 開頭 10 碼）。
+                      離開欄位即存、清空＝未填；格式由 server action 驗（09 開頭 10 碼，
+                      海外門號加國碼存 E.164）。
                       key 用 s.phone：存檔後 server 資料回來時讓 defaultValue 重掛 */}
                   <td className="px-2 py-1.5 font-mono text-xs">
                     {canEdit && !deferredOut ? (
@@ -1045,7 +1046,9 @@ export function SessionCard({
                         }
                         onBlur={async (e) => {
                           const raw = e.target.value.trim();
-                          const next = raw ? normalizeMobile(raw) : null;
+                          // normalizeContactPhone 而非 normalizeMobile：海外號在後者回 null，
+                          // 會讓每次離開欄位都白打一次 server
+                          const next = raw ? normalizeContactPhone(raw) : null;
                           // 沒動或只改了分隔符 → 還原成標準顯示，不打 server
                           const unchanged = raw ? next !== null && next === s.phone : !s.phone;
                           if (unchanged) {
@@ -1067,6 +1070,16 @@ export function SessionCard({
                     ) : (
                       <span className={s.phone ? "text-gray-500" : "text-amber-600"}>
                         {s.phone ? formatMobile(s.phone) : "無"}
+                      </span>
+                    )}
+                    {/* 海外門號：簡訊發不到（不發國際簡訊），要改寄 Email。
+                        不標的話這個人看起來「有號碼＝會收到通知」，實際上不會 */}
+                    {isOverseasPhone(s.phone) && (
+                      <span
+                        className="ml-1 whitespace-nowrap rounded bg-sky-50 px-1 py-0.5 text-[10px] font-sans text-sky-700"
+                        title="海外門號：不發國際簡訊，上課通知請改寄 Email"
+                      >
+                        海外·Email
                       </span>
                     )}
                   </td>

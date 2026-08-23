@@ -143,8 +143,9 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
               ——有手機的都已經收到了
               {initial.followUp.noMobileCount > 0 && (
                 <>
-                  ；另有 <strong>{initial.followUp.noMobileCount} 人沒有手機號碼</strong>，
-                  補了號碼再回來按一次「補發」才收得到
+                  ；另有 <strong>{initial.followUp.noMobileCount} 人收不到簡訊</strong>
+                  （沒有手機號碼，或是海外門號——本站不發國際簡訊），
+                  補了號碼再回來按一次「補發」才收得到；海外門號補不了，請改寄 Email
                 </>
               )}
               。
@@ -161,7 +162,8 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                 名單可自行刪減後再送出。
                 {initial.followUp.noMobileCount > 0 && (
                   <span className="ml-1 font-medium">
-                    另有 {initial.followUp.noMobileCount} 人沒有手機號碼，請先到場次名單補號碼。
+                    另有 {initial.followUp.noMobileCount} 人收不到簡訊：沒號碼的請先到場次名單補；
+                    名單上標「海外·Email」的補不了（不發國際簡訊），請改寄 Email。
                   </span>
                 )}
               </div>
@@ -346,7 +348,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                       {current.noMobileCount > 0 && (
                         <span className="font-bold text-amber-700">
                           {" "}
-                          · 無手機／市話 {current.noMobileCount} 人收不到 ⚠️
+                          · 無手機／市話／海外門號 {current.noMobileCount} 人收不到 ⚠️
                         </span>
                       )}
                     </div>
@@ -421,7 +423,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                 : "測試模式，不會實際發送也不會計費";
               const warn =
                 current && current.noMobileCount > 0
-                  ? `\n\n注意：有 ${current.noMobileCount} 人沒有可用手機，收不到這則簡訊。`
+                  ? `\n\n注意：有 ${current.noMobileCount} 人沒有可用手機（含海外門號），收不到這則簡訊。`
                   : "";
               const msg = when
                 ? `確定排程在 ${when.replace("T", " ")} 發送給 ${n} 人嗎？\n${cost}${warn}`
