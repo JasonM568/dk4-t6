@@ -16,7 +16,8 @@ export function PhoneForm({ currentPhone }: { currentPhone: string }) {
           name="phone"
           type="tel"
           required
-          inputMode="numeric"
+          // tel 而非 numeric：海外門號要打得出 "+"，numeric 鍵盤上沒有這個鍵
+          inputMode="tel"
           defaultValue={currentPhone}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-black"
         />

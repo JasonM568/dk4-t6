@@ -39,10 +39,19 @@ const registerSchema = z.object({
 });
 
 /** 手機驗證（2026-08-15 起必填）：normalizeMobile 同一套規則，
- *  拒絕理由轉成表單看得懂的訊息 */
+ *  拒絕理由轉成表單看得懂的訊息。
+ *
+ *  海外會員（2026-08-23 起）：帶國碼的號碼一律放行，存 E.164（+60123456789）。
+ *  在此之前只認 09 開頭 10 碼，海外會員填不出來就過不了 /complete-profile 閘門，
+ *  等於被鎖在整個會員區外面（連買過的課都看不到）——而他們唯一的自救方式是
+ *  亂填一個台灣號碼，那筆資料會進簡訊名單、真的寄到某個陌生人手機上。
+ *  海外門號的上課通知走 Email；簡訊端 normalizeMobile 會自然跳過，不會誤寄國際簡訊。
+ *
+ *  沒帶國碼的輸入驗證規則完全不變——打錯的台灣號碼照樣被擋。 */
 function parsePhoneField(raw: unknown): { phone?: string; error?: string } {
   const r = explainMobile(raw);
   if (r.mobile) return { phone: r.mobile };
+  if (r.overseas) return { phone: r.overseas };
   switch (r.reject) {
     case "EMPTY":
       return { error: "請填寫手機號碼" };
@@ -52,7 +61,10 @@ function parsePhoneField(raw: unknown): { phone?: string; error?: string } {
     case "TOO_LONG":
     case "FORMAT":
     default:
-      return { error: "手機號碼格式不正確，請輸入 09 開頭的 10 碼號碼" };
+      return {
+        error:
+          "手機號碼格式不正確，請輸入 09 開頭的 10 碼號碼；海外門號請加國碼，例如 +60123456789",
+      };
   }
 }
 

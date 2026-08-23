@@ -99,12 +99,14 @@ function RegisterForm() {
             name="phone"
             type="tel"
             required
-            inputMode="numeric"
+            // tel 而非 numeric：海外門號要打得出 "+"，numeric 鍵盤上沒有這個鍵
+            inputMode="tel"
             placeholder="0912345678"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
           />
           <p className="mt-1 text-xs text-gray-400">
-            09 開頭 10 碼，用於上課通知與帳號服務
+            09 開頭 10 碼，用於上課通知與帳號服務。海外門號請加國碼（例如
+            +60123456789），上課通知會改以 Email 寄送
           </p>
         </div>
         <div className="space-y-2">

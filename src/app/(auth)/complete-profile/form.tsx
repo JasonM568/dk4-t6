@@ -35,7 +35,8 @@ export function CompleteProfileForm({
             name="phone"
             type="tel"
             required
-            inputMode="numeric"
+            // tel 而非 numeric：海外門號要打得出 "+"，numeric 鍵盤上沒有這個鍵
+            inputMode="tel"
             placeholder="0912345678"
             defaultValue={defaultPhone}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
@@ -44,6 +45,11 @@ export function CompleteProfileForm({
             {defaultPhone
               ? "此號碼來自你先前報名課程時填寫的資料，可直接修改"
               : "09 開頭 10 碼，用於上課通知與帳號服務"}
+          </p>
+          {/* 海外會員在這頁最容易卡死（填不出台灣號碼就出不了閘門），
+              提示必須無條件顯示，不能藏在 defaultPhone 的三元判斷裡 */}
+          <p className="mt-1 text-xs text-gray-400">
+            海外門號請加國碼，例如 +60123456789（上課通知會改以 Email 寄送）
           </p>
         </div>
         <div className="space-y-2">
