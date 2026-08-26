@@ -666,7 +666,9 @@ export type AttendeeSearchResult = {
 
 const CANDIDATE_LIMIT = 12;
 
-export const EMPTY_ATTENDEE_SEARCH: AttendeeSearchResult = {
+// 不可 export：這是 "use server" 檔案，只能匯出 async 函式
+//（匯出物件會讓整個 (admin) 路由在載入時就拋 "can only export async functions"）
+const EMPTY_ATTENDEE_SEARCH: AttendeeSearchResult = {
   candidates: [],
   counts: { members: 0, signups: 0, students: 0 },
   total: 0,
