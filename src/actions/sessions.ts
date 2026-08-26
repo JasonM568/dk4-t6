@@ -655,7 +655,22 @@ export type AttendeeCandidate = {
   sources: string[];
 };
 
-const CANDIDATE_LIMIT = 8;
+/** 各來源各自命中幾筆——搜不到人時，這組數字能立刻分辨是「這個人不在系統裡」
+ *  還是「某個來源根本沒回資料」。沒有它就只能猜。 */
+export type AttendeeSearchResult = {
+  candidates: AttendeeCandidate[];
+  counts: { members: number; signups: number; students: number };
+  /** 合併去重後的總數（可能多於回傳的 candidates） */
+  total: number;
+};
+
+const CANDIDATE_LIMIT = 12;
+
+export const EMPTY_ATTENDEE_SEARCH: AttendeeSearchResult = {
+  candidates: [],
+  counts: { members: 0, signups: 0, students: 0 },
+  total: 0,
+};
 
 /** 手動新增報名時的「找人」：輸入姓名／手機／Email 的一部分，把系統裡已有的人撈出來。
  *
@@ -669,11 +684,11 @@ const CANDIDATE_LIMIT = 8;
  *  這與 session-roster 的 isSamePerson 是同一套思路。 */
 export async function searchAttendeeAction(
   query: string,
-): Promise<AttendeeCandidate[]> {
+): Promise<AttendeeSearchResult> {
   await requireEditor();
   const q = query.trim();
   // 中文一個字（姓氏）就查得有意義，英數要兩個字元；與客戶端同一支判斷
-  if (!isSearchableQuery(q)) return [];
+  if (!isSearchableQuery(q)) return EMPTY_ATTENDEE_SEARCH;
 
   const lower = q.toLowerCase();
   // 輸入看起來像號碼就一併用正規化後的樣子去比對（09-1234-5678 / +886912345678）
@@ -816,9 +831,19 @@ export async function searchAttendeeAction(
   const score = (c: AttendeeCandidate) =>
     (c.name.toLowerCase() === lower || c.phone === asPhone ? 0 : 1) +
     (c.isMember ? 0 : 0.5);
-  return [...merged.values()]
-    .sort((a, b) => score(a) - score(b))
-    .slice(0, CANDIDATE_LIMIT);
+  const all = [...merged.values()].sort((a, b) => score(a) - score(b));
+
+  return {
+    candidates: all.slice(0, CANDIDATE_LIMIT),
+    // 回各來源的原始命中數（未去重）：0 代表那個來源真的沒東西，
+    // 而不是被合併或被截斷掉——搜不到人時這是唯一能分辨的依據
+    counts: {
+      members: profiles.length + phoneMemberProfiles.length,
+      signups: signups.length,
+      students: students.length,
+    },
+    total: all.length,
+  };
 }
 
 // ── 上課連結（/live 憑碼索取）──

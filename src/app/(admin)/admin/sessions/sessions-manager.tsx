@@ -31,6 +31,7 @@ import {
   saveSessionLiveAction,
   searchAttendeeAction,
   type AttendeeCandidate,
+  type AttendeeSearchResult,
   type SessionFormState,
   type UploadState,
 } from "@/actions/sessions";
@@ -471,12 +472,13 @@ function AttendeeFinder({
   onPick: (c: AttendeeCandidate) => void;
 }) {
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<{ key: string; rows: AttendeeCandidate[] } | null>(
-    null,
-  );
+  const [results, setResults] = useState<{
+    key: string;
+    data: AttendeeSearchResult;
+  } | null>(null);
   const [searching, startSearch] = useTransition();
   const term = q.trim();
-  const current = results?.key === term ? results.rows : null;
+  const current = results?.key === term ? results.data : null;
 
   // debounce 350ms；server action 是循序 POST，需擋過期回應（同群發試算那套）
   useEffect(() => {
@@ -484,8 +486,8 @@ function AttendeeFinder({
     let alive = true;
     const timer = setTimeout(() => {
       startSearch(async () => {
-        const rows = await searchAttendeeAction(term);
-        if (alive) setResults({ key: term, rows });
+        const data = await searchAttendeeAction(term);
+        if (alive) setResults({ key: term, data });
       });
     }, 350);
     return () => {
@@ -512,16 +514,55 @@ function AttendeeFinder({
         <div className="mt-2">
           {searching || !current ? (
             <p className="text-xs text-gray-400">搜尋中…</p>
-          ) : current.length === 0 ? (
+          ) : current.candidates.length === 0 ? (
             <p className="text-xs text-gray-400">
               查無資料——這位可能是全新的學員，直接在下方填寫即可。
+              <span className="mt-0.5 block">
+                （已查：會員 {current.counts.members} 筆・場次名單{" "}
+                {current.counts.signups} 筆・學員資料庫 {current.counts.students} 筆。
+                用手機找不到會員是正常的——多數會員沒留手機，改用姓名或 Email 搜。）
+              </span>
             </p>
           ) : (
+            <>
+            <p className="mb-1 text-xs text-gray-500">
+              找到 {current.total} 人
+              {current.total > current.candidates.length &&
+                `（顯示前 ${current.candidates.length} 筆，再打幾個字可縮小範圍）`}
+              　會員 {current.counts.members}・場次名單 {current.counts.signups}
+              {current.counts.students > 0 && `・學員資料庫 ${current.counts.students}`}
+            </p>
             <ul className="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-white">
-              {current.map((c, i) => {
+              {current.candidates.map((c, i) => {
                 const already = rosterNames.has(c.name.trim().toLowerCase());
                 return (
-                  <li key={`${c.phone ?? c.email ?? c.name}-${i}`}>
+                  <li
+                    key={`${c.phone ?? c.email ?? c.name}-${i}`}
+                    className="flex items-center gap-2 px-3 py-1.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                        <span className="font-medium">{c.name}</span>
+                        {c.isMember && (
+                          <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800">
+                            會員
+                          </span>
+                        )}
+                        {already && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                            已在本場名單
+                          </span>
+                        )}
+                        <span className="font-mono text-xs text-gray-500">
+                          {c.phone ? formatMobile(c.phone) : "無手機"}
+                        </span>
+                        <span className="truncate text-xs text-gray-400">
+                          {c.email ?? "無 Email"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400">{c.sources.join("・")}</div>
+                    </div>
+                    {/* 明確的按鈕：整列可點但看不出可點，等於沒有這個功能 */}
                     <button
                       type="button"
                       onClick={() => {
@@ -529,34 +570,19 @@ function AttendeeFinder({
                         setQ("");
                         setResults(null);
                       }}
-                      className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1.5 text-left text-sm hover:bg-indigo-50"
+                      className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-indigo-700"
                     >
-                      <span className="font-medium">{c.name}</span>
-                      {c.isMember && (
-                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800">
-                          會員
-                        </span>
-                      )}
-                      {already && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                          已在本場名單
-                        </span>
-                      )}
-                      <span className="font-mono text-xs text-gray-500">
-                        {c.phone ? formatMobile(c.phone) : "無手機"}
-                      </span>
-                      <span className="text-xs text-gray-400">{c.email ?? "無 Email"}</span>
-                      <span className="w-full text-xs text-gray-400">
-                        {c.sources.join("・")}
-                      </span>
+                      ＋ 帶入
                     </button>
                   </li>
                 );
               })}
             </ul>
+            </>
           )}
           <p className="mt-1 text-xs text-gray-400">
-            點一下即帶入下方欄位（只填不送出，仍可自行修改）。同名不同人請比對手機再選。
+            按「＋ 帶入」把資料填進下方欄位（只填不送出，仍可自行修改）。
+            同名不同人請先比對手機再帶入。
           </p>
         </div>
       )}
