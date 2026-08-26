@@ -1044,22 +1044,24 @@ export function SessionCard({
               >
                 ⬇︎ 匯出簽到表（Excel，依組別排序＋用餐彙總）
               </a>
+              {/* 帶 session id 過去：對方頁面會自動勾好這個場次並填好課前通知草稿，
+                  管理員只要確認內容就能送出，不必再找一次場次、也不必重打內文 */}
               <Link
-                href="/admin/broadcast"
+                href={`/admin/broadcast?session=${session.id}`}
                 className="inline-block rounded-lg border border-indigo-400 px-3 py-1.5 text-sm text-indigo-700 transition hover:bg-indigo-50"
               >
                 ✉️ 發課前通知（Email）
               </Link>
               <Link
-                href="/admin/sms"
+                href={`/admin/sms?session=${session.id}`}
                 className="inline-block rounded-lg border border-indigo-400 px-3 py-1.5 text-sm text-indigo-700 transition hover:bg-indigo-50"
               >
                 📱 發課前通知（簡訊）
               </Link>
             </div>
             <p className="text-xs text-gray-400">
-              兩邊都直接勾這個場次就好，不必再匯一次名單；名單於送出當下解析，
-              之後補報名的人自動涵蓋。
+              點下去會自動勾好這個場次、帶入課前通知草稿（含上課連結），確認內容即可送出。
+              名單於送出當下解析，之後補報名的人自動涵蓋。
             </p>
             <SaveToMailGroupForm session={session} />
           </>

@@ -15,6 +15,7 @@ import { buildFollowUpProp } from "./followup-stats";
 import { toDatetimeLocal } from "./datetime";
 import { isFollowUpFilter } from "@/lib/email/followup";
 import { BROADCAST_PRESETS } from "@/lib/email/presets";
+import { buildClassNoticeEmail } from "@/lib/class-notice";
 import { DeleteTemplateButton } from "./delete-template-button";
 
 export const metadata = { title: "Email群發 — 管理後台" };
@@ -43,12 +44,22 @@ export default async function BroadcastPage({
     from?: string;
     tpl?: string;
     preset?: string;
+    // 從場次看板「發課前通知」帶過來：勾好場次並填好草稿
+    session?: string;
     followUp?: string;
     filter?: string;
   }>;
 }) {
   await pageGuardEditor();
-  const { page: pageRaw, from, tpl, preset, followUp: followUpId, filter } = await searchParams;
+  const {
+    page: pageRaw,
+    from,
+    tpl,
+    preset,
+    followUp: followUpId,
+    filter,
+    session: sessionParam,
+  } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
   // 舊信帶入：?from=<broadcastId> 把該封信的主旨/內文/關聯課程帶進表單
@@ -113,6 +124,11 @@ export default async function BroadcastPage({
       select: {
         id: true,
         title: true,
+        // 「發課前通知」帶過來時，用這些欄位長出草稿內容
+        eventDate: true,
+        accessCode: true,
+        meetingUrl: true,
+        meetingInfo: true,
         _count: { select: { signups: { where: { deferredToSessionId: null } } } },
       },
     }),
@@ -157,6 +173,15 @@ export default async function BroadcastPage({
     title: s.title,
     signupCount: s._count.signups,
   }));
+
+  // 從場次看板「發課前通知」進來：勾好場次、填好主旨與內文，
+  // 並預設標為履約通知（課前通知本來就是——退訂電子報的學員仍該收到）。
+  // 明確帶了範本／推薦範本／跟進信時不覆蓋。
+  const noticeSession =
+    sessionParam && !tpl && !preset && !followUpId
+      ? sessions.find((x) => x.id === sessionParam)
+      : undefined;
+  const noticeDraft = noticeSession ? buildClassNoticeEmail(noticeSession) : null;
 
   return (
     <div className="max-w-3xl">
@@ -280,7 +305,7 @@ export default async function BroadcastPage({
         </div>
       )}
       <BroadcastForm
-        key={from ?? tpl ?? preset ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
+        key={from ?? tpl ?? preset ?? sessionParam ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
         courses={courses}
         groups={groupOptions}
         sessions={sessionOptions}
@@ -290,7 +315,19 @@ export default async function BroadcastPage({
         followUp={followUpProp ?? undefined}
         initialPreview={!!selectedPreset}
         defaultValues={
-          template || savedTemplate || selectedPreset
+          noticeDraft && noticeSession
+            ? {
+                subject: noticeDraft.subject,
+                body: noticeDraft.body,
+                courseId: "",
+                audience: "session",
+                groupIds: [],
+                sessionIds: [noticeSession.id],
+                isNotice: true,
+                manualList: "",
+                scheduledAt: "",
+              }
+            : template || savedTemplate || selectedPreset
             ? {
                 subject: (template ?? savedTemplate ?? selectedPreset)!.subject,
                 body: (template ?? savedTemplate ?? selectedPreset)!.body,

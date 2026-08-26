@@ -124,6 +124,53 @@ async function main() {
     );
   }
 
+  console.log("\n課前通知草稿（場次 → 簡訊／EDM 一鍵帶入）");
+  {
+    const {
+      buildClassNoticeSms,
+      buildClassNoticeEmail,
+      isOnlineSession,
+    } = await import("../src/lib/class-notice");
+    const { countSms, composeSmsText, applySmsMergeTags } = await import(
+      "../src/lib/sms/message"
+    );
+    const online = {
+      title: "測試線上課",
+      eventDate: new Date("2026-09-30T00:00:00+08:00"),
+      accessCode: "7788",
+      meetingUrl: "https://us02web.zoom.us/j/888",
+      meetingInfo: "請提早 10 分鐘進入教室。",
+    };
+    const offline = { ...online, accessCode: null, meetingUrl: null };
+
+    check("線上場次判定", isOnlineSession(online) && !isOnlineSession(offline));
+    check("簡訊草稿含 {code} 一鍵連結", buildClassNoticeSms(online).includes("/live/{code}"));
+    check(
+      "實體場次不給 /live 連結（那會是死連結）",
+      !buildClassNoticeSms(offline).includes("/live"),
+    );
+    // 簡訊是花錢的：草稿本身就超過 1 則的話，等於預設幫使用者多花一倍錢
+    const rendered = composeSmsText(
+      applySmsMergeTags(buildClassNoticeSms(online), {
+        mobile: "0912345678",
+        name: "王小明",
+        code: "7788",
+      }),
+      { messageType: "NOTICE", brandPrefix: "【希望學院】", optOutUrl: null },
+    );
+    const seg = countSms(rendered).segments;
+    check("簡訊草稿含品牌前綴後仍在 1 則內", seg === 1, `實際 ${seg} 則`);
+
+    const mail = buildClassNoticeEmail(online);
+    check("EDM 主旨帶日期與場次名", mail.subject.includes("9/30") && mail.subject.includes("測試線上課"));
+    check("EDM 內文含取得連結按鈕", mail.body.includes("[取得上課連結](https://course.huangxi.info/live/{code})"));
+    check("EDM 內文照抄場次的課程資料", mail.body.includes("請提早 10 分鐘進入教室。"));
+    check(
+      "實體場次的 EDM 不含上課連結區塊",
+      !buildClassNoticeEmail(offline).body.includes("/live"),
+    );
+  }
+
   console.log("\n會議連結組裝");
     check(
       "有密碼且連結沒帶 pwd → 自動附加",

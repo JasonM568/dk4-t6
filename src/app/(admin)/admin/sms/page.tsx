@@ -6,6 +6,10 @@ import { getSmsProvider } from "@/lib/sms/provider";
 import { resolveSmsFollowUp } from "@/lib/sms/dispatch";
 import { cancelScheduledSmsAction, deleteSmsDraftAction } from "@/actions/sms";
 import { SmsForm, type SmsInitial } from "./sms-form";
+import {
+  buildClassNoticeSms,
+  buildClassNoticeSmsTitle,
+} from "@/lib/class-notice";
 import { SubmitButton } from "@/components/admin/submit-button";
 
 export const metadata = { title: "簡訊發送 — 管理後台" };
@@ -69,6 +73,8 @@ export default async function SmsPage({
     draft?: string;
     copy?: string;
     followup?: string;
+    // 從場次看板「發課前通知」帶過來：勾好場次並填好草稿
+    session?: string;
   }>;
 }) {
   await pageGuardEditor();
@@ -77,6 +83,7 @@ export default async function SmsPage({
     draft: draftParam,
     copy: copyParam,
     followup: followUpParam,
+    session: sessionParam,
   } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
@@ -90,7 +97,7 @@ export default async function SmsPage({
   // 管理員逐筆看得到號碼、可自行刪減後再送——不重跑原場次名單，避免整批重寄。
   const followUp = followUpParam ? await resolveSmsFollowUp(followUpParam) : null;
 
-  const initial: SmsInitial | null = source
+  let initial: SmsInitial | null = source
     ? {
         id: editable ? source.id : null,
         title: followUp ? `${source.title ?? "（未命名）"}（補發）` : (source.title ?? ""),
@@ -103,7 +110,14 @@ export default async function SmsPage({
         sessionIds: followUp ? [] : source.sessionIds,
         manualList: followUp
           ? followUp.rows
-              .map((r) => (r.name ? `${r.mobile},${r.name}` : r.mobile))
+              // 第三欄是查看碼：有碼就得連空姓名的逗號一起補，否則碼會被當成姓名讀回去
+              .map((r) =>
+                r.code
+                  ? `${r.mobile},${r.name ?? ""},${r.code}`
+                  : r.name
+                    ? `${r.mobile},${r.name}`
+                    : r.mobile,
+              )
               .join("\n")
           : manualRowsToText(source.manualRows),
         // 複製既有紀錄不沿用排程時間（多半已過期），只有編輯草稿才帶回
@@ -131,6 +145,10 @@ export default async function SmsPage({
         id: true,
         title: true,
         accessCode: true, // {code} 變數：這場有沒有碼可帶
+        // 「發課前通知」帶過來時，用這些欄位長出草稿內容
+        eventDate: true,
+        meetingUrl: true,
+        meetingInfo: true,
         _count: { select: { signups: true } },
       },
     }),
@@ -141,6 +159,25 @@ export default async function SmsPage({
     }),
     prisma.smsBroadcast.count(),
   ]);
+
+  // 從場次看板「發課前通知」進來：勾好場次並填好草稿，按下發送前只需確認內容。
+  // 已經在編輯草稿／複製／補發時不覆蓋（那些的內容是使用者自己的）。
+  const noticeSession = sessionParam
+    ? sessions.find((x) => x.id === sessionParam)
+    : undefined;
+  if (!initial && noticeSession) {
+    initial = {
+      id: null,
+      title: buildClassNoticeSmsTitle(noticeSession),
+      body: buildClassNoticeSms(noticeSession),
+      audience: "session",
+      sessionIds: [noticeSession.id],
+      manualList: "",
+      scheduledAt: "",
+      copiedFrom: null,
+      followUp: null,
+    };
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -154,7 +191,7 @@ export default async function SmsPage({
 
       {/* key：切換草稿/複製來源時強制重掛，表單內的狀態才會換成新內容 */}
       <SmsForm
-        key={initial?.id ?? loadId ?? "new"}
+        key={initial?.id ?? loadId ?? sessionParam ?? "new"}
         sessions={sessions.map((s) => ({
           id: s.id,
           title: s.title,
