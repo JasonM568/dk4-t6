@@ -33,9 +33,18 @@ function manualRowsToText(rows: unknown): string {
   return rows
     .map((r) => {
       if (!r || typeof r !== "object") return "";
-      const { mobile, name } = r as { mobile?: unknown; name?: unknown };
+      const { mobile, name, code } = r as {
+        mobile?: unknown;
+        name?: unknown;
+        code?: unknown;
+      };
       if (typeof mobile !== "string" || !mobile) return "";
-      return typeof name === "string" && name ? `${mobile},${name}` : mobile;
+      const nm = typeof name === "string" ? name : "";
+      // 第三欄是補發帶過來的查看碼；有碼就得連空姓名的逗號一起補上，
+      // 否則碼會被當成姓名解析回去
+      if (typeof code === "string" && /^\d{4}$/.test(code))
+        return `${mobile},${nm},${code}`;
+      return nm ? `${mobile},${nm}` : mobile;
     })
     .filter(Boolean)
     .join("\n");
@@ -118,7 +127,12 @@ export default async function SmsPage({
     getSmsSettings(),
     prisma.courseSession.findMany({
       orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-      select: { id: true, title: true, _count: { select: { signups: true } } },
+      select: {
+        id: true,
+        title: true,
+        accessCode: true, // {code} 變數：這場有沒有碼可帶
+        _count: { select: { signups: true } },
+      },
     }),
     prisma.smsBroadcast.findMany({
       orderBy: { createdAt: "desc" },
@@ -145,6 +159,7 @@ export default async function SmsPage({
           id: s.id,
           title: s.title,
           signupCount: s._count.signups,
+          accessCode: s.accessCode,
         }))}
         brandPrefix={settings.brandPrefix}
         isLive={provider.isLive}

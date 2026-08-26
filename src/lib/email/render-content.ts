@@ -10,12 +10,17 @@
 //   [文字](https://…)  → 紅色 CTA 按鈕
 //   明文網址          → 自動轉連結
 
-export type Recipient = { email: string; name?: string };
+/** code = 該收件人所屬場次的 /live 查看碼（{code} 變數用）。
+ *  跨場次群發時每個人的碼不同，所以綁在收件人身上（同 SmsRecipient）。 */
+export type Recipient = { email: string; name?: string; code?: string };
 
 // 合併變數：在「原文」階段替換，之後 esc() 會轉義 → 不會注入。
-// 支援 {email}＝收件人 email、{name}＝姓名（無姓名者留空）。
+// 支援 {email}＝收件人 email、{name}＝姓名、{code}＝場次查看碼（皆無值時留空）。
 export function applyMergeTags(text: string, r: Recipient): string {
-  return text.replaceAll("{email}", r.email).replaceAll("{name}", r.name ?? "");
+  return text
+    .replaceAll("{email}", r.email)
+    .replaceAll("{name}", r.name ?? "")
+    .replaceAll("{code}", r.code ?? "");
 }
 
 export function esc(s: string): string {

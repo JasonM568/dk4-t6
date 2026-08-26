@@ -102,7 +102,29 @@ async function main() {
     });
     check("沒設碼的場次可以並存", !!n1.id && !!n2.id);
 
-    console.log("\n會議連結組裝");
+    console.log("\n{code} 變數：碼跟著收件人走（跨場次時每人不同）");
+  {
+    const { applySmsMergeTags } = await import("../src/lib/sms/message");
+    const { applyMergeTags } = await import("../src/lib/email/render-content");
+    const body = "{name} 您好，上課連結請至 course.huangxi.info/live/{code}";
+    check(
+      "簡訊：帶碼者替換成該場的碼",
+      applySmsMergeTags(body, { mobile: "0912345678", name: "王小明", code: "9001" }) ===
+        "王小明 您好，上課連結請至 course.huangxi.info/live/9001",
+    );
+    check(
+      "簡訊：沒碼者留空（不是印出 {code}）",
+      applySmsMergeTags(body, { mobile: "0912345678", name: "王" }) ===
+        "王 您好，上課連結請至 course.huangxi.info/live/",
+    );
+    check(
+      "EDM：同一套替換",
+      applyMergeTags("碼 {code}／{name}", { email: "a@b.co", name: "李", code: "9002" }) ===
+        "碼 9002／李",
+    );
+  }
+
+  console.log("\n會議連結組裝");
     check(
       "有密碼且連結沒帶 pwd → 自動附加",
       buildJoinUrl("https://us02web.zoom.us/j/123", "abc").includes("pwd=abc"),

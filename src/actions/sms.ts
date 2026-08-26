@@ -28,7 +28,9 @@ export type SmsState = {
   isDraft?: boolean; // 表單據此把後續的「存草稿」導回同一筆，不會每按一次就多一則
 } | null;
 
-/** 手動貼入的名單：一行一筆，可「手機,姓名」。回傳可用列與無法辨識的行數 */
+/** 手動貼入的名單：一行一筆「手機,姓名,查看碼」（後兩欄選填）。
+ *  第三欄是補發時自動帶入的 /live 查看碼，手動貼名單時通常不會有。
+ *  回傳可用列與無法辨識的行數。 */
 function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number } {
   const rows: SmsManualRow[] = [];
   const seen = new Set<string>();
@@ -36,7 +38,7 @@ function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number }
   for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
     if (!t) continue;
-    const [first, ...rest] = t.split(/[,，\t]/).map((x) => x.trim());
+    const [first, second, third] = t.split(/[,，\t]/).map((x) => x.trim());
     const mobile = normalizeMobile(first);
     if (!mobile) {
       invalid++;
@@ -44,8 +46,12 @@ function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number }
     }
     if (seen.has(mobile)) continue;
     seen.add(mobile);
-    const name = rest.find(Boolean);
-    rows.push(name ? { mobile, name } : { mobile });
+    const code = /^\d{4}$/.test(third ?? "") ? third : undefined;
+    rows.push({
+      mobile,
+      ...(second ? { name: second } : {}),
+      ...(code ? { code } : {}),
+    });
   }
   return { rows, invalid };
 }
@@ -190,10 +196,22 @@ export async function sendSmsTestAction(
       error: `測試號碼${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}`,
     };
 
+  // {code} 帶入真正的查看碼：測試簡訊留白會讓人以為功能壞了，
+  // 也會讓則數估算失準（碼固定 4 字）。多選場次時取第一場
+  const testSessionId = String(formData.get("testSessionId") ?? "").trim();
+  const testCode = testSessionId
+    ? ((
+        await prisma.courseSession.findUnique({
+          where: { id: testSessionId },
+          select: { accessCode: true },
+        })
+      )?.accessCode ?? undefined)
+    : undefined;
+
   const settings = await getSmsSettings();
   const provider = getSmsProvider();
   const text = composeSmsText(
-    applySmsMergeTags(body, { mobile, name: "測試" }),
+    applySmsMergeTags(body, { mobile, name: "測試", code: testCode }),
     {
       messageType: messageType as "MARKETING" | "NOTICE",
       brandPrefix: settings.brandPrefix,

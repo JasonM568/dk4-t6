@@ -20,7 +20,9 @@ import {
 
 /** 以手機為鍵去重，保留第一筆姓名。
  *  對照 email 的 dedupeByEmail：這是唯一的去重點，任何新的名單來源都要匯進這裡。 */
-function dedupeByMobile(rows: { mobile?: unknown; name?: string | null }[]): {
+function dedupeByMobile(
+  rows: { mobile?: unknown; name?: string | null; code?: string | null }[],
+): {
   recipients: SmsRecipient[];
   noMobileCount: number;
 } {
@@ -33,8 +35,14 @@ function dedupeByMobile(rows: { mobile?: unknown; name?: string | null }[]): {
       noMobileCount++;
       continue;
     }
+    // 跨場次重複報名的人只留第一筆——連 {code} 也是第一場的碼，
+    // 與姓名同一個先到先贏規則（勾選順序決定），預覽與實際發送才會一致
     if (!map.has(mobile))
-      map.set(mobile, { mobile, name: r.name?.trim() || undefined });
+      map.set(mobile, {
+        mobile,
+        name: r.name?.trim() || undefined,
+        code: r.code || undefined,
+      });
   }
   return { recipients: [...map.values()], noMobileCount };
 }
@@ -69,7 +77,13 @@ async function collectSessionSignups(sessionIds: string[]) {
   const rows = await prisma.sessionSignup.findMany({
     // 已延期到其他場次的不收原場次的上課提醒（新場次名單自然涵蓋他）
     where: { sessionId: { in: sessionIds }, deferredToSessionId: null },
-    select: { sessionId: true, name: true, phone: true },
+    select: {
+      sessionId: true,
+      name: true,
+      phone: true,
+      // {code} 變數用：該場次的 /live 查看碼（沒設就是 null）
+      session: { select: { accessCode: true } },
+    },
   });
   const rank = new Map(sessionIds.map((id, i) => [id, i]));
   return rows.sort(
@@ -98,7 +112,11 @@ async function resolveMobiles(record: {
     if (sessionIds.length === 0)
       return { recipients: [], excludedCount: 0, noMobileCount: 0, error: "缺少場次" };
     const signups = await collectSessionSignups(sessionIds);
-    const r = dedupeByMobile(signups.map((s) => ({ mobile: s.phone, name: s.name })));
+    const r = dedupeByMobile(signups.map((s) => ({
+      mobile: s.phone,
+      name: s.name,
+      code: s.session.accessCode,
+    })));
     deduped = r.recipients;
     noMobileCount = r.noMobileCount;
     emptyError =
@@ -169,7 +187,11 @@ export async function previewSmsAudience(input: {
       }));
 
     const { recipients: deduped, noMobileCount } = dedupeByMobile(
-      signups.map((s) => ({ mobile: s.phone, name: s.name })),
+      signups.map((s) => ({
+      mobile: s.phone,
+      name: s.name,
+      code: s.session.accessCode,
+    })),
     );
     const { kept, excludedCount } = await filterOptedOut(deduped, input.messageType);
 
@@ -183,6 +205,7 @@ export async function previewSmsAudience(input: {
       optedOutCount: excludedCount,
       sendableCount: kept.length,
       maxNameLength: kept.reduce((n, r) => Math.max(n, r.name?.length ?? 0), 0),
+      withCodeCount: kept.filter((r) => !!r.code).length,
     };
   }
 
@@ -200,6 +223,8 @@ export async function previewSmsAudience(input: {
       optedOutCount: excludedCount,
       sendableCount: kept.length,
       maxNameLength: kept.reduce((n, r) => Math.max(n, r.name?.length ?? 0), 0),
+      // 手動名單沒有場次可對應，{code} 一律替換成空字串
+      withCodeCount: 0,
     };
   }
 
@@ -247,7 +272,11 @@ export async function resolveSmsFollowUp(broadcastId: string): Promise<{
 
   const signups = await collectSessionSignups(sessionIds);
   const { recipients, noMobileCount } = dedupeByMobile(
-    signups.map((s) => ({ mobile: s.phone, name: s.name })),
+    signups.map((s) => ({
+      mobile: s.phone,
+      name: s.name,
+      code: s.session.accessCode,
+    })),
   );
   const { kept } = await filterOptedOut(recipients, record.messageType);
 
@@ -265,9 +294,14 @@ export async function resolveSmsFollowUp(broadcastId: string): Promise<{
     messages.filter((m) => m.status === "FAILED").map((m) => [m.mobile, m.error]),
   );
 
+  // 補發轉成手動名單快照時把 code 一起帶著，否則補發的那則 {code} 會是空的
   const rows = kept
     .filter((r) => !done.has(r.mobile))
-    .map((r) => (r.name ? { mobile: r.mobile, name: r.name } : { mobile: r.mobile }));
+    .map((r) => ({
+      mobile: r.mobile,
+      ...(r.name ? { name: r.name } : {}),
+      ...(r.code ? { code: r.code } : {}),
+    }));
 
   return {
     sourceTitle,

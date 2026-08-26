@@ -778,11 +778,23 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
           <Feedback state={state} />
         </div>
         {session.accessCode && (
-          // 簡訊字數很貴（中文 70 字/則），直接給一段可貼的範本省得每次重寫
-          <p className="rounded-lg bg-white/70 px-2 py-1.5 text-xs text-gray-500">
-            簡訊可貼：上課連結請至 course.huangxi.info/live 輸入查看碼{" "}
-            {session.accessCode}
-          </p>
+          // 簡訊字數很貴（中文 70 字/則），直接給可貼的範本省得每次重寫。
+          // 一鍵連結是主推：學員點開即進，不必手打；手動輸入當備援。
+          <div className="space-y-1 rounded-lg bg-white/70 px-2 py-1.5 text-xs text-gray-500">
+            <p>
+              一鍵連結（建議）：
+              <span className="font-mono text-gray-700">
+                course.huangxi.info/live/{session.accessCode}
+              </span>
+            </p>
+            <p>
+              手動輸入：course.huangxi.info/live 　查看碼{" "}
+              <span className="font-mono text-gray-700">{session.accessCode}</span>
+            </p>
+            <p className="text-gray-400">
+              簡訊／EDM 內文可用 {"{code}"} 變數自動帶入這組碼，不必每場手改。
+            </p>
+          </div>
         )}
       </form>
     </details>

@@ -36,7 +36,14 @@ function dedupeByEmailCounted(rows: Recipient[]): {
       noEmailCount++;
       continue;
     }
-    if (!map.has(email)) map.set(email, { email, name: r.name?.trim() || undefined });
+    // 先到先贏（勾選順序決定）：跨場次重複報名者的姓名與 {code} 取同一場，
+    // 預覽與實際寄出才會一致
+    if (!map.has(email))
+      map.set(email, {
+        email,
+        name: r.name?.trim() || undefined,
+        code: r.code || undefined,
+      });
   }
   return { recipients: [...map.values()], noEmailCount };
 }
@@ -80,7 +87,13 @@ async function collectGroupMembers(groupIds: string[]) {
 async function collectSessionSignups(sessionIds: string[]) {
   const rows = await prisma.sessionSignup.findMany({
     where: { sessionId: { in: sessionIds }, deferredToSessionId: null },
-    select: { sessionId: true, email: true, name: true },
+    select: {
+      sessionId: true,
+      email: true,
+      name: true,
+      // {code} 變數用：該場次的 /live 查看碼（沒設就是 null）
+      session: { select: { accessCode: true } },
+    },
   });
   const rank = new Map(sessionIds.map((id, i) => [id, i]));
   return rows.sort(
@@ -247,7 +260,11 @@ async function resolveRecipients(record: {
     const signups = await collectSessionSignups(sessionIds);
     // 跨場次重複報名的 email 收斂成一筆 → 報名多場的學員只會收到一封
     deduped = dedupeByEmail(
-      signups.map((s) => ({ email: s.email ?? "", name: s.name })),
+      signups.map((s) => ({
+        email: s.email ?? "",
+        name: s.name,
+        code: s.session.accessCode ?? undefined,
+      })),
     );
     // 場次是軟連結：勾選後被刪掉的場次撈不到列，不影響其他場次照常寄出
     emptyError =
@@ -354,12 +371,17 @@ export async function previewSessionAudience(
     .map((s) => ({ id: s.id, title: s.title, rowCount: rowsBySession.get(s.id) ?? 0 }));
 
   const { recipients: deduped, noEmailCount } = dedupeByEmailCounted(
-    signups.map((s) => ({ email: s.email ?? "", name: s.name })),
+    signups.map((s) => ({
+      email: s.email ?? "",
+      name: s.name,
+      code: s.session.accessCode ?? undefined,
+    })),
   );
   const { recipients, excludedCount } = await filterUnsubscribed(deduped, messageType);
 
   return {
     sessions,
+    withCodeCount: recipients.filter((r) => !!r.code).length,
     missingCount: sessionIds.length - sessions.length,
     totalRows: signups.length,
     noEmailCount,

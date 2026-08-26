@@ -3,8 +3,9 @@
 import { useActionState, useState } from "react";
 import { liveLoginAction, type LiveLoginState } from "@/actions/live";
 
-/** 4 位查看碼輸入表單（簡訊上的碼） */
-export function LiveLoginForm() {
+/** 4 位查看碼輸入表單（簡訊上的碼）。
+ *  linkError = 從 /live/<碼> 一鍵連結進來但驗失敗的原因，先講清楚再讓他手動輸入 */
+export function LiveLoginForm({ linkError }: { linkError?: string | null }) {
   const [state, action, pending] = useActionState<LiveLoginState, FormData>(
     liveLoginAction,
     null,
@@ -33,7 +34,9 @@ export function LiveLoginForm() {
       >
         {pending ? "查詢中…" : "查看上課資訊"}
       </button>
-      {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
+      {(state?.error || linkError) && (
+        <p className="text-sm text-red-600">{state?.error ?? linkError}</p>
+      )}
       <p className="pt-2 text-xs text-gray-400">
         找不到查看碼？請洽客服，或回覆您收到的上課通知簡訊。
       </p>

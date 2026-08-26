@@ -13,7 +13,12 @@ import { countSms, hasEmoji } from "@/lib/sms/message";
 import { formatCents } from "@/lib/sms/settings";
 import { SubmitButton } from "@/components/admin/submit-button";
 
-type SessionOption = { id: string; title: string; signupCount: number };
+type SessionOption = {
+  id: string;
+  title: string;
+  signupCount: number;
+  accessCode: string | null; // 有值 = 這場已開放 /live 索取，{code} 才有東西可帶
+};
 
 type PreviewData = Awaited<ReturnType<typeof previewSmsAudienceAction>>;
 
@@ -113,7 +118,11 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
   }, [audience, pickedSessions, manualList, body, hasTarget, previewKey]);
 
   // 即時字數：以「王小明」等長姓名估算，與伺服器端的上界估法一致
-  const sampleText = `${brandPrefix}${body.replace(/\{name\}/g, "王小明").replace(/\{mobile\}/g, "0912345678")}`;
+  const sampleText = `${brandPrefix}${body
+    .replace(/\{name\}/g, "王小明")
+    .replace(/\{mobile\}/g, "0912345678")
+    // 查看碼固定 4 位，估算字數不會有誤差
+    .replace(/\{code\}/g, "8241")}`;
   const count = countSms(sampleText);
   const bodyHasEmoji = hasEmoji(body);
 
@@ -254,6 +263,15 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                 {"{name}"}
               </button>
               姓名
+              <button
+                type="button"
+                onClick={() => setBody((b) => b + "{code}")}
+                title="該場次的 /live 查看碼；學員憑碼取得 Zoom 連結"
+                className="mx-1 rounded border border-gray-300 px-1.5 py-0.5 hover:bg-gray-50"
+              >
+                {"{code}"}
+              </button>
+              查看碼
             </span>
             <span className={count.segments > 1 ? "text-amber-600" : "text-gray-400"}>
               含品牌標示共 {count.length} 字 · <strong>{count.segments} 則</strong>
@@ -309,6 +327,13 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                       />
                       {s.title}
                       <span className="text-xs text-gray-400">（{s.signupCount} 人報名）</span>
+                      {s.accessCode ? (
+                        <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">
+                          查看碼 {s.accessCode}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">未設查看碼</span>
+                      )}
                     </label>
                   ))
                 )}
@@ -357,6 +382,19 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                       {current.duplicateCount > 0 && `（跨場次重複 ${current.duplicateCount} 筆）`}
                       {current.optedOutCount > 0 && ` · 已退訂／無法送達 ${current.optedOutCount} 人`}
                     </div>
+                    {/* 用了 {code} 卻有人所屬場次沒設碼：那些人會收到一則沒有碼的通知，
+                        等於白發還要付錢，必須在按下發送前擋在眼前 */}
+                    {body.includes("{code}") &&
+                      current.withCodeCount < current.sendableCount && (
+                        <div className="mt-1 rounded bg-amber-100 px-2 py-1 text-amber-900">
+                          ⚠️ 內容用了 {"{code}"}，但其中{" "}
+                          <strong>
+                            {current.sendableCount - current.withCodeCount} 人
+                          </strong>
+                          所屬場次還沒設查看碼，他們收到的會是一則沒有碼的簡訊。
+                          請先到場次看板設定「線上上課資訊」。
+                        </div>
+                      )}
                     <div className="mt-0.5 border-t border-indigo-200 pt-1 font-bold">
                       實際可發 {current.sendableCount} 人 × {current.segments} 則
                       {isLive
@@ -463,6 +501,12 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
         <div className="mb-2 text-sm font-medium">先寄一則測試簡訊</div>
         <input type="hidden" name="body" value={body} />
         <input type="hidden" name="messageType" value={messageType} />
+        {/* {code} 用第一個勾選場次的碼，測試簡訊才看得到真實內容與正確則數 */}
+        <input
+          type="hidden"
+          name="testSessionId"
+          value={audience === "session" ? (pickedSessions[0] ?? "") : ""}
+        />
         <div className="flex flex-wrap items-center gap-2">
           <input
             name="testMobile"

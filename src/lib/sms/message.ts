@@ -58,12 +58,17 @@ export function hasEmoji(text: string): boolean {
   return EMOJI_RE.test(text);
 }
 
-/** {name} / {mobile} 變數替換（對照 email 的 applyMergeTags） */
+/** {name} / {mobile} / {code} 變數替換（對照 email 的 applyMergeTags） */
 export function applySmsMergeTags(
   text: string,
-  r: { mobile: string; name?: string },
+  r: { mobile: string; name?: string; code?: string },
 ): string {
-  return text.replace(/\{name\}/g, r.name ?? "").replace(/\{mobile\}/g, r.mobile);
+  return text
+    .replace(/\{name\}/g, r.name ?? "")
+    .replace(/\{mobile\}/g, r.mobile)
+    // {code} = 該場次的 /live 查看碼；沒設碼的場次留空（同 {name} 的處理），
+    // 「有沒有人會收到空的」由發送前試算的 withCodeCount 負責提醒
+    .replace(/\{code\}/g, r.code ?? "");
 }
 
 /** 預覽用的等長佔位退訂網址：短碼固定 8 碼，佔位字數與實際完全相同，

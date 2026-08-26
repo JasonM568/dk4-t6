@@ -16,13 +16,27 @@ export const dynamic = "force-dynamic";
 
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 
-export default async function LivePage() {
+export default async function LivePage({
+  searchParams,
+}: {
+  // e=bad/locked：從 /live/<碼> 一鍵連結驗失敗後轉回來的原因
+  searchParams: Promise<{ e?: string }>;
+}) {
   const auth = await liveAuthSession();
 
   if (!auth) {
+    const { e } = await searchParams;
     return (
       <main className="flex min-h-[70vh] items-center justify-center px-6">
-        <LiveLoginForm />
+        <LiveLoginForm
+          linkError={
+            e === "locked"
+              ? "嘗試次數過多，請 15 分鐘後再試"
+              : e === "bad"
+                ? "連結中的查看碼無效，或這堂課尚未開放／已結束。可改用下方手動輸入。"
+                : null
+          }
+        />
       </main>
     );
   }

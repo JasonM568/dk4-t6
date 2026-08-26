@@ -314,6 +314,14 @@ export function BroadcastForm({
               >
                 {"{name}"}
               </button>
+              <button
+                type="button"
+                onClick={() => insertVar("{code}")}
+                title="插入該場次的 /live 查看碼（僅「場次報名者」對象有值）"
+                className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
+              >
+                {"{code}"}
+              </button>
               <span className="mx-0.5 h-4 w-px bg-gray-300" aria-hidden />
               <button
                 type="button"
@@ -395,7 +403,7 @@ export function BroadcastForm({
             <div className="mt-2 overflow-hidden rounded-xl border border-amber-300">
               <div className="flex items-center justify-between bg-amber-50 px-3 py-1.5">
                 <span className="text-xs font-medium text-amber-800">
-                  即時預覽（與實際寄出走同一套排版；變數以「王小明 / example@example.com」示意）
+                  即時預覽（與實際寄出走同一套排版；變數以「王小明 / example@example.com / 8241」示意）
                 </span>
               </div>
               {/* 模擬品牌信：紅底頁首＋白底內文卡（完整版面以「寄測試信」為準） */}
@@ -413,6 +421,7 @@ export function BroadcastForm({
                         applyMergeTags(bodyText, {
                           email: "example@example.com",
                           name: "王小明",
+                          code: "8241",
                         }),
                       ),
                     }}
@@ -425,8 +434,10 @@ export function BroadcastForm({
             純文字即可，空一行會自動分段；信件會套用希望學院品牌版型（紅底 LOGO 頁首＋金邊卡片）。
             <br />
             可用變數：<span className="font-mono">{"{email}"}</span>＝收件人 email、
-            <span className="font-mono">{"{name}"}</span>＝姓名，寄出時自動帶入每位收件人
-            （沒有姓名的人 <span className="font-mono">{"{name}"}</span> 會留空）。
+            <span className="font-mono">{"{name}"}</span>＝姓名、
+            <span className="font-mono">{"{code}"}</span>＝該場次的線上上課查看碼
+            （學員到 course.huangxi.info/live 輸入即可取得 Zoom 連結；
+            只有「場次報名者」對象有值）。寄出時自動帶入每位收件人，沒有值的會留空。
             <br />
             排版：<span className="font-mono">**粗體**</span>、
             <span className="font-mono">## 標題</span>（獨立一段）、
@@ -654,6 +665,27 @@ export function BroadcastForm({
                           {sessionPreview.missingCount > 0 &&
                             `（有 ${sessionPreview.missingCount} 場已被刪除）`}
                         </div>
+                        {/* 用了 {code} 卻有人所屬場次沒設碼 → 那些人收到的信裡是空的 */}
+                        {bodyText.includes("{code}") &&
+                          sessionPreview.withCodeCount <
+                            sessionPreview.sendableCount && (
+                            <div className="mt-1 rounded bg-amber-100 px-2 py-1 text-amber-900">
+                              ⚠️ 內文用了 {"{code}"}，但其中{" "}
+                              <strong>
+                                {sessionPreview.sendableCount -
+                                  sessionPreview.withCodeCount}{" "}
+                                人
+                              </strong>
+                              所屬場次還沒設查看碼，信裡會是空白。請先到
+                              <Link
+                                href="/admin/sessions"
+                                className="mx-1 font-medium underline"
+                              >
+                                場次看板
+                              </Link>
+                              設定「線上上課資訊」。
+                            </div>
+                          )}
                         {(sessionPreview.noEmailCount > 0 ||
                           sessionPreview.unsubscribedCount > 0) && (
                           <div className="mt-1 border-t border-indigo-200 pt-1 text-indigo-700">
