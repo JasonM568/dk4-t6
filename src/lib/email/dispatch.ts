@@ -10,20 +10,39 @@ import {
   type Recipient,
 } from "./broadcast";
 import { buildUnsubscribePageUrl } from "./unsubscribe";
-import { broadcastGroupIds, type GroupAudiencePreview } from "./audience";
+import {
+  broadcastGroupIds,
+  broadcastSessionIds,
+  EMPTY_SESSION_AUDIENCE_PREVIEW,
+  type GroupAudiencePreview,
+  type SessionAudiencePreview,
+} from "./audience";
 
 // 要求 TLD 至少 2 個字母，防止 user@localhost. 或單字元 TLD 通過
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
-// 以 email 為鍵去重（小寫），保留第一筆姓名
-function dedupeByEmail(rows: Recipient[]): Recipient[] {
+/** 以 email 為鍵去重（小寫），保留第一筆姓名；同時數出「沒有可用 email」的筆數。
+ *  場次名單需要那個數字：團報常常只有訂購人有 email，同行者是空的，
+ *  收不到的人必須讓操作者看到，而不是無聲消失（比照簡訊的 noMobileCount）。 */
+function dedupeByEmailCounted(rows: Recipient[]): {
+  recipients: Recipient[];
+  noEmailCount: number;
+} {
   const map = new Map<string, Recipient>();
+  let noEmailCount = 0;
   for (const r of rows) {
     const email = r.email?.trim().toLowerCase();
-    if (!email || !EMAIL_RE.test(email)) continue;
+    if (!email || !EMAIL_RE.test(email)) {
+      noEmailCount++;
+      continue;
+    }
     if (!map.has(email)) map.set(email, { email, name: r.name?.trim() || undefined });
   }
-  return [...map.values()];
+  return { recipients: [...map.values()], noEmailCount };
+}
+
+function dedupeByEmail(rows: Recipient[]): Recipient[] {
+  return dedupeByEmailCounted(rows).recipients;
 }
 
 /** 群發收件人：全部有合法 email 的會員（去重、小寫、帶顯示名稱） */
@@ -49,6 +68,23 @@ async function collectGroupMembers(groupIds: string[]) {
   const rank = new Map(groupIds.map((id, i) => [id, i]));
   return rows.sort(
     (a, b) => (rank.get(a.groupId) ?? 0) - (rank.get(b.groupId) ?? 0),
+  );
+}
+
+/** 取多個場次的報名者，依勾選順序排序（理由同 collectGroupMembers：dedupeByEmail 先到先贏，
+ *  跨場次重複報名的學員 {name} 必須穩定取到同一個值）。
+ *
+ *  與 sms/dispatch.ts 的同名函式刻意各留一份（一個取 email、一個取 phone），
+ *  但過濾條件必須一致：已延期到其他場次的不收原場次的課前通知，
+ *  新場次的名單自然會涵蓋他，否則同一個人會收到兩份不同日期的通知。 */
+async function collectSessionSignups(sessionIds: string[]) {
+  const rows = await prisma.sessionSignup.findMany({
+    where: { sessionId: { in: sessionIds }, deferredToSessionId: null },
+    select: { sessionId: true, email: true, name: true },
+  });
+  const rank = new Map(sessionIds.map((id, i) => [id, i]));
+  return rows.sort(
+    (a, b) => (rank.get(a.sessionId) ?? 0) - (rank.get(b.sessionId) ?? 0),
   );
 }
 
@@ -82,6 +118,7 @@ async function resolveFollowUpRecipients(record: {
       manualRows: true,
       groupId: true,
       groupIds: true,
+      sessionIds: true,
       audienceType: true,
     },
   });
@@ -133,6 +170,10 @@ async function resolveFollowUpRecipients(record: {
   const sourceGroupIds = broadcastGroupIds(source);
   if (Array.isArray(source.manualRows)) {
     for (const r of source.manualRows as ManualRow[]) addName(r?.email, r?.name);
+  } else if (source.audienceType === "SESSION") {
+    // 來源信若是場次名單，姓名沿用當初的勾選順序，跟進信才會叫同一個名字
+    for (const s of await collectSessionSignups(broadcastSessionIds(source)))
+      addName(s.email, s.name);
   } else if (sourceGroupIds.length > 0) {
     // 來源信若是複選群組，姓名優先序沿用當初的勾選順序，跟進信才會叫同一個名字
     for (const m of await collectGroupMembers(sourceGroupIds)) addName(m.email, m.name);
@@ -153,6 +194,7 @@ async function resolveRecipients(record: {
   audienceType: string;
   groupId: string | null;
   groupIds: string[];
+  sessionIds: string[];
   manualRows: unknown;
   sourceBroadcastId: string | null;
   followUpFilter: string | null;
@@ -179,6 +221,21 @@ async function resolveRecipients(record: {
       groupIds.length > 1
         ? "所選的名單群組都不存在或沒有成員"
         : "名單群組不存在或沒有成員";
+  } else if (record.audienceType === "SESSION") {
+    // 場次名單：一次匯入的訂單同時餵 EDM 與簡訊，寄出當下才取（發完才報名的人下次自動涵蓋）
+    const sessionIds = broadcastSessionIds(record);
+    if (sessionIds.length === 0)
+      return { recipients: [], excludedCount: 0, error: "缺少場次" };
+    const signups = await collectSessionSignups(sessionIds);
+    // 跨場次重複報名的 email 收斂成一筆 → 報名多場的學員只會收到一封
+    deduped = dedupeByEmail(
+      signups.map((s) => ({ email: s.email ?? "", name: s.name })),
+    );
+    // 場次是軟連結：勾選後被刪掉的場次撈不到列，不影響其他場次照常寄出
+    emptyError =
+      sessionIds.length > 1
+        ? "所選場次的報名者都沒有可寄送的 Email"
+        : "該場次沒有可寄送的 Email（報名者都沒留 Email）";
   } else if (record.audienceType === "MANUAL") {
     deduped = dedupeByEmail((record.manualRows ?? []) as ManualRow[]);
     emptyError = "手動名單是空的";
@@ -234,6 +291,50 @@ export async function previewGroupAudience(
     totalRows: members.length,
     uniqueCount: deduped.length,
     duplicateCount: members.length - deduped.length,
+    unsubscribedCount: excludedCount,
+    sendableCount: recipients.length,
+  };
+}
+
+/** 複選場次的收件人數預覽（後台送出前顯示）。
+ *  刻意與 resolveRecipients 走同一套 collectSessionSignups → dedupeByEmail → filterUnsubscribed，
+ *  預覽看到的「實際可寄 N 人」就是寄出後的 sentCount。 */
+export async function previewSessionAudience(
+  sessionIds: string[],
+): Promise<SessionAudiencePreview> {
+  if (sessionIds.length === 0) return EMPTY_SESSION_AUDIENCE_PREVIEW;
+
+  const [found, signups] = await Promise.all([
+    prisma.courseSession.findMany({
+      where: { id: { in: sessionIds } },
+      select: { id: true, title: true },
+    }),
+    collectSessionSignups(sessionIds),
+  ]);
+
+  const rowsBySession = new Map<string, number>();
+  for (const s of signups)
+    rowsBySession.set(s.sessionId, (rowsBySession.get(s.sessionId) ?? 0) + 1);
+
+  const byId = new Map(found.map((s) => [s.id, s]));
+  const sessions = sessionIds
+    .map((id) => byId.get(id))
+    .filter((s): s is { id: string; title: string } => !!s)
+    .map((s) => ({ id: s.id, title: s.title, rowCount: rowsBySession.get(s.id) ?? 0 }));
+
+  const { recipients: deduped, noEmailCount } = dedupeByEmailCounted(
+    signups.map((s) => ({ email: s.email ?? "", name: s.name })),
+  );
+  const { recipients, excludedCount } = await filterUnsubscribed(deduped);
+
+  return {
+    sessions,
+    missingCount: sessionIds.length - sessions.length,
+    totalRows: signups.length,
+    noEmailCount,
+    uniqueCount: deduped.length,
+    // 沒有 email 的已另計，剩下的差額才是「同一個 email 報名多場」
+    duplicateCount: signups.length - noEmailCount - deduped.length,
     unsubscribedCount: excludedCount,
     sendableCount: recipients.length,
   };

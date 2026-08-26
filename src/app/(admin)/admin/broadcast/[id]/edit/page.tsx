@@ -11,7 +11,7 @@ import {
 import { toDatetimeLocal } from "../../datetime";
 import { buildFollowUpProp } from "../../followup-stats";
 import { isFollowUpFilter } from "@/lib/email/followup";
-import { broadcastGroupIds } from "@/lib/email/audience";
+import { broadcastGroupIds, broadcastSessionIds } from "@/lib/email/audience";
 
 export const metadata = { title: "編輯群發 — Email群發" };
 
@@ -32,7 +32,7 @@ export default async function BroadcastEditPage({
     redirect(`/admin/broadcast/${id}`);
   }
 
-  const [courses, memberCount, groups, profiles] = await Promise.all([
+  const [courses, memberCount, groups, sessions, profiles] = await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true },
@@ -41,6 +41,15 @@ export default async function BroadcastEditPage({
     prisma.mailGroup.findMany({
       include: { _count: { select: { members: true } } },
       orderBy: { createdAt: "desc" },
+    }),
+    // 場次看板：課前通知的名單來源（與簡訊模組共用同一份場次報名資料）
+    prisma.courseSession.findMany({
+      orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        title: true,
+        _count: { select: { signups: { where: { deferredToSessionId: null } } } },
+      },
     }),
     listProfiles(),
   ]);
@@ -65,10 +74,13 @@ export default async function BroadcastEditPage({
     audience:
       record.audienceType === "GROUP"
         ? "group"
-        : record.audienceType === "MANUAL"
-          ? "manual"
-          : "all",
+        : record.audienceType === "SESSION"
+          ? "session"
+          : record.audienceType === "MANUAL"
+            ? "manual"
+            : "all",
     groupIds: broadcastGroupIds(record), // 改版前的單選紀錄會回填成一個勾選
+    sessionIds: broadcastSessionIds(record),
     manualList: manualRows
       .map((r) => (r.name ? `${r.email},${r.name}` : r.email))
       .join("\n"),
@@ -95,6 +107,11 @@ export default async function BroadcastEditPage({
           id: g.id,
           name: g.name,
           memberCount: g._count.members,
+        }))}
+        sessions={sessions.map((s) => ({
+          id: s.id,
+          title: s.title,
+          signupCount: s._count.signups,
         }))}
         memberCount={memberCount}
         members={profiles

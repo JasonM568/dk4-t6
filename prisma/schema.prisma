@@ -168,7 +168,7 @@ model SiteSetting {
 
 // 群發通知/電子報：立即寄出的歷史紀錄＋排程待寄
 // status：SCHEDULED（排程待寄）/ SENDING（cron 處理中）/ SENT / CANCELED / FAILED
-// audienceType：ALL（全部會員）/ GROUP（名單群組，可複選）/ MANUAL（手動貼名單）
+// audienceType：ALL（全部會員）/ GROUP（名單群組，可複選）/ SESSION（場次報名者，可複選）/ MANUAL（手動貼名單）
 model EmailBroadcast {
   id            String    @id @default(cuid())
   subject       String
@@ -183,7 +183,10 @@ model EmailBroadcast {
   audienceType  String    @default("ALL") // ALL / GROUP / MANUAL / FOLLOWUP（跟進信）
   groupId       String? // 舊欄位（單選時代）；新寫入一律 = groupIds[0]，讀取請用 broadcastGroupIds()
   groupIds      String[]  @default([]) // audienceType=GROUP 的名單群組，可複選；寄出當下取聯集並以 email 去重
-  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 手動名單 N 筆 / 跟進：開信者（來源：xxx）
+  // audienceType=SESSION 的場次（可複選）：與 SmsBroadcast.sessionIds 同義，
+  // 一次匯入的場次名單同時餵 EDM 與簡訊兩個模組；寄出當下才取名單（新報名者自動涵蓋）
+  sessionIds    String[]  @default([])
+  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 場次：xxx / 手動名單 N 筆 / 跟進：開信者（來源：xxx）
   manualRows    Json? // audienceType=MANUAL 時的名單 [{email,name}]
 
   sourceBroadcastId String? // audienceType=FOLLOWUP 時的來源群發 id（軟連結不加 FK，與 resendOfId 慣例一致）

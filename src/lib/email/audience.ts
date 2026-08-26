@@ -15,6 +15,43 @@ export function broadcastGroupIds(record: {
   return [...new Set(merged)];
 }
 
+/** 群發紀錄要寄給哪幾個場次（audienceType=SESSION）。
+ *
+ *  與 sms/audience.ts 的 broadcastSessionIds 同義而刻意各留一份：兩個模組的
+ *  audience helper 都是 client component 也會 import 的純模組，不互相牽連。
+ *  去重並保留勾選順序——跨場次重複報名的人，姓名由排在前面的場次決定
+ *  （dedupeByEmail 先到先贏）。 */
+export function broadcastSessionIds(record: {
+  sessionIds?: string[] | null;
+}): string[] {
+  return [...new Set((record.sessionIds ?? []).filter(Boolean))];
+}
+
+/** 複選場次的收件人數試算結果。
+ *  與 GroupAudiencePreview 分開：場次名單多了「沒有 email 收不到」這個必須讓操作者看到的數字
+ *  （團報名單常常只有訂購人 email，同行者是空的）。 */
+export type SessionAudiencePreview = {
+  sessions: { id: string; title: string; rowCount: number }[]; // 各場次筆數（未去重）
+  missingCount: number; // 勾選了但已被刪除的場次數
+  totalRows: number;
+  noEmailCount: number; // 沒填 email／格式不合法（這些人收不到，要改用簡訊或補資料）
+  uniqueCount: number; // 去重後不重複人數
+  duplicateCount: number; // 跨場次重複報名的筆數
+  unsubscribedCount: number;
+  sendableCount: number;
+};
+
+export const EMPTY_SESSION_AUDIENCE_PREVIEW: SessionAudiencePreview = {
+  sessions: [],
+  missingCount: 0,
+  totalRows: 0,
+  noEmailCount: 0,
+  uniqueCount: 0,
+  duplicateCount: 0,
+  unsubscribedCount: 0,
+  sendableCount: 0,
+};
+
 /** 複選群組的收件人數試算結果（後台表單即時顯示用）。
  *  型別放這裡而不是 dispatch.ts：dispatch 是 server-only，client component 不該去 import 它。 */
 export type GroupAudiencePreview = {

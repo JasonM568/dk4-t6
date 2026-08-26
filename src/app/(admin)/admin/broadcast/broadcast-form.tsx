@@ -5,11 +5,15 @@ import { useActionState } from "react";
 import Link from "next/link";
 import {
   previewGroupAudienceAction,
+  previewSessionAudienceAction,
   requestCourseImageUploadUrl,
   saveBroadcastListToGroupAction,
   type BroadcastState,
 } from "@/actions/admin";
-import type { GroupAudiencePreview } from "@/lib/email/audience";
+import type {
+  GroupAudiencePreview,
+  SessionAudiencePreview,
+} from "@/lib/email/audience";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { createClient } from "@/lib/supabase/client";
 import { applyMergeTags, buildContentHtml } from "@/lib/email/render-content";
@@ -36,13 +40,16 @@ async function uploadBodyImage(
 
 type GroupOption = { id: string; name: string; memberCount: number };
 type MemberOption = { email: string; name: string };
+/** 場次看板的場次；signupCount 已扣掉延期到別場的人（與寄出時的名單條件一致） */
+type SessionOption = { id: string; title: string; signupCount: number };
 
 export type BroadcastFormDefaults = {
   subject: string;
   body: string;
   courseId: string;
-  audience: "all" | "group" | "manual";
+  audience: "all" | "group" | "session" | "manual";
   groupIds: string[]; // 名單群組可複選
+  sessionIds: string[]; // 場次可複選
   manualList: string;
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
 };
@@ -59,6 +66,7 @@ export type BroadcastFollowUp = {
 type BroadcastFormProps = {
   courses: { id: string; title: string }[];
   groups: GroupOption[];
+  sessions: SessionOption[];
   memberCount: number;
   members: MemberOption[]; // 會員清單（「選取會員」勾選用）
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
@@ -67,10 +75,11 @@ type BroadcastFormProps = {
   initialPreview?: boolean;
 };
 
-/** 電子報群發表單：選發送對象（全部會員/名單群組/手動名單）→ 寄測試信 → 正式群發/排程/存草稿 */
+/** 電子報群發表單：選發送對象（全部會員/名單群組/場次報名者/手動名單）→ 寄測試信 → 正式群發/排程/存草稿 */
 export function BroadcastForm({
   courses,
   groups,
+  sessions,
   memberCount,
   members,
   sendAction,
@@ -86,7 +95,7 @@ export function BroadcastForm({
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const tplNameRef = useRef<HTMLInputElement>(null);
   const [audience, setAudience] = useState<
-    "all" | "group" | "manual" | "members"
+    "all" | "group" | "session" | "manual" | "members"
   >(defaultValues?.audience ?? "all");
   const [picked, setPicked] = useState<Map<string, MemberOption>>(new Map());
   // 勾選的名單群組；用 append 保留勾選順序——與伺服器端去重的姓名優先序一致
@@ -103,8 +112,25 @@ export function BroadcastForm({
   const previewKey = pickedGroups.join(",");
   const groupPreview = preview?.key === previewKey ? preview.data : null;
 
+  // 場次報名者（與簡訊模組同一份名單）：勾選順序同樣決定去重後的姓名優先序
+  const [pickedSessions, setPickedSessions] = useState<string[]>(
+    defaultValues?.sessionIds ?? [],
+  );
+  const [sessionPreviewState, setSessionPreviewState] = useState<{
+    key: string;
+    data: SessionAudiencePreview;
+  } | null>(null);
+  const [sessionPreviewing, startSessionPreview] = useTransition();
+  const sessionPreviewKey = pickedSessions.join(",");
+  const sessionPreview =
+    sessionPreviewState?.key === sessionPreviewKey ? sessionPreviewState.data : null;
+
   const toggleGroup = (id: string) =>
     setPickedGroups((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  const toggleSession = (id: string) =>
+    setPickedSessions((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
@@ -123,6 +149,22 @@ export function BroadcastForm({
       clearTimeout(timer);
     };
   }, [audience, pickedGroups, previewKey]);
+
+  // 場次名單試算（同上：debounce + 擋過期回應）
+  useEffect(() => {
+    if (audience !== "session" || pickedSessions.length === 0) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      startSessionPreview(async () => {
+        const result = await previewSessionAudienceAction(pickedSessions);
+        if (alive) setSessionPreviewState({ key: sessionPreviewKey, data: result });
+      });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [audience, pickedSessions, sessionPreviewKey]);
 
   // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
   // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
@@ -201,6 +243,16 @@ export function BroadcastForm({
       return names.length === 1
         ? `名單群組「${names[0]}」${dedup}`
         : `${names.length} 個名單群組（${names.join("、")}）${dedup}`;
+    }
+    if (audience === "session") {
+      const titles = pickedSessions
+        .map((id) => sessions.find((s) => s.id === id)?.title)
+        .filter((t): t is string => !!t);
+      if (titles.length === 0) return "（尚未勾選場次）";
+      const dedup = sessionPreview ? `，去重後 ${sessionPreview.sendableCount} 人` : "";
+      return titles.length === 1
+        ? `場次「${titles[0]}」的報名者${dedup}`
+        : `${titles.length} 個場次（${titles.join("、")}）的報名者${dedup}`;
     }
     if (audience === "members") return `勾選的 ${picked.size} 位會員`;
     return "手動貼入的名單";
@@ -497,6 +549,112 @@ export function BroadcastForm({
               <input
                 type="radio"
                 name="audience"
+                value="session"
+                checked={audience === "session"}
+                onChange={() => setAudience("session")}
+              />
+              場次報名者
+              <span className="text-xs text-gray-400">
+                （課前通知用；可複選，報名多場的人只會收到一封）
+              </span>
+            </label>
+            {audience === "session" && (
+              <div className="ml-6 space-y-2">
+                <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
+                  {sessions.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-gray-400">
+                      尚無場次，請先到
+                      <Link
+                        href="/admin/sessions"
+                        className="mx-1 text-indigo-600 underline"
+                      >
+                        場次看板
+                      </Link>
+                      上傳訂單
+                    </p>
+                  ) : (
+                    sessions.map((s) => (
+                      <label
+                        key={s.id}
+                        className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                      >
+                        <input
+                          type="checkbox"
+                          name="sessionIds"
+                          value={s.id}
+                          checked={pickedSessions.includes(s.id)}
+                          onChange={() => toggleSession(s.id)}
+                        />
+                        {s.title}
+                        <span className="text-xs text-gray-400">
+                          （{s.signupCount} 人報名）
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {/* 名單試算：與寄出走同一套解析。「沒有 Email」要單獨顯示——
+                    團報名單常常只有訂購人留了 Email，同行者是空的，那些人得改用簡訊通知 */}
+                {pickedSessions.length > 0 && (
+                  <div className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+                    {sessionPreviewing || !sessionPreview ? (
+                      "計算名單中…"
+                    ) : (
+                      <>
+                        <div>
+                          已選 {sessionPreview.sessions.length} 場，報名合計{" "}
+                          {sessionPreview.totalRows} 人
+                          {sessionPreview.noEmailCount > 0 && (
+                            <span className="font-bold text-amber-700">
+                              {" "}
+                              · 沒有 Email {sessionPreview.noEmailCount} 人收不到 ⚠️
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          去重後{" "}
+                          <span className="font-bold">
+                            {sessionPreview.uniqueCount} 人
+                          </span>
+                          {sessionPreview.duplicateCount > 0 &&
+                            `（跨場次重複 ${sessionPreview.duplicateCount} 筆）`}
+                          {sessionPreview.unsubscribedCount > 0 &&
+                            ` · 已退訂 ${sessionPreview.unsubscribedCount} 人`}
+                          {" → "}實際可寄{" "}
+                          <span className="font-bold">
+                            {sessionPreview.sendableCount} 人
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-indigo-600">
+                          {sessionPreview.sessions
+                            .map((s) => `${s.title} ${s.rowCount}`)
+                            .join("・")}
+                          {sessionPreview.missingCount > 0 &&
+                            `（有 ${sessionPreview.missingCount} 場已被刪除）`}
+                        </div>
+                        {(sessionPreview.noEmailCount > 0 ||
+                          sessionPreview.unsubscribedCount > 0) && (
+                          <div className="mt-1 border-t border-indigo-200 pt-1 text-indigo-700">
+                            收不到信的人可到
+                            <Link
+                              href="/admin/sms"
+                              className="mx-1 font-medium text-indigo-700 underline"
+                            >
+                              簡訊發送
+                            </Link>
+                            選同一場次補發（同一份名單，不必再匯入一次）。
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="audience"
                 value="manual"
                 checked={audience === "manual"}
                 onChange={() => setAudience("manual")}
@@ -551,7 +709,7 @@ export function BroadcastForm({
           <p className="mt-1 text-xs text-gray-400">
             {followUp
               ? "台灣時間；到點後 5 分鐘內寄出。跟進名單於寄出當下解析，越晚寄涵蓋越多晚開信者；排程後可在下方紀錄取消"
-              : "台灣時間；到點後 5 分鐘內寄出。排程後可在下方紀錄取消；全部會員/群組名單以寄出當下為準"}
+              : "台灣時間；到點後 5 分鐘內寄出。排程後可在下方紀錄取消；全部會員/群組/場次名單以寄出當下為準"}
           </p>
         </div>
 
@@ -575,6 +733,11 @@ export function BroadcastForm({
               if (!followUp && audience === "group" && pickedGroups.length === 0) {
                 e.preventDefault();
                 alert("請至少勾選一個名單群組");
+                return;
+              }
+              if (!followUp && audience === "session" && pickedSessions.length === 0) {
+                e.preventDefault();
+                alert("請至少勾選一個場次");
                 return;
               }
               const when = (

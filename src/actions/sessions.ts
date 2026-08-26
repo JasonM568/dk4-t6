@@ -642,6 +642,67 @@ export async function uploadOrdersAction(
   }
 }
 
+// 與 email/dispatch.ts 同一條規則：TLD 至少 2 個字母
+const GROUP_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+
+/** 把這一場的報名者存成 EDM 名單群組（同名群組＝併入，群組內 email 重複自動略過）。
+ *
+ *  這是「快照」，用途是日後行銷（課後回訪、招下一期）——名單存下來就不再跟著場次變動。
+ *  **課前通知不要用這個**：EDM 群發直接選「場次報名者」即可，名單於寄出當下解析，
+ *  發完才報名、事後才補 Email 的人都會自動涵蓋，不會寄到一份過期名單。 */
+export async function saveSessionToMailGroupAction(
+  sessionId: string,
+  _prev: SessionFormState,
+  formData: FormData,
+): Promise<SessionFormState> {
+  await requireEditor();
+  const session = await prisma.courseSession.findUnique({
+    where: { id: sessionId },
+    select: { id: true, title: true },
+  });
+  if (!session) return { error: "找不到這個場次（可能剛被刪除）" };
+
+  const name = String(formData.get("groupName") ?? "").trim() || session.title;
+  if (name.length > 100) return { error: "群組名稱不可超過 100 字" };
+
+  const signups = await prisma.sessionSignup.findMany({
+    // 已延期到別場的不算這場的人（與 EDM／簡訊發送時的名單條件一致）
+    where: { sessionId, deferredToSessionId: null },
+    select: { email: true, name: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const seen = new Set<string>();
+  const rows = signups
+    .map((s) => ({ email: (s.email ?? "").trim().toLowerCase(), name: s.name.trim() }))
+    .filter((r) => GROUP_EMAIL_RE.test(r.email))
+    .filter((r) => !seen.has(r.email) && seen.add(r.email));
+
+  if (rows.length === 0)
+    return { error: "這場的報名者都沒有留 Email，沒有可存入群組的名單" };
+
+  const group = await prisma.mailGroup.upsert({
+    where: { name },
+    update: {},
+    create: { name },
+  });
+  const created = await prisma.mailGroupMember.createMany({
+    data: rows.map((r) => ({ groupId: group.id, email: r.email, name: r.name || null })),
+    skipDuplicates: true, // 群組內 email 唯一：重按一次不會長出重複列
+  });
+
+  revalidatePath("/admin/sessions");
+  revalidatePath("/admin/broadcast/groups");
+  const skipped = signups.length - rows.length;
+  return {
+    success:
+      `已存入名單群組「${name}」：新增 ${created.count} 筆` +
+      (created.count < rows.length ? `（${rows.length - created.count} 筆原本就在群組裡）` : "") +
+      (skipped > 0 ? `；${skipped} 人沒有可用 Email 或重複報名，未存入` : "") +
+      `。這是當下的名單快照，之後新報名者不會自動加入——課前通知請改用 EDM 群發的「場次報名者」。`,
+  };
+}
+
 /** 看板設定：4 位碼＋登入時效（存 SiteSetting；改碼即讓所有既有看板 cookie 失效） */
 export async function saveBoardCodeAction(
   _prev: SessionFormState,

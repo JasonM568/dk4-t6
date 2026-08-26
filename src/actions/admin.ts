@@ -22,10 +22,16 @@ import {
   applyMergeTags,
   type FailedRecipient,
 } from "@/lib/email/broadcast";
-import { executeBroadcast, previewGroupAudience } from "@/lib/email/dispatch";
+import {
+  executeBroadcast,
+  previewGroupAudience,
+  previewSessionAudience,
+} from "@/lib/email/dispatch";
 import {
   EMPTY_GROUP_AUDIENCE_PREVIEW,
+  EMPTY_SESSION_AUDIENCE_PREVIEW,
   type GroupAudiencePreview,
+  type SessionAudiencePreview,
 } from "@/lib/email/audience";
 import { FOLLOWUP_FILTER_LABEL, isFollowUpFilter } from "@/lib/email/followup";
 import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
@@ -729,6 +735,7 @@ type BroadcastAudience = {
     audienceType: string;
     groupId: string | null;
     groupIds: string[];
+    sessionIds: string[];
     audienceLabel: string;
     manualRows: { email: string; name?: string }[] | undefined;
     sourceBroadcastId: string | null;
@@ -741,6 +748,7 @@ type BroadcastAudience = {
 async function resolveBroadcastAudience(
   audience: string,
   groupIds: string[],
+  sessionIds: string[],
   manualRaw: string,
   lenient = false,
   followUp?: { sourceBroadcastId: string; filter: string },
@@ -749,6 +757,7 @@ async function resolveBroadcastAudience(
   let audienceLabel = "全部會員";
   let audienceGroupId: string | null = null;
   let audienceGroupIds: string[] = [];
+  let audienceSessionIds: string[] = [];
   let manualRows: { email: string; name?: string }[] | undefined;
   let sourceBroadcastId: string | null = null;
   let followUpFilter: string | null = null;
@@ -756,6 +765,7 @@ async function resolveBroadcastAudience(
     audienceType,
     groupId: null,
     groupIds: [],
+    sessionIds: [],
     audienceLabel: "",
     manualRows,
     sourceBroadcastId: null,
@@ -837,6 +847,55 @@ async function resolveBroadcastAudience(
               names.length > 3 ? ` 等${names.length}組` : ""
             }`;
     }
+  } else if (audience === "session") {
+    // 場次報名者：與簡訊模組共用同一份 SessionSignup 名單（訂單匯入一次，兩邊都能發）。
+    // 名單於寄出當下解析（dispatch.ts resolveRecipients），這裡只驗場次存在與有無報名者。
+    audienceType = "SESSION";
+    const ids = [...new Set(sessionIds.filter(Boolean))];
+    const found = ids.length
+      ? await prisma.courseSession.findMany({
+          where: { id: { in: ids } },
+          select: {
+            id: true,
+            title: true,
+            // 已延期到別場的不算這場的人（與 dispatch 的名單條件一致）
+            _count: { select: { signups: { where: { deferredToSessionId: null } } } },
+          },
+        })
+      : [];
+    // findMany 不保證順序：照勾選順序排，標籤文字與去重的姓名優先序才對得起來
+    const byId = new Map(found.map((s) => [s.id, s]));
+    const picked = ids.map((id) => byId.get(id)).filter((s) => !!s);
+
+    if (picked.length === 0) {
+      if (!lenient)
+        return {
+          error: "請至少勾選一個場次",
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      audienceLabel = "場次：未選擇";
+    } else {
+      // 勾選後場次被刪掉：寧可擋下重選，也不要默默少寄一整批人
+      if (!lenient && picked.length < ids.length)
+        return {
+          error: `有 ${ids.length - picked.length} 個場次已不存在（可能剛被刪除），請重新勾選`,
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      const total = picked.reduce((n, s) => n + s._count.signups, 0);
+      if (!lenient && total === 0)
+        return {
+          error: `所選場次（${picked.map((s) => s.title).join("、")}）都沒有報名者，請先到場次看板上傳訂單`,
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      audienceSessionIds = picked.map((s) => s.id);
+      const titles = picked.map((s) => s.title);
+      audienceLabel =
+        titles.length === 1
+          ? `場次：${titles[0]}`
+          : `場次 ${titles.length} 場（已去重）：${titles.slice(0, 3).join("、")}${
+              titles.length > 3 ? ` 等${titles.length}場` : ""
+            }`;
+    }
   } else if (audience === "manual" || audience === "members") {
     // members = 從會員清單勾選；名單同樣走 MANUAL 流程（寄送/明細/補寄/存群組共用）
     audienceType = "MANUAL";
@@ -861,6 +920,7 @@ async function resolveBroadcastAudience(
       audienceType,
       groupId: audienceGroupId,
       groupIds: audienceGroupIds,
+      sessionIds: audienceSessionIds,
       audienceLabel,
       manualRows: manualRows ?? undefined,
       sourceBroadcastId,
@@ -914,6 +974,17 @@ export async function previewGroupAudienceAction(
   return previewGroupAudience(ids);
 }
 
+/** 複選場次的收件人數預覽（勾選當下即時試算）。
+ *  同樣呼叫 dispatch 的 previewSessionAudience——預覽與寄出走同一套解析，數字不會兩套。 */
+export async function previewSessionAudienceAction(
+  sessionIds: string[],
+): Promise<SessionAudiencePreview> {
+  await requireEditor();
+  const ids = [...new Set((sessionIds ?? []).map(String).filter(Boolean))].slice(0, 50);
+  if (ids.length === 0) return EMPTY_SESSION_AUDIENCE_PREVIEW;
+  return previewSessionAudience(ids);
+}
+
 /** 群發通知：mode=test 只寄給操作的管理員本人；mode=draft 存草稿；mode=all 正式群發並留紀錄。
  *  mode=template 把主旨/內文/關聯課程存成範本（不寄信、不留群發紀錄）。
  *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
@@ -929,9 +1000,11 @@ export async function sendBroadcastAction(
   const courseId = String(formData.get("courseId") ?? "");
   const mode = String(formData.get("mode") ?? "test");
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
-  const audience = String(formData.get("audience") ?? "all"); // all | group | manual | members | followup
+  const audience = String(formData.get("audience") ?? "all"); // all | group | session | manual | members | followup
   // 名單群組可複選（checkbox 同名多值）；勾選順序即姓名優先序
   const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
+  // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
+  const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
@@ -956,6 +1029,7 @@ export async function sendBroadcastAction(
     const { audienceData } = await resolveBroadcastAudience(
       audience,
       groupIds,
+      sessionIds,
       manualRaw,
       true,
       followUp,
@@ -1014,6 +1088,7 @@ export async function sendBroadcastAction(
   const resolved = await resolveBroadcastAudience(
     audience,
     groupIds,
+    sessionIds,
     manualRaw,
     false,
     followUp,
@@ -1050,7 +1125,7 @@ export async function sendBroadcastAction(
       success: `已排程：${shown} 寄給「${audienceLabel}」（實際寄出最多晚 5 分鐘；${
         audience === "followup"
           ? "跟進名單以寄出當下的開信/點擊狀態為準，越晚寄涵蓋越完整"
-          : "全部會員/群組名單以寄出當下為準"
+          : "全部會員/群組/場次名單以寄出當下為準"
       }）`,
       broadcastId: record.id,
       manualCount: manualRows?.length,
@@ -1127,6 +1202,8 @@ export async function updateBroadcastAction(
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const audience = String(formData.get("audience") ?? "all");
   const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
+  // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
+  const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
@@ -1177,6 +1254,7 @@ export async function updateBroadcastAction(
     const { audienceData } = await resolveBroadcastAudience(
       audience,
       groupIds,
+      sessionIds,
       manualRaw,
       true,
       followUp,
@@ -1205,6 +1283,7 @@ export async function updateBroadcastAction(
   const resolved = await resolveBroadcastAudience(
     audience,
     groupIds,
+    sessionIds,
     manualRaw,
     false,
     followUp,

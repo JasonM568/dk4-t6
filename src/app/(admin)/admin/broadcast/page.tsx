@@ -81,8 +81,16 @@ export default async function BroadcastPage({
     }
   }
 
-  const [courses, memberCount, history, totalCount, groups, profiles, templates] =
-    await Promise.all([
+  const [
+    courses,
+    memberCount,
+    history,
+    totalCount,
+    groups,
+    sessions,
+    profiles,
+    templates,
+  ] = await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true },
@@ -97,6 +105,16 @@ export default async function BroadcastPage({
     prisma.mailGroup.findMany({
       include: { _count: { select: { members: true } } },
       orderBy: { createdAt: "desc" },
+    }),
+    // 場次看板的場次：課前通知的收件名單來源（與簡訊模組同一份）；
+    // 人數扣掉已延期到別場的人，與寄出時的名單條件一致
+    prisma.courseSession.findMany({
+      orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        title: true,
+        _count: { select: { signups: { where: { deferredToSessionId: null } } } },
+      },
     }),
     listProfiles(),
     // 範本庫：最近更新在前
@@ -133,6 +151,11 @@ export default async function BroadcastPage({
     id: g.id,
     name: g.name,
     memberCount: g._count.members,
+  }));
+  const sessionOptions = sessions.map((s) => ({
+    id: s.id,
+    title: s.title,
+    signupCount: s._count.signups,
   }));
 
   return (
@@ -260,6 +283,7 @@ export default async function BroadcastPage({
         key={from ?? tpl ?? preset ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
         courses={courses}
         groups={groupOptions}
+        sessions={sessionOptions}
         memberCount={memberCount}
         members={memberOptions}
         sendAction={sendBroadcastAction}
@@ -273,6 +297,7 @@ export default async function BroadcastPage({
                 courseId: (template ?? savedTemplate)?.courseId ?? "",
                 audience: "all",
                 groupIds: [],
+                sessionIds: [],
                 manualList: "",
                 scheduledAt: "",
               }
@@ -283,6 +308,7 @@ export default async function BroadcastPage({
                   courseId: "",
                   audience: "all",
                   groupIds: [],
+                  sessionIds: [],
                   manualList: "",
                   // 跟進信預設隔天同時段寄出（可自行調整）；
                   // server component 每次請求都重新渲染，取當下時間是刻意行為

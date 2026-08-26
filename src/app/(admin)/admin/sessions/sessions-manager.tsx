@@ -19,9 +19,11 @@ import {
   autoGroupAction,
   deferSignupAction,
   undoDeferSignupAction,
+  saveSessionToMailGroupAction,
   type SessionFormState,
   type UploadState,
 } from "@/actions/sessions";
+import Link from "next/link";
 import type { ImportReport } from "@/lib/session-import";
 import { formatDate } from "@/lib/format";
 import { formatMobile, normalizeContactPhone, isOverseasPhone } from "@/lib/sms/phone";
@@ -661,6 +663,48 @@ function GroupPanel({ session }: { session: SessionRow }) {
   );
 }
 
+/** 把這場名單存成 EDM 名單群組（快照，供日後行銷用）。
+ *
+ *  刻意收在摺疊選單裡並寫明「課前通知不用這個」：課前通知走 EDM 群發的「場次報名者」
+ *  才會在寄出當下取最新名單；存成群組是死的快照，拿它發課前通知會漏掉後來報名的人。 */
+function SaveToMailGroupForm({ session }: { session: SessionRow }) {
+  const [state, action, pending] = useActionState<SessionFormState, FormData>(
+    saveSessionToMailGroupAction.bind(null, session.id),
+    null,
+  );
+  return (
+    <details className="rounded-lg border border-dashed border-gray-300">
+      <summary className="cursor-pointer px-3 py-2 text-xs text-gray-500">
+        📋 把這場名單存成 EDM 名單群組（日後行銷用）
+      </summary>
+      <form action={action} className="space-y-2 border-t border-gray-100 px-3 py-2">
+        <p className="text-xs text-gray-500">
+          存的是<strong>當下的快照</strong>，之後新報名的人不會自動加進去——
+          課前通知請直接用上面的「發課前通知」勾這個場次。
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            name="groupName"
+            defaultValue={session.title}
+            placeholder="群組名稱"
+            className="min-w-64 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+          />
+          <button
+            disabled={pending}
+            className="rounded-lg border border-gray-400 px-3 py-1.5 text-sm transition hover:bg-gray-100 disabled:opacity-50"
+          >
+            {pending ? "存入中…" : "存入群組"}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400">
+          同名群組＝併入既有群組，重複的 Email 自動略過（重按不會長出重複名單）。
+        </p>
+        <Feedback state={state} />
+      </form>
+    </details>
+  );
+}
+
 /** 場次卡片：報名名單 + 編輯 + 刪除 + 分組 + 延期 */
 export function SessionCard({
   session,
@@ -837,13 +881,32 @@ export function SessionCard({
           <>
             <GroupPanel session={session} />
             <Feedback state={deferState} />
-            <a
-              href={`/api/admin/sessions/${session.id}/signin-sheet`}
-              download
-              className="inline-block rounded-lg border border-gray-400 px-3 py-1.5 text-sm transition hover:bg-gray-100"
-            >
-              ⬇︎ 匯出簽到表（Excel，依組別排序＋用餐彙總）
-            </a>
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`/api/admin/sessions/${session.id}/signin-sheet`}
+                download
+                className="inline-block rounded-lg border border-gray-400 px-3 py-1.5 text-sm transition hover:bg-gray-100"
+              >
+                ⬇︎ 匯出簽到表（Excel，依組別排序＋用餐彙總）
+              </a>
+              <Link
+                href="/admin/broadcast"
+                className="inline-block rounded-lg border border-indigo-400 px-3 py-1.5 text-sm text-indigo-700 transition hover:bg-indigo-50"
+              >
+                ✉️ 發課前通知（Email）
+              </Link>
+              <Link
+                href="/admin/sms"
+                className="inline-block rounded-lg border border-indigo-400 px-3 py-1.5 text-sm text-indigo-700 transition hover:bg-indigo-50"
+              >
+                📱 發課前通知（簡訊）
+              </Link>
+            </div>
+            <p className="text-xs text-gray-400">
+              兩邊都直接勾這個場次就好，不必再匯一次名單；名單於送出當下解析，
+              之後補報名的人自動涵蓋。
+            </p>
+            <SaveToMailGroupForm session={session} />
           </>
         )}
 
