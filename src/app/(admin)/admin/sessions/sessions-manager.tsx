@@ -20,6 +20,7 @@ import {
   deferSignupAction,
   undoDeferSignupAction,
   saveSessionToMailGroupAction,
+  saveSessionLiveAction,
   type SessionFormState,
   type UploadState,
 } from "@/actions/sessions";
@@ -63,6 +64,12 @@ export type SessionRow = {
   adminNote: string | null;
   groupCap: number;
   groupCaps: number[]; // 逐組上限覆寫（index 0 = 第 1 組；0 = 用預設）
+  // 線上上課資訊（/live 憑碼索取）；accessCode 有值 = 這場已開放索取
+  accessCode: string | null;
+  meetingUrl: string | null;
+  meetingId: string | null;
+  meetingPassword: string | null;
+  meetingInfo: string | null;
   signups: SignupRow[];
 };
 
@@ -663,6 +670,125 @@ function GroupPanel({ session }: { session: SessionRow }) {
   );
 }
 
+/** 線上場次的上課資訊：Zoom 連結、會議 ID／密碼、課程資料，以及學員索取用的 4 位查看碼。
+ *  發簡訊時把查看碼寫進去，學員到 /live 輸入即可自行取得連結。 */
+function LiveInfoForm({ session }: { session: SessionRow }) {
+  const [state, action, pending] = useActionState<SessionFormState, FormData>(
+    saveSessionLiveAction.bind(null, session.id),
+    null,
+  );
+  const [regenerate, setRegenerate] = useState(false);
+  const open = !!session.meetingUrl;
+  return (
+    <details className="rounded-lg border border-sky-200 bg-sky-50/40" open={open}>
+      <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-sky-800">
+        🎥 線上上課資訊（Zoom 連結／查看碼）
+        {session.accessCode ? (
+          <span className="ml-1 font-normal text-sky-600">
+            — 已開放，查看碼 {session.accessCode}
+          </span>
+        ) : (
+          <span className="ml-1 font-normal text-gray-400">— 尚未設定</span>
+        )}
+      </summary>
+      <form action={action} className="space-y-2 border-t border-sky-100 px-3 py-2">
+        <input type="hidden" name="regenerate" value={regenerate ? "1" : "0"} />
+        <label className="block">
+          <span className="mb-1 block text-xs text-gray-600">
+            會議連結（Zoom 等，完整網址；清空並儲存＝關閉索取並作廢查看碼）
+          </span>
+          <input
+            name="meetingUrl"
+            type="url"
+            defaultValue={session.meetingUrl ?? ""}
+            placeholder="https://us02web.zoom.us/j/..."
+            className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+          />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-gray-600">
+            會議 ID
+            <input
+              name="meetingId"
+              defaultValue={session.meetingId ?? ""}
+              placeholder="853 1234 5678"
+              className="w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-black focus:outline-none"
+            />
+          </label>
+          <label
+            className="flex items-center gap-1.5 text-xs text-gray-600"
+            title="連結本身沒帶 pwd 參數時，會自動附加到連結上（Zoom 慣例）"
+          >
+            密碼
+            <input
+              name="meetingPassword"
+              defaultValue={session.meetingPassword ?? ""}
+              className="w-32 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-black focus:outline-none"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600">
+            查看碼
+            <input
+              name="accessCode"
+              inputMode="numeric"
+              maxLength={4}
+              defaultValue={session.accessCode ?? ""}
+              placeholder="自動產生"
+              disabled={regenerate}
+              className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-center font-mono text-sm focus:border-black focus:outline-none disabled:bg-gray-100"
+            />
+          </label>
+          <label
+            className="flex items-center gap-1.5 text-xs text-gray-600"
+            title="換一組新碼：舊碼與學員已開啟的頁面立即失效"
+          >
+            <input
+              type="checkbox"
+              checked={regenerate}
+              onChange={(e) => setRegenerate(e.target.checked)}
+            />
+            換新碼
+          </label>
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-xs text-gray-600">
+            課程資料與注意事項（學員看得到；一行一項，貼網址會自動變成連結）
+          </span>
+          <textarea
+            name="meetingInfo"
+            rows={4}
+            maxLength={5000}
+            defaultValue={session.meetingInfo ?? ""}
+            placeholder={"請提早 10 分鐘進入教室，並將顯示名稱改為本名。\n講義下載：https://..."}
+            className="w-full resize-y rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            disabled={pending}
+            className="rounded-lg border border-sky-400 px-3 py-1.5 text-sm text-sky-800 transition hover:bg-sky-100 disabled:opacity-50"
+          >
+            {pending ? "儲存中…" : "儲存上課資訊"}
+          </button>
+          {session.accessCode && (
+            <span className="text-xs text-gray-500">
+              學員入口：course.huangxi.info/live
+            </span>
+          )}
+          <Feedback state={state} />
+        </div>
+        {session.accessCode && (
+          // 簡訊字數很貴（中文 70 字/則），直接給一段可貼的範本省得每次重寫
+          <p className="rounded-lg bg-white/70 px-2 py-1.5 text-xs text-gray-500">
+            簡訊可貼：上課連結請至 course.huangxi.info/live 輸入查看碼{" "}
+            {session.accessCode}
+          </p>
+        )}
+      </form>
+    </details>
+  );
+}
+
 /** 把這場名單存成 EDM 名單群組（快照，供日後行銷用）。
  *
  *  刻意收在摺疊選單裡並寫明「課前通知不用這個」：課前通知走 EDM 群發的「場次報名者」
@@ -787,6 +913,14 @@ export function SessionCard({
             有備忘錄
           </span>
         )}
+        {session.accessCode && (
+          <span
+            className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-800"
+            title="已開放 /live 憑碼索取上課連結"
+          >
+            🎥 查看碼 {session.accessCode}
+          </span>
+        )}
         {session.isVisible && hasEndedInTaipei(session.endDate ?? session.eventDate) && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
             已結束（看板已下架）
@@ -874,6 +1008,8 @@ export function SessionCard({
             </div>
           </form>
         )}
+
+        {canEdit && <LiveInfoForm session={session} />}
 
         {canEdit && <AddSignupForm sessionId={session.id} />}
 

@@ -568,6 +568,15 @@ model CourseSession {
   groupCap  Int       @default(8) // 每組人數上限預設值（自動分組用；組數 = max(6, ⌈人數/上限⌉)）
   groupCaps Int[]     @default([]) // 逐組上限覆寫（index 0 = 第 1 組；0 或缺值 = 用 groupCap）——場地桌子大小不一時逐組調
 
+  // ── 線上上課資訊（/live 憑碼索取）──
+  // 發簡訊給學員後，他們到 /live 輸入這場的 4 位查看碼即可看到會議連結與課程資料。
+  // 碼綁在「場次」而非全站：一組碼外流只露出那一場，且不同場次的人看不到彼此的連結。
+  accessCode      String? @unique // 4 位數字；null = 這場沒開放索取
+  meetingUrl      String? // Zoom 等會議連結
+  meetingId       String? // 會議 ID（給手動輸入用）
+  meetingPassword String? // 會議密碼；連結沒帶 pwd 參數時自動附加（同 Webinar 慣例）
+  meetingInfo     String? @db.Text // 課程資料／上課須知（講義連結、注意事項），純文字換行
+
   signups SessionSignup[]
 
   createdAt DateTime @default(now())

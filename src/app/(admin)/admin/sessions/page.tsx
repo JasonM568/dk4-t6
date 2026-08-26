@@ -88,6 +88,11 @@ export default async function AdminSessionsPage() {
               adminNote: s.adminNote,
               groupCap: s.groupCap,
               groupCaps: s.groupCaps,
+              accessCode: s.accessCode,
+              meetingUrl: s.meetingUrl,
+              meetingId: s.meetingId,
+              meetingPassword: s.meetingPassword,
+              meetingInfo: s.meetingInfo,
               signups: s.signups.map((g) => ({
                 id: g.id,
                 orderNo: g.orderNo,

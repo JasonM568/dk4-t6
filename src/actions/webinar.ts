@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { applyMergeTags, buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { buildJoinUrl } from "@/lib/meeting";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
 
@@ -82,21 +83,6 @@ async function parseWebinarForm(formData: FormData) {
     endDate,
     unpublishAt,
   };
-}
-
-// 進會議連結：有密碼且連結本身沒帶 pwd 參數時，自動附加 ?pwd=（Zoom 慣例）。
-// 若 Zoom 邀請連結原本就含加密 pwd，直接沿用不動。
-// （"use server" 檔案只允許 export async 函式，此為模組內部工具）
-function buildJoinUrl(lectureUrl: string, meetingPassword: string | null): string {
-  if (!meetingPassword) return lectureUrl;
-  try {
-    const url = new URL(lectureUrl);
-    if (url.searchParams.has("pwd")) return lectureUrl;
-    url.searchParams.set("pwd", meetingPassword);
-    return url.toString();
-  } catch {
-    return lectureUrl;
-  }
 }
 
 export async function createWebinarAction(
