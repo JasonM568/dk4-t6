@@ -771,9 +771,16 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
             {pending ? "儲存中…" : "儲存上課資訊"}
           </button>
           {session.accessCode && (
-            <span className="text-xs text-gray-500">
-              學員入口：course.huangxi.info/live
-            </span>
+            // 預覽：直接用一鍵連結開，看到的就是學員看到的那一頁
+            //（會在這個瀏覽器種下該場次的 cookie，無妨）
+            <a
+              href={`/live/${session.accessCode}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-100"
+            >
+              👁 預覽學員看到的畫面
+            </a>
           )}
           <Feedback state={state} />
         </div>
