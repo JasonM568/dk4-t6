@@ -33,11 +33,34 @@ Supabase 專案 qubjpayeopvscrgrvrci（hope 站與 course 站共用）
 - `prisma migrate diff --from-url` 產出的 SQL **不可信**（曾產出刪整個 course schema 的指令）
 - 手寫 migration 流程：手寫 SQL → 本機 `migrate deploy` 驗證 → grep 確認無 `public.` / `auth.` 字樣再推
 
+## ⚠️ `"use server"` 檔案只能匯出 async 函式
+
+`src/actions/*.ts` 匯出常數／同步函式（型別除外）會讓**整個路由群組一載入就整頁失敗**：
+`A "use server" file can only export async functions, found object.`
+
+**這項檢查在執行期才做，`pnpm tsc` 與 `next build` 全都會過**——2026-08-26 就是這樣
+把錯誤送上正式站的。常數請放 `src/lib/`（`email/audience.ts`、`sms/audience.ts` 就是為此獨立）。
+
+`pnpm build` 第一步會跑 `scripts/check-server-actions.ts` 擋下；單獨檢查用 `pnpm check:actions`。
+
 ## 重要概念區分
 
 - **MailGroup**（名單群組）= EDM 電子報寄信名單
 - **Enrollment**（觀看權限）= 能不能看課程
 - 兩套獨立、互不影響；加名單群組不會開通課程
+
+## 課前通知（場次名單一次匯入，兩個模組共用）
+
+訂單匯進**場次看板**後，同一份 `SessionSignup` 同時餵 EDM 與簡訊，名單於**送出當下**解析
+（發完才報名的人下次自動涵蓋；已延期到別場的不收原場次通知）。
+
+- EDM `audienceType=SESSION`、簡訊 `audienceType=SESSION`，欄位皆為 `sessionIds`
+- **EDM 的 `messageType`**：`MARKETING`（預設，退訂名單全擋）/ `NOTICE`（履約通知，
+  只擋 BOUNCE 與 COMPLAINT——退訂電子報不等於放棄付費課程的上課通知）。
+  只有場次／手動名單／選取會員可標 NOTICE，見 `NOTICE_ALLOWED_AUDIENCES`
+- **上課連結**（線上課）：場次設 Zoom 連結後自動配 4 位**上課碼**，學員憑碼在 `/live` 索取。
+  簡訊／EDM 內文用 `{code}` 變數自動帶入該場次的碼
+- 場次卡片的「發課前通知」帶 `?session=<id>`，對方頁面自動勾好場次並填好草稿
 
 ## 權限架構
 
@@ -60,6 +83,11 @@ pnpm tsc --noEmit && pnpm build       # 型別檢查 + 正式 build
 npx tsx scripts/test-ecpay.ts         # 驗 ECPay 簽章
 npx tsx scripts/test-purchase-flow.ts # 付款 webhook 端到端（需 dev server）
 npx tsx scripts/reset-testuser.ts     # 重置測試會員
+pnpm check:actions                    # 檢查 "use server" 檔案的匯出（build 也會跑）
+
+# 以下會寫入資料庫，只能對本機 localhost 跑
+npx tsx --conditions=react-server scripts/test-live-access-db.ts        # 上課碼閘門 29 項
+npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 12 項
 ```
 
 ## 目錄重點
@@ -72,6 +100,11 @@ src/lib/membership/tier.ts    等級重算（TIER_SYSTEM_ENABLED 開關）
 src/lib/supabase/admin.ts     service key，server-only
 src/proxy.ts                  路由保護（Next 16 middleware）
 src/actions/                  Server Actions（checkout / auth / admin）
+src/lib/email/dispatch.ts     EDM 名單解析與寄送（filterUnsubscribed 是退訂分流的唯一漏斗）
+src/lib/sms/dispatch.ts       簡訊名單解析與發送（對照 email/dispatch）
+src/lib/class-notice.ts       課前通知草稿（場次 → 簡訊／EDM 內容）
+src/lib/live-auth.ts          /live 上課碼閘門（HMAC token，與 /board 網域分離）
+src/app/live/                 學員憑上課碼索取 Zoom 連結
 prisma/schema.prisma          資料模型（course schema only）
 ```
 
