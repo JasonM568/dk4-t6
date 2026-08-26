@@ -50,6 +50,7 @@ export type BroadcastFormDefaults = {
   audience: "all" | "group" | "session" | "manual";
   groupIds: string[]; // 名單群組可複選
   sessionIds: string[]; // 場次可複選
+  isNotice: boolean; // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉
   manualList: string;
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
 };
@@ -112,6 +113,16 @@ export function BroadcastForm({
   const previewKey = pickedGroups.join(",");
   const groupPreview = preview?.key === previewKey ? preview.data : null;
 
+  // 履約通知只開放給「講得出這批人是誰」的對象——與 server 端的
+  // NOTICE_ALLOWED_AUDIENCES 一致；不一致時 server 會擋下並回錯誤訊息
+  const noticeAllowed =
+    audience === "session" || audience === "manual" || audience === "members";
+  const [isNotice, setIsNotice] = useState(defaultValues?.isNotice ?? false);
+  // 對象換成電子報血統（全部會員／名單群組）時自動取消勾選，
+  // 免得畫面顯示「履約通知」但送出被 server 擋下
+  const noticeOn = isNotice && noticeAllowed;
+  const messageType = noticeOn ? "NOTICE" : "MARKETING";
+
   // 場次報名者（與簡訊模組同一份名單）：勾選順序同樣決定去重後的姓名優先序
   const [pickedSessions, setPickedSessions] = useState<string[]>(
     defaultValues?.sessionIds ?? [],
@@ -122,8 +133,12 @@ export function BroadcastForm({
   } | null>(null);
   const [sessionPreviewing, startSessionPreview] = useTransition();
   const sessionPreviewKey = pickedSessions.join(",");
+  // key 帶上 messageType：勾/取消「履約通知」會改變退訂扣除數，
+  // 舊結果必須立刻失效，不能讓過期數字停在畫面上
   const sessionPreview =
-    sessionPreviewState?.key === sessionPreviewKey ? sessionPreviewState.data : null;
+    sessionPreviewState?.key === `${sessionPreviewKey}|${messageType}`
+      ? sessionPreviewState.data
+      : null;
 
   const toggleGroup = (id: string) =>
     setPickedGroups((prev) =>
@@ -156,15 +171,22 @@ export function BroadcastForm({
     let alive = true;
     const timer = setTimeout(() => {
       startSessionPreview(async () => {
-        const result = await previewSessionAudienceAction(pickedSessions);
-        if (alive) setSessionPreviewState({ key: sessionPreviewKey, data: result });
+        const result = await previewSessionAudienceAction(
+          pickedSessions,
+          messageType,
+        );
+        if (alive)
+          setSessionPreviewState({
+            key: `${sessionPreviewKey}|${messageType}`,
+            data: result,
+          });
       });
     }, 300);
     return () => {
       alive = false;
       clearTimeout(timer);
     };
-  }, [audience, pickedSessions, sessionPreviewKey]);
+  }, [audience, pickedSessions, sessionPreviewKey, messageType]);
 
   // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
   // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
@@ -692,6 +714,40 @@ export function BroadcastForm({
             {audience === "members" && (
               <MemberPicker members={members} picked={picked} setPicked={setPicked} />
             )}
+
+            {/* 履約通知：比照簡訊模組。勾了才不會被「退訂電子報」擋掉上課通知；
+                電子報血統的對象（全部會員／名單群組）不給勾，避免變成繞過退訂的後門 */}
+            {/* 勾選框本身就是那句確認，所以 ack 跟著送出（server 仍分兩個欄位驗，
+                並把確認人記進 noticeAckBy 供稽核，與簡訊模組一致） */}
+            {noticeOn && <input type="hidden" name="noticeAck" value="on" />}
+            {noticeAllowed && (
+              <label className="mt-1 flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2">
+                <input
+                  type="checkbox"
+                  name="isNotice"
+                  checked={isNotice}
+                  onChange={(e) => setIsNotice(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  這是與<strong>已報名學員</strong>的履約通知（課前通知／異動通知），
+                  不是行銷推播。
+                  <span className="block text-xs text-gray-500">
+                    勾選後，<strong>只有</strong>退信與檢舉垃圾信的信箱會被排除；
+                    「退訂電子報」的人仍會收到——退訂電子報不等於放棄他付費課程的上課通知。
+                    行銷內容請勿勾選。
+                  </span>
+                </span>
+              </label>
+            )}
+            {/* 勾了之後又把對象換成全部會員／名單群組：狀態還留著但不生效，
+                這裡明說一句，不要讓人以為自己寄的是履約通知 */}
+            {isNotice && !noticeAllowed && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                ⚠️ 「全部會員」與「名單群組」屬於電子報，一律尊重退訂名單，
+                不能標成履約通知。這封會以行銷推播寄出。
+              </p>
+            )}
           </div>
         </fieldset>
         )}
@@ -746,9 +802,10 @@ export function BroadcastForm({
                 ) as HTMLInputElement | null
               )?.value;
               const target = audienceDesc();
+              const kind = noticeOn ? "履約通知｜" : "";
               const msg = when
-                ? `確定排程在 ${when.replace("T", " ")} 群發給「${target}」嗎？\n\n建議先寄測試信確認版面無誤。`
-                : `確定要立即群發給「${target}」嗎？\n\n建議先寄測試信確認版面無誤。送出後無法收回。`;
+                ? `${kind}確定排程在 ${when.replace("T", " ")} 群發給「${target}」嗎？\n\n建議先寄測試信確認版面無誤。`
+                : `${kind}確定要立即群發給「${target}」嗎？\n\n建議先寄測試信確認版面無誤。送出後無法收回。`;
               if (!confirm(msg)) {
                 e.preventDefault();
               }

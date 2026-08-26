@@ -298,6 +298,7 @@ export default async function BroadcastPage({
                 audience: "all",
                 groupIds: [],
                 sessionIds: [],
+                isNotice: false,
                 manualList: "",
                 scheduledAt: "",
               }
@@ -309,6 +310,7 @@ export default async function BroadcastPage({
                   audience: "all",
                   groupIds: [],
                   sessionIds: [],
+                  isNotice: false,
                   manualList: "",
                   // 跟進信預設隔天同時段寄出（可自行調整）；
                   // server component 每次請求都重新渲染，取當下時間是刻意行為
@@ -382,6 +384,15 @@ export default async function BroadcastPage({
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {h.audienceLabel ?? "全部會員"}
+                      {/* 履約通知走的是不同的退訂規則，紀錄上必須看得出來 */}
+                      {h.messageType === "NOTICE" && (
+                        <span
+                          className="ml-1 rounded-full bg-teal-50 px-1.5 py-0.5 text-xs text-teal-700"
+                          title="履約通知：只排除退信與檢舉垃圾信，不受行銷退訂影響"
+                        >
+                          履約通知
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span

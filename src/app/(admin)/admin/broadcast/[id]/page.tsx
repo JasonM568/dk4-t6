@@ -175,7 +175,31 @@ export default async function BroadcastDetailPage({
         <dd>{when ? when.toLocaleString("zh-TW", TPE) : "—"}</dd>
 
         <dt className="text-gray-500">對象</dt>
-        <dd>{record.audienceLabel ?? "全部會員"}</dd>
+        <dd>
+          {record.audienceLabel ?? "全部會員"}
+          {record.messageType === "NOTICE" && (
+            <span className="ml-1 rounded-full bg-teal-50 px-1.5 py-0.5 text-xs text-teal-700">
+              履約通知
+            </span>
+          )}
+        </dd>
+
+        {/* 退訂規則因信而異，事後查帳要看得出當時是用哪一套 */}
+        <dt className="text-gray-500">退訂處理</dt>
+        <dd className="text-gray-600">
+          {record.messageType === "NOTICE" ? (
+            <>
+              履約通知：只排除退信與檢舉垃圾信，「退訂電子報」的人照寄
+              {record.noticeAckBy && (
+                <span className="block text-xs text-gray-400">
+                  確認人：{record.noticeAckBy}
+                </span>
+              )}
+            </>
+          ) : (
+            "行銷推播：排除整份退訂名單"
+          )}
+        </dd>
 
         {!isScheduled && (
           <>
@@ -186,7 +210,9 @@ export default async function BroadcastDetailPage({
               <span className="text-red-600">{record.failedCount || 0}</span>
               {record.excludedCount > 0 && (
                 <span className="ml-2 text-xs text-gray-400">
-                  已排除退訂 {record.excludedCount} 筆
+                  {record.messageType === "NOTICE"
+                    ? `已排除退信／檢舉 ${record.excludedCount} 筆`
+                    : `已排除退訂 ${record.excludedCount} 筆`}
                 </span>
               )}
             </dd>

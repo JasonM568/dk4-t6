@@ -81,6 +81,7 @@ export default async function BroadcastEditPage({
             : "all",
     groupIds: broadcastGroupIds(record), // 改版前的單選紀錄會回填成一個勾選
     sessionIds: broadcastSessionIds(record),
+    isNotice: record.messageType === "NOTICE",
     manualList: manualRows
       .map((r) => (r.name ? `${r.email},${r.name}` : r.email))
       .join("\n"),

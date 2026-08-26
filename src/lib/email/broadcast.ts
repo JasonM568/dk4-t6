@@ -35,11 +35,17 @@ export type BroadcastCourse = {
 /** 希望學院品牌信 HTML（與重置密碼信同視覺）；內文純文字自動分段，
  *  支援 **粗體**／## 標題／--- 分隔線／![說明](網址) 圖片／
  *  明文網址自動轉連結與 [按鈕文字](網址) CTA 按鈕（渲染邏輯見 render-content.ts）。
- *  unsubscribeUrl 有值時 footer 加「取消訂閱」連結 */
+ *  unsubscribeUrl 有值時 footer 加「取消訂閱」連結。
+ *
+ *  messageType=NOTICE（履約通知）時退訂連結照放——Gmail 等對量寄信件看的是
+ *  List-Unsubscribe 有沒有，拿掉會傷送達率——但文案必須改：退訂只停電子報，
+ *  已報名課程的上課通知仍會寄（dispatch.ts filterUnsubscribed 的 NOTICE 分支）。
+ *  寫「不想再收到這類信件」會是騙人的。 */
 export function buildBroadcastHtml(
   bodyText: string,
   course: BroadcastCourse | null,
   unsubscribeUrl?: string | null,
+  messageType: string = "MARKETING",
 ): string {
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
   const paragraphs = buildContentHtml(bodyText);
@@ -97,7 +103,9 @@ export function buildBroadcastHtml(
                   此信由希望學院學習平台寄出 · <a href="${base}" style="color: #999999;">course.huangxi.info</a><br />
                   &copy; 希望學院 HOPE Academy${
                     unsubscribeUrl
-                      ? `<br />不想再收到這類信件？<a href="${esc(unsubscribeUrl)}" style="color: #999999; text-decoration: underline;">取消訂閱</a>`
+                      ? messageType === "NOTICE"
+                        ? `<br />這是您已報名課程的上課通知。不想再收到電子報？<a href="${esc(unsubscribeUrl)}" style="color: #999999; text-decoration: underline;">取消訂閱</a>（上課通知仍會寄送）`
+                        : `<br />不想再收到這類信件？<a href="${esc(unsubscribeUrl)}" style="color: #999999; text-decoration: underline;">取消訂閱</a>`
                       : ""
                   }
                 </p>

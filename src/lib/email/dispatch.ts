@@ -89,12 +89,29 @@ async function collectSessionSignups(sessionIds: string[]) {
 }
 
 /** 統一過濾退訂名單（email 已於 dedupeByEmail 小寫）；寄送與人數預覽共用同一份實作，
- *  否則預覽的數字會跟實際寄出的數字對不起來 */
+ *  否則預覽的數字會跟實際寄出的數字對不起來。
+ *
+ *  比照 sms/dispatch.ts 的 filterOptedOut 分兩級——
+ *  MARKETING（電子報／行銷推播）：整份退訂名單全擋。
+ *  NOTICE（履約通知）：只擋 BOUNCE（信箱退信）與 COMPLAINT（檢舉垃圾信）。
+ *    「退訂電子報」不等於「放棄我付費課程的上課通知」，那兩件事本來就該分開；
+ *    但退信與檢舉是不同性質——前者信根本進不去，後者再寄會傷寄件網域信譽，
+ *    這兩種即使是履約通知也一律不寄（這也是與簡訊唯一的差別：簡訊沒有信譽問題，
+ *    只擋 INVALID；Email 多擋一個 COMPLAINT）。
+ *
+ *  分支刻意收在這個單一漏斗裡，任何呼叫端都不可能繞過。 */
 async function filterUnsubscribed(
   deduped: Recipient[],
+  messageType: string,
 ): Promise<{ recipients: Recipient[]; excludedCount: number }> {
+  if (deduped.length === 0) return { recipients: [], excludedCount: 0 };
   const unsub = await prisma.mailUnsubscribe.findMany({
-    where: { email: { in: deduped.map((r) => r.email) } },
+    where: {
+      email: { in: deduped.map((r) => r.email) },
+      ...(messageType === "NOTICE"
+        ? { source: { in: ["BOUNCE", "COMPLAINT"] } }
+        : {}),
+    },
     select: { email: true },
   });
   const unsubSet = new Set(unsub.map((u) => u.email));
@@ -192,6 +209,7 @@ async function resolveFollowUpRecipients(record: {
  *  四路匯合後統一過濾退訂名單（MailUnsubscribe）；excludedCount = 被排除的退訂人數 */
 async function resolveRecipients(record: {
   audienceType: string;
+  messageType: string;
   groupId: string | null;
   groupIds: string[];
   sessionIds: string[];
@@ -248,11 +266,22 @@ async function resolveRecipients(record: {
   if (deduped.length === 0)
     return { recipients: [], excludedCount: 0, error: emptyError };
 
-  // 過濾退訂名單（email 已於 dedupeByEmail 統一小寫）；測試信不經此路，不受影響
-  const { recipients, excludedCount } = await filterUnsubscribed(deduped);
+  // 過濾退訂名單（email 已於 dedupeByEmail 統一小寫）；測試信不經此路，不受影響。
+  // 履約通知只扣退信／檢舉，行銷推播扣整份退訂名單（filterUnsubscribed 內分流）
+  const { recipients, excludedCount } = await filterUnsubscribed(
+    deduped,
+    record.messageType,
+  );
 
   if (recipients.length === 0)
-    return { recipients: [], excludedCount, error: "名單全數已退訂，無人可寄" };
+    return {
+      recipients: [],
+      excludedCount,
+      error:
+        record.messageType === "NOTICE"
+          ? "名單全數退信或檢舉過垃圾信，無人可寄"
+          : "名單全數已退訂，無人可寄",
+    };
   return { recipients, excludedCount };
 }
 
@@ -261,6 +290,7 @@ async function resolveRecipients(record: {
  *  預覽看到的「實際可寄 N 人」就是寄出後的 sentCount，不會有兩套邏輯對不起來的問題。 */
 export async function previewGroupAudience(
   groupIds: string[],
+  messageType = "MARKETING",
 ): Promise<GroupAudiencePreview> {
   const [found, members] = await Promise.all([
     prisma.mailGroup.findMany({
@@ -283,7 +313,7 @@ export async function previewGroupAudience(
   const deduped = dedupeByEmail(
     members.map((m) => ({ email: m.email, name: m.name ?? undefined })),
   );
-  const { recipients, excludedCount } = await filterUnsubscribed(deduped);
+  const { recipients, excludedCount } = await filterUnsubscribed(deduped, messageType);
 
   return {
     groups,
@@ -301,6 +331,7 @@ export async function previewGroupAudience(
  *  預覽看到的「實際可寄 N 人」就是寄出後的 sentCount。 */
 export async function previewSessionAudience(
   sessionIds: string[],
+  messageType = "MARKETING",
 ): Promise<SessionAudiencePreview> {
   if (sessionIds.length === 0) return EMPTY_SESSION_AUDIENCE_PREVIEW;
 
@@ -325,7 +356,7 @@ export async function previewSessionAudience(
   const { recipients: deduped, noEmailCount } = dedupeByEmailCounted(
     signups.map((s) => ({ email: s.email ?? "", name: s.name })),
   );
-  const { recipients, excludedCount } = await filterUnsubscribed(deduped);
+  const { recipients, excludedCount } = await filterUnsubscribed(deduped, messageType);
 
   return {
     sessions,
@@ -377,6 +408,7 @@ export async function executeBroadcast(broadcastId: string) {
               applyMergeTags(record.body, rcpt),
               course,
               buildUnsubscribePageUrl(rcpt.email),
+              record.messageType,
             ),
           { broadcastId: record.id, withUnsubscribe: true },
         )

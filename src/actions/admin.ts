@@ -743,6 +743,38 @@ type BroadcastAudience = {
   };
 };
 
+/** 可以標成「履約通知」的發送對象。
+ *
+ *  刻意排除 all（全部會員）、group（名單群組）與 followup：那三種是電子報血統，
+ *  對它們開放 NOTICE 等於給了一條「勾一個框就繞過整份退訂名單群發全站」的路。
+ *  履約通知的前提是「這批人是誰、為什麼該收」講得出來——場次報名者（付了錢要來上課）、
+ *  手動貼的名單與勾選的會員（逐筆看過）才符合。 */
+const NOTICE_ALLOWED_AUDIENCES = new Set(["session", "manual", "members"]);
+
+/** 依表單決定這封信是履約通知還是行銷推播，並擋掉不合法的組合。
+ *  回傳 error 時一律不寄——寧可擋下來讓人改，也不要靜默降級成 MARKETING
+ *  （靜默降級會讓管理員以為課前通知寄出去了，實際上退訂的人沒收到）。 */
+function resolveMessageType(
+  audience: string,
+  wantsNotice: boolean,
+  noticeAck: boolean,
+): { messageType: string; error?: string } {
+  if (!wantsNotice) return { messageType: "MARKETING" };
+  if (!NOTICE_ALLOWED_AUDIENCES.has(audience))
+    return {
+      messageType: "MARKETING",
+      error:
+        "「履約通知」只能用於場次報名者／手動名單／選取會員——" +
+        "全部會員與名單群組屬於電子報，必須尊重退訂名單",
+    };
+  if (!noticeAck)
+    return {
+      messageType: "MARKETING",
+      error: "請勾選確認這是與已報名學員的履約通知（上課提醒／異動通知）",
+    };
+  return { messageType: "NOTICE" };
+}
+
 /** 解析群發表單的發送對象（sendBroadcastAction / updateBroadcastAction 共用）。
  *  lenient = 草稿模式：群組不存在/名單空也照存，之後編輯再補 */
 async function resolveBroadcastAudience(
@@ -971,18 +1003,22 @@ export async function previewGroupAudienceAction(
   await requireEditor();
   const ids = [...new Set((groupIds ?? []).map(String).filter(Boolean))].slice(0, 50);
   if (ids.length === 0) return EMPTY_GROUP_AUDIENCE_PREVIEW;
-  return previewGroupAudience(ids);
+  // 名單群組不得標履約通知（NOTICE_ALLOWED_AUDIENCES），試算固定走 MARKETING
+  return previewGroupAudience(ids, "MARKETING");
 }
 
 /** 複選場次的收件人數預覽（勾選當下即時試算）。
  *  同樣呼叫 dispatch 的 previewSessionAudience——預覽與寄出走同一套解析，數字不會兩套。 */
 export async function previewSessionAudienceAction(
   sessionIds: string[],
+  messageType = "MARKETING",
 ): Promise<SessionAudiencePreview> {
   await requireEditor();
   const ids = [...new Set((sessionIds ?? []).map(String).filter(Boolean))].slice(0, 50);
   if (ids.length === 0) return EMPTY_SESSION_AUDIENCE_PREVIEW;
-  return previewSessionAudience(ids);
+  // 勾了「履約通知」就用 NOTICE 試算：畫面上的「扣除退訂 N 人」會跟著變，
+  // 管理員看得到「勾這個框救回了幾個人」
+  return previewSessionAudience(ids, messageType === "NOTICE" ? "NOTICE" : "MARKETING");
 }
 
 /** 群發通知：mode=test 只寄給操作的管理員本人；mode=draft 存草稿；mode=all 正式群發並留紀錄。
@@ -1005,6 +1041,9 @@ export async function sendBroadcastAction(
   const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
   // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
+  // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉。比照簡訊需勾確認
+  const wantsNotice = formData.get("isNotice") === "on";
+  const noticeAck = formData.get("noticeAck") === "on";
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
@@ -1018,6 +1057,17 @@ export async function sendBroadcastAction(
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
+
+  // 履約通知 vs 行銷推播：決定寄出時退訂名單怎麼擋（dispatch.ts filterUnsubscribed）。
+  // 草稿不擋（存了再回來補勾），但存進去的一律是已驗證過的值，不會有「草稿是 NOTICE、
+  // 送出時才發現對象不合法」的落差。
+  const notice = resolveMessageType(audience, wantsNotice, noticeAck);
+  if (mode !== "draft" && notice.error) return { error: notice.error };
+  const noticeFields = {
+    messageType: notice.messageType,
+    noticeAckBy:
+      notice.messageType === "NOTICE" ? (admin?.email ?? null) : null,
+  };
 
   // 存成範本：只存內容，不寄信、不留群發紀錄
   if (mode === "template") {
@@ -1046,6 +1096,7 @@ export async function sendBroadcastAction(
         scheduledAt: scheduledAt && !isNaN(scheduledAt.getTime()) ? scheduledAt : null,
         sentBy: admin?.email ?? null,
         ...audienceData,
+        ...noticeFields,
       },
     });
     revalidatePath("/admin/broadcast");
@@ -1077,6 +1128,8 @@ export async function sendBroadcastAction(
         applyMergeTags(body, rcpt),
         course,
         buildUnsubscribePageUrl(rcpt.email),
+        // 測試信也用同一種 messageType：頁尾文案所見即所寄
+        notice.messageType,
       ),
     );
     return r.failed > 0
@@ -1114,6 +1167,7 @@ export async function sendBroadcastAction(
         scheduledAt,
         sentBy: admin?.email ?? null,
         ...audienceData,
+        ...noticeFields,
       },
     });
     revalidatePath("/admin/broadcast");
@@ -1144,6 +1198,7 @@ export async function sendBroadcastAction(
       claimedAt: new Date(),
       sentBy: admin?.email ?? null,
       ...audienceData,
+      ...noticeFields,
     },
   });
   const r = await executeBroadcast(record.id);
@@ -1204,6 +1259,9 @@ export async function updateBroadcastAction(
   const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
   // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
+  // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉。比照簡訊需勾確認
+  const wantsNotice = formData.get("isNotice") === "on";
+  const noticeAck = formData.get("noticeAck") === "on";
   const manualRaw = String(
     formData.get(audience === "members" ? "memberList" : "manualList") ?? "",
   );
@@ -1217,6 +1275,17 @@ export async function updateBroadcastAction(
 
   if (!subject) return { error: "請填寫主旨" };
   if (mode !== "draft" && !body) return { error: "請填寫內文" };
+
+  // 履約通知 vs 行銷推播：決定寄出時退訂名單怎麼擋（dispatch.ts filterUnsubscribed）。
+  // 草稿不擋（存了再回來補勾），但存進去的一律是已驗證過的值，不會有「草稿是 NOTICE、
+  // 送出時才發現對象不合法」的落差。
+  const notice = resolveMessageType(audience, wantsNotice, noticeAck);
+  if (mode !== "draft" && notice.error) return { error: notice.error };
+  const noticeFields = {
+    messageType: notice.messageType,
+    noticeAckBy:
+      notice.messageType === "NOTICE" ? (admin?.email ?? null) : null,
+  };
 
   // 存成範本：只存內容，不動這筆草稿/排程紀錄
   if (mode === "template") {
@@ -1239,6 +1308,8 @@ export async function updateBroadcastAction(
         applyMergeTags(body, rcpt),
         course,
         buildUnsubscribePageUrl(rcpt.email),
+        // 測試信也用同一種 messageType：頁尾文案所見即所寄
+        notice.messageType,
       ),
     );
     return r.failed > 0
@@ -1272,6 +1343,7 @@ export async function updateBroadcastAction(
         scheduledAt: scheduledAt && !isNaN(scheduledAt.getTime()) ? scheduledAt : null,
         sentBy: admin?.email ?? null,
         ...audienceData,
+        ...noticeFields,
       },
     });
     if (updated.count === 0) return { error: staleMsg };
@@ -1308,6 +1380,7 @@ export async function updateBroadcastAction(
         scheduledAt,
         sentBy: admin?.email ?? null,
         ...audienceData,
+        ...noticeFields,
       },
     });
     if (updated.count === 0) return { error: staleMsg };
@@ -1334,6 +1407,7 @@ export async function updateBroadcastAction(
       scheduledAt: null,
       sentBy: admin?.email ?? null,
       ...audienceData,
+      ...noticeFields,
     },
   });
   if (claimed.count === 0) return { error: staleMsg };
@@ -1391,6 +1465,10 @@ export async function resendFailedBroadcastAction(
       claimedAt: new Date(),
       sentBy: admin?.email ?? null,
       audienceType: "MANUAL",
+      // 補寄一封課前通知仍然是課前通知：不繼承的話會退化成 MARKETING，
+      // 原本收得到的人反而被行銷退訂擋掉——補寄補了個寂寞
+      messageType: orig.messageType,
+      noticeAckBy: orig.noticeAckBy,
       audienceLabel: `補寄失敗者 ${failed.length} 筆（來源：${orig.subject}）`,
       manualRows: failed.map((f) =>
         f.name ? { email: f.email, name: f.name } : { email: f.email },

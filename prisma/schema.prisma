@@ -169,10 +169,18 @@ model SiteSetting {
 // 群發通知/電子報：立即寄出的歷史紀錄＋排程待寄
 // status：SCHEDULED（排程待寄）/ SENDING（cron 處理中）/ SENT / CANCELED / FAILED
 // audienceType：ALL（全部會員）/ GROUP（名單群組，可複選）/ SESSION（場次報名者，可複選）/ MANUAL（手動貼名單）
+// messageType（比照 SmsBroadcast）：
+//   MARKETING 行銷推播／電子報（預設）——退訂名單全擋，既有紀錄行為完全不變
+//   NOTICE    履約通知（已報名學員的課前通知／異動通知）——只擋 BOUNCE（退信）與
+//             COMPLAINT（檢舉垃圾信），不因「退訂電子報」而擋掉他付費課程的上課通知
+//   僅「場次報名者／手動名單／選取會員」可標 NOTICE；全部會員與名單群組是電子報血統，
+//   一律 MARKETING（見 actions/admin.ts NOTICE_ALLOWED_AUDIENCES）
 model EmailBroadcast {
   id            String    @id @default(cuid())
   subject       String
   body          String    @db.Text
+  messageType   String    @default("MARKETING")
+  noticeAckBy   String? // 勾選「這是履約通知，非行銷推播」的管理員 email（稽核用）
   courseId      String? // 關聯課程（選填，信中帶課程連結）
   sentCount     Int       @default(0)
   failedCount   Int       @default(0)
