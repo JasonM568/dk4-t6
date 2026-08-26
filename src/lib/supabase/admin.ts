@@ -1,4 +1,6 @@
 import "server-only";
+
+import { isSearchableQuery } from "@/lib/roster-search";
 import { createClient } from "@supabase/supabase-js";
 
 // Admin client：用 SUPABASE_SECRET_KEY（BYPASSRLS），只能在 server 端使用。
@@ -359,6 +361,52 @@ export async function setUserPassword(
 // 後台會員列表用：唯讀撈出全部 profiles。
 // B4：PostgREST 預設單次上限 1000 筆，改用 .range(from,to) 每頁 1000 迴圈撈，
 // 直到回傳不足一頁為止，避免超過 1000 名會員時被截斷。
+/** 依 userId 批次取 profile（course schema 只存得到 userId，姓名／email 要回 QBC 拿）。
+ *  id 是 uuid，沒有 email 那種大小寫問題，直接用 .in() 即可。 */
+export async function getProfilesByIds(userIds: string[]): Promise<Profile[]> {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  if (ids.length === 0) return [];
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, display_name, nickname, role")
+    .in("id", ids.slice(0, 200)); // 一次塞太多會撞 URL 長度限制
+
+  if (error) {
+    console.error("[supabase/admin] 依 id 查 profiles 失敗：", error.message);
+    return [];
+  }
+  return (data ?? []) as Profile[];
+}
+
+/** 關鍵字搜會員（姓名／暱稱／email 子字串，不分大小寫）。
+ *
+ *  與 listProfiles 的差別：那支是把全部會員抓下來給頁面自己過濾（647 筆一次性頁面載入
+ *  還可以），這支是給「邊打字邊查」用的——每按一鍵就抓全表會非常慢，必須讓資料庫過濾。
+ *
+ *  PostgREST 的 .or() 是用逗號與括號當語法分隔的字串 DSL，關鍵字直接串進去會壞掉
+ *  （或被拿來拼出別的條件），所以先把語法字元清掉再組。 */
+export async function searchProfiles(
+  query: string,
+  limit = 20,
+): Promise<Profile[]> {
+  const q = query.trim().replace(/[,()%\\*]/g, "");
+  // 門檻走共用的 isSearchableQuery：中文一個字（姓氏）就查，英數要兩個字元
+  if (!isSearchableQuery(q)) return [];
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, display_name, nickname, role")
+    .or(`email.ilike.%${q}%,display_name.ilike.%${q}%,nickname.ilike.%${q}%`)
+    .limit(limit);
+
+  if (error) {
+    console.error("[supabase/admin] 搜尋 profiles 失敗：", error.message);
+    return [];
+  }
+  return (data ?? []) as Profile[];
+}
+
 export async function listProfiles(): Promise<Profile[]> {
   const supabase = createAdminClient();
   const pageSize = 1000;

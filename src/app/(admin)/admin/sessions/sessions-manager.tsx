@@ -1,6 +1,14 @@
 "use client";
 
-import { startTransition, useActionState, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   createSessionAction,
   updateSessionAction,
@@ -21,6 +29,8 @@ import {
   undoDeferSignupAction,
   saveSessionToMailGroupAction,
   saveSessionLiveAction,
+  searchAttendeeAction,
+  type AttendeeCandidate,
   type SessionFormState,
   type UploadState,
 } from "@/actions/sessions";
@@ -36,7 +46,12 @@ import {
   groupCountFor,
 } from "@/lib/session-roster";
 // 比對規則與公開看板（/board）共用，同一關鍵字兩邊查出同一批人
-import { normalizeQuery, matchesText, matchesTag } from "@/lib/roster-search";
+import {
+  normalizeQuery,
+  matchesText,
+  matchesTag,
+  isSearchableQuery,
+} from "@/lib/roster-search";
 
 export type SignupRow = {
   id: string;
@@ -444,7 +459,119 @@ export function CreateSessionForm() {
 }
 
 /** 手動新增報名（電話/現金/特殊訂單） */
-function AddSignupForm({ sessionId }: { sessionId: string }) {
+/** 找人：輸入姓名／手機／Email 的一部分，把系統裡已有的人撈出來一鍵帶入。
+ *
+ *  來源是會員、既有場次名單與學員資料庫（見 searchAttendeeAction）。
+ *  只填欄位、不直接送出——同名不同人在實務上很常見，最後仍要由管理員確認。 */
+function AttendeeFinder({
+  rosterNames,
+  onPick,
+}: {
+  rosterNames: Set<string>;
+  onPick: (c: AttendeeCandidate) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<{ key: string; rows: AttendeeCandidate[] } | null>(
+    null,
+  );
+  const [searching, startSearch] = useTransition();
+  const term = q.trim();
+  const current = results?.key === term ? results.rows : null;
+
+  // debounce 350ms；server action 是循序 POST，需擋過期回應（同群發試算那套）
+  useEffect(() => {
+    if (!isSearchableQuery(term)) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      startSearch(async () => {
+        const rows = await searchAttendeeAction(term);
+        if (alive) setResults({ key: term, rows });
+      });
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [term]);
+
+  return (
+    <div className="rounded-lg bg-gray-50 px-3 py-2">
+      <label className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+        🔍 先找找看系統裡有沒有這個人
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="輸入姓名、手機或 Email（中文一個字即可）"
+          // type=search 才有清除鈕；不放在 form 的具名欄位裡，不會被一起送出
+          type="search"
+          className="min-w-64 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+        />
+      </label>
+
+      {isSearchableQuery(term) && (
+        <div className="mt-2">
+          {searching || !current ? (
+            <p className="text-xs text-gray-400">搜尋中…</p>
+          ) : current.length === 0 ? (
+            <p className="text-xs text-gray-400">
+              查無資料——這位可能是全新的學員，直接在下方填寫即可。
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-white">
+              {current.map((c, i) => {
+                const already = rosterNames.has(c.name.trim().toLowerCase());
+                return (
+                  <li key={`${c.phone ?? c.email ?? c.name}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPick(c);
+                        setQ("");
+                        setResults(null);
+                      }}
+                      className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1.5 text-left text-sm hover:bg-indigo-50"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      {c.isMember && (
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800">
+                          會員
+                        </span>
+                      )}
+                      {already && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                          已在本場名單
+                        </span>
+                      )}
+                      <span className="font-mono text-xs text-gray-500">
+                        {c.phone ? formatMobile(c.phone) : "無手機"}
+                      </span>
+                      <span className="text-xs text-gray-400">{c.email ?? "無 Email"}</span>
+                      <span className="w-full text-xs text-gray-400">
+                        {c.sources.join("・")}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="mt-1 text-xs text-gray-400">
+            點一下即帶入下方欄位（只填不送出，仍可自行修改）。同名不同人請比對手機再選。
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddSignupForm({
+  sessionId,
+  rosterNames,
+}: {
+  sessionId: string;
+  /** 本場已在名單的人（姓名小寫）；找人結果標「已在名單」，免得重複加 */
+  rosterNames: Set<string>;
+}) {
   const [state, action, pending] = useActionState<SessionFormState, FormData>(
     addSignupAction.bind(null, sessionId),
     null,
@@ -474,6 +601,18 @@ function AddSignupForm({ sessionId }: { sessionId: string }) {
       <div className="text-xs font-medium text-gray-500">
         手動新增報名（電話報名、現金付款、特殊訂單等不經訂單檔的情況）
       </div>
+
+      {/* 找人：多數手動新增的對象系統裡早就有資料（會員或曾報名過別場），
+          重打一次不只費事，還會打出對不起來的姓名／號碼變成新的髒資料 */}
+      <AttendeeFinder
+        rosterNames={rosterNames}
+        onPick={(c) => {
+          setName(c.name);
+          if (c.phone) setPhone(c.phone);
+          if (c.email) setEmail(c.email);
+        }}
+      />
+
       <div className="flex flex-wrap gap-2">
         <input
           name="name"
@@ -1030,7 +1169,18 @@ export function SessionCard({
 
         {canEdit && <LiveInfoForm session={session} />}
 
-        {canEdit && <AddSignupForm sessionId={session.id} />}
+        {canEdit && (
+          <AddSignupForm
+            sessionId={session.id}
+            rosterNames={
+              new Set(
+                session.signups
+                  .filter((g) => !g.deferredToSessionId)
+                  .map((g) => g.name.trim().toLowerCase()),
+              )
+            }
+          />
+        )}
 
         {canEdit && session.signups.length > 0 && (
           <>

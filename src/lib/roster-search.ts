@@ -10,6 +10,19 @@ export function normalizeQuery(s: string | null | undefined): string {
   return (s ?? "").replace(/\s+/g, "").toLowerCase();
 }
 
+/** 這個關鍵字夠不夠具體，值得送出查詢？
+ *
+ *  中文一個字就有篩選力（姓氏——正式站光是姓陳的會員就有 53 位，
+ *  「陳」是完全合理的查詢起點），英數則至少要兩個字元，
+ *  否則「a」會把幾百筆全撈回來，等於沒篩。
+ *  客戶端的輸入閘門與伺服器端的查詢閘門共用這一支，兩邊門檻才不會不一致。 */
+export function isSearchableQuery(q: string | null | undefined): boolean {
+  const t = (q ?? "").trim();
+  if (!t) return false;
+  // CJK 統一表意文字（含擴充 A）與相容表意文字
+  return /[\u3400-\u9fff\uf900-\ufaff]/.test(t) ? t.length >= 1 : t.length >= 2;
+}
+
 /** 任一欄位含關鍵字即命中。query 必須是 normalizeQuery 過的字串。 */
 export function matchesText(query: string, ...fields: (string | null | undefined)[]): boolean {
   return fields.some((f) => f && normalizeQuery(f).includes(query));

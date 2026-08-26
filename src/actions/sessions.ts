@@ -6,6 +6,8 @@ import { requireEditor } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
 import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { findStudentByPhone } from "@/lib/student-history";
+import { getProfilesByIds, searchProfiles } from "@/lib/supabase/admin";
+import { isSearchableQuery } from "@/lib/roster-search";
 import {
   isRetrainProduct,
   assignGroups,
@@ -640,6 +642,183 @@ export async function uploadOrdersAction(
   } catch (e) {
     return { error: e instanceof Error ? e.message : "解析失敗，請確認檔案格式" };
   }
+}
+
+// ── 手動新增報名的「找人」搜尋 ──
+
+/** 一位候選人。sources = 這個人在系統裡的哪些地方出現過（讓管理員判斷是不是同一人）。 */
+export type AttendeeCandidate = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  isMember: boolean; // 是否為已註冊會員
+  sources: string[];
+};
+
+const CANDIDATE_LIMIT = 8;
+
+/** 手動新增報名時的「找人」：輸入姓名／手機／Email 的一部分，把系統裡已有的人撈出來。
+ *
+ *  資料來源刻意是這三個，理由是命中率：
+ *    會員（QBC profiles，647 筆）      姓名／Email 搜得到，但只有少數人填過手機
+ *    既有場次名單（SessionSignup）      1shop 訂單匯進來的，手機最齊全
+ *    學員資料庫（StudentRecord）        歷史學員，目前幾乎是空的但查了不虧
+ *
+ *  合併規則：手機優先當識別鍵（夫妻／親子共用信箱在實務上很常見，用 email 當鍵會把
+ *  兩個人併成一個），沒手機才退回 email，都沒有才用姓名。
+ *  這與 session-roster 的 isSamePerson 是同一套思路。 */
+export async function searchAttendeeAction(
+  query: string,
+): Promise<AttendeeCandidate[]> {
+  await requireEditor();
+  const q = query.trim();
+  // 中文一個字（姓氏）就查得有意義，英數要兩個字元；與客戶端同一支判斷
+  if (!isSearchableQuery(q)) return [];
+
+  const lower = q.toLowerCase();
+  // 輸入看起來像號碼就一併用正規化後的樣子去比對（09-1234-5678 / +886912345678）
+  const asPhone = normalizeContactPhone(q);
+  const digits = q.replace(/\D/g, "");
+  const contains = { contains: q, mode: "insensitive" as const };
+
+  const [profiles, signups, students, memberPhones] = await Promise.all([
+    searchProfiles(q, 20),
+    prisma.sessionSignup.findMany({
+      where: {
+        OR: [
+          { name: contains },
+          { email: contains },
+          ...(digits.length >= 3
+            ? [{ phone: { contains: digits } }, ...(asPhone ? [{ phone: asPhone }] : [])]
+            : []),
+        ],
+      },
+      select: {
+        name: true,
+        phone: true,
+        email: true,
+        session: { select: { title: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    }),
+    prisma.studentRecord.findMany({
+      where: {
+        OR: [
+          { name: contains },
+          { email: contains },
+          ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []),
+        ],
+      },
+      select: { name: true, phone: true, email: true },
+      take: 20,
+    }),
+    // 會員的手機在 course schema，profiles 裡沒有；用手機搜時要靠這張表才找得到會員
+    digits.length >= 3
+      ? prisma.memberProfile.findMany({
+          where: { phone: { contains: digits } },
+          select: { userId: true, phone: true },
+          take: 20,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  // 用手機命中的會員，回頭補他的姓名與 email
+  const phoneMemberProfiles = memberPhones.length
+    ? await getProfilesByIds(memberPhones.map((m) => m.userId))
+    : [];
+  const phoneByUserId = new Map(memberPhones.map((m) => [m.userId, m.phone]));
+
+  // 會員 email → 手機（讓姓名搜到的會員也帶得出號碼）
+  const memberEmails = profiles.map((p) => p.email).filter((e): e is string => !!e);
+  const emailToPhone = new Map<string, string>();
+  if (memberEmails.length > 0) {
+    const ids = profiles.filter((p) => p.email).map((p) => p.id);
+    const rows = await prisma.memberProfile.findMany({
+      where: { userId: { in: ids } },
+      select: { userId: true, phone: true },
+    });
+    const byId = new Map(rows.map((r) => [r.userId, r.phone]));
+    for (const p of profiles) {
+      const ph = byId.get(p.id);
+      if (p.email && ph) emailToPhone.set(p.email.toLowerCase(), ph);
+    }
+  }
+
+  const merged = new Map<string, AttendeeCandidate>();
+  const add = (c: {
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+    isMember?: boolean;
+    source: string;
+  }) => {
+    const name = c.name?.trim();
+    if (!name) return;
+    const phone = c.phone?.trim() || null;
+    const email = c.email?.trim().toLowerCase() || null;
+    // 手機 > email > 姓名：共用信箱的兩個人不能被併成一筆
+    const key = phone ? `p:${phone}` : email ? `e:${email}` : `n:${name}`;
+    const cur = merged.get(key);
+    if (!cur) {
+      merged.set(key, {
+        name,
+        phone,
+        email,
+        isMember: !!c.isMember,
+        sources: [c.source],
+      });
+      return;
+    }
+    // 已有的欄位不覆蓋，只補空的——先進來的來源比較可靠（會員資料 > 訂單名單）
+    cur.phone ??= phone;
+    cur.email ??= email;
+    cur.isMember ||= !!c.isMember;
+    if (!cur.sources.includes(c.source)) cur.sources.push(c.source);
+  };
+
+  for (const p of profiles) {
+    add({
+      name: p.display_name || p.nickname || p.email || "",
+      email: p.email,
+      phone: p.email ? (emailToPhone.get(p.email.toLowerCase()) ?? null) : null,
+      isMember: true,
+      source: "會員",
+    });
+  }
+  for (const p of phoneMemberProfiles) {
+    add({
+      name: p.display_name || p.nickname || p.email || "",
+      email: p.email,
+      phone: phoneByUserId.get(p.id) ?? null,
+      isMember: true,
+      source: "會員",
+    });
+  }
+  for (const s of signups) {
+    add({
+      name: s.name,
+      phone: s.phone,
+      email: s.email,
+      source: `曾報名「${s.session.title}」`,
+    });
+  }
+  for (const s of students) {
+    add({
+      name: s.name ?? "",
+      phone: s.phone,
+      email: s.email,
+      source: "學員資料庫",
+    });
+  }
+
+  // 完全比中的排前面（打全名/全號碼時最想要的那筆不該被埋在下面）
+  const score = (c: AttendeeCandidate) =>
+    (c.name.toLowerCase() === lower || c.phone === asPhone ? 0 : 1) +
+    (c.isMember ? 0 : 0.5);
+  return [...merged.values()]
+    .sort((a, b) => score(a) - score(b))
+    .slice(0, CANDIDATE_LIMIT);
 }
 
 // ── 上課連結（/live 憑碼索取）──
