@@ -7,7 +7,7 @@ import { buildContentHtml } from "@/lib/email/render-content";
 import { LiveLoginForm, CopyButton } from "./live-form";
 
 export const metadata = {
-  title: "線上上課資訊",
+  title: "上課連結",
   // 這頁的內容是憑碼才看得到的上課連結，不該進搜尋引擎
   robots: { index: false, follow: false },
 };
@@ -33,7 +33,7 @@ export default async function LivePage({
             e === "locked"
               ? "嘗試次數過多，請 15 分鐘後再試"
               : e === "bad"
-                ? "連結中的查看碼無效，或這堂課尚未開放／已結束。可改用下方手動輸入。"
+                ? "連結中的上課碼無效，或這堂課尚未開放／已結束。可改用下方手動輸入。"
                 : null
           }
         />
@@ -62,11 +62,11 @@ export default async function LivePage({
     return (
       <main className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-6 text-center">
         <p className="text-gray-500">
-          這堂課的上課資訊已關閉（課程已結束或連結已撤下）。
+          這堂課的上課連結已關閉（課程已結束或連結已撤下）。
         </p>
         <form action={liveLogoutAction}>
           <button className="rounded-lg border border-gray-300 px-4 py-2 text-sm transition hover:bg-gray-50">
-            輸入其他查看碼
+            輸入其他上課碼
           </button>
         </form>
       </main>
@@ -80,7 +80,7 @@ export default async function LivePage({
   return (
     <main className="mx-auto max-w-lg px-6 py-10">
       <header className="mb-6">
-        <p className="text-sm text-gray-400">線上上課資訊</p>
+        <p className="text-sm text-gray-400">上課連結</p>
         <h1 className="mt-1 text-2xl font-bold">{session.title}</h1>
         {session.eventDate && (
           <p className="mt-1 text-sm text-gray-500">
@@ -156,11 +156,11 @@ export default async function LivePage({
             minute: "2-digit",
             hour12: false,
           })}{" "}
-          後需重新輸入查看碼
+          後需重新輸入上課碼
         </span>
         <form action={liveLogoutAction}>
           <button className="rounded-lg border border-gray-300 px-2.5 py-1 transition hover:bg-gray-50">
-            輸入其他查看碼
+            輸入其他上課碼
           </button>
         </form>
       </footer>

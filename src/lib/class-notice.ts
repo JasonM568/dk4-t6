@@ -71,7 +71,7 @@ export function buildClassNoticeEmail(s: NoticeSession): {
     lines.push(`[取得上課連結](https://${LIVE_URL})`);
     lines.push("");
     lines.push(
-      `若按鈕無法點擊，請於瀏覽器開啟 course.huangxi.info/live 並輸入查看碼 {code}。`,
+      `若按鈕無法點擊，請於瀏覽器開啟 course.huangxi.info/live 並輸入上課碼 {code}。`,
     );
     lines.push("");
   }

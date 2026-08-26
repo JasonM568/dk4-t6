@@ -39,7 +39,7 @@ export type SessionAudiencePreview = {
   duplicateCount: number; // 跨場次重複報名的筆數
   unsubscribedCount: number;
   sendableCount: number;
-  /** 名單中有幾個人拿得到 {code}（所屬場次已設查看碼）。
+  /** 名單中有幾個人拿得到 {code}（所屬場次已設上課碼）。
    *  內文用了 {code} 但這個數字小於可寄人數 = 有人會收到一封沒有碼的信。 */
   withCodeCount: number;
 };

@@ -2,7 +2,7 @@
 // 放這裡而不是 dispatch.ts：dispatch 是 server-only，後台表單（client component）不該 import 它。
 //（同 email/audience.ts 的既有做法）
 
-/** code = 該收件人所屬場次的 /live 查看碼（{code} 變數用）。
+/** code = 該收件人所屬場次的 /live 上課碼（{code} 變數用）。
  *  跨場次群發時每個人的碼不同，所以綁在收件人身上而不是整批共用一個。 */
 export type SmsRecipient = { mobile: string; name?: string; code?: string };
 
@@ -22,7 +22,7 @@ export type SmsAudiencePreview = {
   optedOutCount: number; // 因退訂／無法送達被排除
   sendableCount: number; // 實際會送出的人數
   maxNameLength: number; // 名單中最長姓名字數；{name} 變數的字數上界估算用
-  /** 名單中有幾個人拿得到 {code}（所屬場次已設查看碼）。
+  /** 名單中有幾個人拿得到 {code}（所屬場次已設上課碼）。
    *  內文用了 {code} 但這個數字小於可發人數 = 有人會收到一則沒有碼的簡訊，
    *  發送前必須讓操作者看到。 */
   withCodeCount: number;

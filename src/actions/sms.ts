@@ -28,8 +28,8 @@ export type SmsState = {
   isDraft?: boolean; // 表單據此把後續的「存草稿」導回同一筆，不會每按一次就多一則
 } | null;
 
-/** 手動貼入的名單：一行一筆「手機,姓名,查看碼」（後兩欄選填）。
- *  第三欄是補發時自動帶入的 /live 查看碼，手動貼名單時通常不會有。
+/** 手動貼入的名單：一行一筆「手機,姓名,上課碼」（後兩欄選填）。
+ *  第三欄是補發時自動帶入的 /live 上課碼，手動貼名單時通常不會有。
  *  回傳可用列與無法辨識的行數。 */
 function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number } {
   const rows: SmsManualRow[] = [];
@@ -196,7 +196,7 @@ export async function sendSmsTestAction(
       error: `測試號碼${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}`,
     };
 
-  // {code} 帶入真正的查看碼：測試簡訊留白會讓人以為功能壞了，
+  // {code} 帶入真正的上課碼：測試簡訊留白會讓人以為功能壞了，
   // 也會讓則數估算失準（碼固定 4 字）。多選場次時取第一場
   const testSessionId = String(formData.get("testSessionId") ?? "").trim();
   const testCode = testSessionId

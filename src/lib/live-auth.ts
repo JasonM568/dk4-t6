@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { getBoardClientIp } from "@/lib/board-auth";
 
-// 線上上課資訊頁（/live）的 4 位查看碼閘門。
+// 上課連結頁（/live）的 4 位上課碼閘門。
 // 與 /board 的差別（刻意不共用同一把鎖）：
 //   /board  一組全站碼 → 看得到所有場次的報名名單（工作人員／合作方用）
 //   /live   一場一組碼 → 只看得到那一場的會議連結與課程資料（學員用）
@@ -20,7 +20,7 @@ const TOKEN_VERSION = "lv1";
 // HMAC 訊息前綴：與 board token 做網域分離，board 的簽章永遠驗不過這裡（反之亦然）
 const HMAC_NS = "live-v1";
 
-// 查看碼有效時長：課程當天用得到就好，不需要長期有效
+// 上課碼有效時長：課程當天用得到就好，不需要長期有效
 const SESSION_HOURS = 12;
 
 /** 沿用 BOARD_SESSION_SECRET（同一個信任網域、同一批管理員維運），
@@ -31,7 +31,7 @@ function liveSecret(): string | null {
   const s = process.env.BOARD_SESSION_SECRET;
   if (!s || s.trim().length < 32) {
     console.error(
-      "[live-auth] BOARD_SESSION_SECRET 未設定或長度不足 32 字元，線上上課頁停用",
+      "[live-auth] BOARD_SESSION_SECRET 未設定或長度不足 32 字元，上課連結頁停用",
     );
     return null;
   }
@@ -94,7 +94,7 @@ export function verifyLiveToken(
     : null;
 }
 
-/** 恆定時間比對查看碼（先雜湊拉平長度差，時序不洩漏正確位數） */
+/** 恆定時間比對上課碼（先雜湊拉平長度差，時序不洩漏正確位數） */
 export function liveCodeEquals(input: string, code: string): boolean {
   const a = createHash("sha256").update(input).digest();
   const b = createHash("sha256").update(code).digest();
@@ -181,7 +181,7 @@ export async function recordLiveLoginFail(ip: string): Promise<void> {
     GLOBAL_LOCK_MS,
   );
   if (globalLocked) {
-    console.error("[live-auth] 全域查看碼錯誤次數異常，線上上課頁冷卻 30 分鐘");
+    console.error("[live-auth] 全域上課碼錯誤次數異常，上課連結頁冷卻 30 分鐘");
   }
 }
 

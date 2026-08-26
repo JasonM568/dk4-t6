@@ -317,7 +317,7 @@ export function BroadcastForm({
               <button
                 type="button"
                 onClick={() => insertVar("{code}")}
-                title="插入該場次的 /live 查看碼（僅「場次報名者」對象有值）"
+                title="插入該場次的 /live 上課碼（僅「場次報名者」對象有值）"
                 className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
               >
                 {"{code}"}
@@ -435,7 +435,7 @@ export function BroadcastForm({
             <br />
             可用變數：<span className="font-mono">{"{email}"}</span>＝收件人 email、
             <span className="font-mono">{"{name}"}</span>＝姓名、
-            <span className="font-mono">{"{code}"}</span>＝該場次的線上上課查看碼
+            <span className="font-mono">{"{code}"}</span>＝該場次的上課碼
             （學員到 course.huangxi.info/live 輸入即可取得 Zoom 連結；
             只有「場次報名者」對象有值）。寄出時自動帶入每位收件人，沒有值的會留空。
             <br />
@@ -676,14 +676,14 @@ export function BroadcastForm({
                                   sessionPreview.withCodeCount}{" "}
                                 人
                               </strong>
-                              所屬場次還沒設查看碼，信裡會是空白。請先到
+                              所屬場次還沒設上課碼，信裡會是空白。請先到
                               <Link
                                 href="/admin/sessions"
                                 className="mx-1 font-medium underline"
                               >
                                 場次看板
                               </Link>
-                              設定「線上上課資訊」。
+                              設定「上課連結」。
                             </div>
                           )}
                         {(sessionPreview.noEmailCount > 0 ||

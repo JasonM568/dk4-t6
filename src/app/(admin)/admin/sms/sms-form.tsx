@@ -121,7 +121,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
   const sampleText = `${brandPrefix}${body
     .replace(/\{name\}/g, "王小明")
     .replace(/\{mobile\}/g, "0912345678")
-    // 查看碼固定 4 位，估算字數不會有誤差
+    // 上課碼固定 4 位，估算字數不會有誤差
     .replace(/\{code\}/g, "8241")}`;
   const count = countSms(sampleText);
   const bodyHasEmoji = hasEmoji(body);
@@ -266,12 +266,12 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
               <button
                 type="button"
                 onClick={() => setBody((b) => b + "{code}")}
-                title="該場次的 /live 查看碼；學員憑碼取得 Zoom 連結"
+                title="該場次的 /live 上課碼；學員憑碼取得 Zoom 連結"
                 className="mx-1 rounded border border-gray-300 px-1.5 py-0.5 hover:bg-gray-50"
               >
                 {"{code}"}
               </button>
-              查看碼
+              上課碼
             </span>
             <span className={count.segments > 1 ? "text-amber-600" : "text-gray-400"}>
               含品牌標示共 {count.length} 字 · <strong>{count.segments} 則</strong>
@@ -329,10 +329,10 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                       <span className="text-xs text-gray-400">（{s.signupCount} 人報名）</span>
                       {s.accessCode ? (
                         <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">
-                          查看碼 {s.accessCode}
+                          上課碼 {s.accessCode}
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-300">未設查看碼</span>
+                        <span className="text-xs text-gray-300">未設上課碼</span>
                       )}
                     </label>
                   ))
@@ -391,8 +391,8 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                           <strong>
                             {current.sendableCount - current.withCodeCount} 人
                           </strong>
-                          所屬場次還沒設查看碼，他們收到的會是一則沒有碼的簡訊。
-                          請先到場次看板設定「線上上課資訊」。
+                          所屬場次還沒設上課碼，他們收到的會是一則沒有碼的簡訊。
+                          請先到場次看板設定「上課連結」。
                         </div>
                       )}
                     <div className="mt-0.5 border-t border-indigo-200 pt-1 font-bold">

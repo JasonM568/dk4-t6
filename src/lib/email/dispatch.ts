@@ -91,7 +91,7 @@ async function collectSessionSignups(sessionIds: string[]) {
       sessionId: true,
       email: true,
       name: true,
-      // {code} 變數用：該場次的 /live 查看碼（沒設就是 null）
+      // {code} 變數用：該場次的 /live 上課碼（沒設就是 null）
       session: { select: { accessCode: true } },
     },
   });

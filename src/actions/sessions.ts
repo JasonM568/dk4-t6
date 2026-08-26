@@ -642,9 +642,9 @@ export async function uploadOrdersAction(
   }
 }
 
-// ── 線上上課資訊（/live 憑碼索取）──
+// ── 上課連結（/live 憑碼索取）──
 
-/** 產生一組沒被別的場次用掉的 4 位查看碼。
+/** 產生一組沒被別的場次用掉的 4 位上課碼。
  *  10000 組空間、實際同時開放的場次只有個位數，碰撞機率極低；
  *  仍然重試而不是硬寫入，因為 accessCode 是唯一鍵，撞到就是一個 500。 */
 async function generateAccessCode(): Promise<string | null> {
@@ -661,8 +661,8 @@ async function generateAccessCode(): Promise<string | null> {
   return null;
 }
 
-/** 儲存這場的線上上課資訊。填了會議連結但還沒有查看碼時自動配一組。
- *  清空會議連結 = 關閉索取：連查看碼一起清掉，已發出的 cookie 立刻失效
+/** 儲存這場的上課連結設定。填了會議連結但還沒有上課碼時自動配一組。
+ *  清空會議連結 = 關閉索取：連上課碼一起清掉，已發出的 cookie 立刻失效
  *  （live-auth 驗簽時會重新撈碼，碼沒了就驗不過）。 */
 export async function saveSessionLiveAction(
   sessionId: string,
@@ -712,24 +712,24 @@ export async function saveSessionLiveAction(
     revalidatePath("/admin/sessions");
     revalidatePath("/live");
     return {
-      success: `已關閉「${session.title}」的線上上課資訊索取（查看碼已作廢）`,
+      success: `已關閉「${session.title}」的上課連結索取（上課碼已作廢）`,
     };
   }
 
   let accessCode = session.accessCode;
   if (regenerate || !accessCode) {
     const next = await generateAccessCode();
-    if (!next) return { error: "查看碼產生失敗（可用組合已滿），請稍後再試" };
+    if (!next) return { error: "上課碼產生失敗（可用組合已滿），請稍後再試" };
     accessCode = next;
   } else if (codeInput && codeInput !== accessCode) {
     // 管理員手動指定碼（想用好記的號碼）
-    if (!/^\d{4}$/.test(codeInput)) return { error: "查看碼須為 4 位數字" };
+    if (!/^\d{4}$/.test(codeInput)) return { error: "上課碼須為 4 位數字" };
     const taken = await prisma.courseSession.findUnique({
       where: { accessCode: codeInput },
       select: { id: true },
     });
     if (taken && taken.id !== sessionId)
-      return { error: `查看碼 ${codeInput} 已被其他場次使用，請換一組` };
+      return { error: `上課碼 ${codeInput} 已被其他場次使用，請換一組` };
     accessCode = codeInput;
   }
 
@@ -747,9 +747,9 @@ export async function saveSessionLiveAction(
   revalidatePath("/live");
   return {
     success:
-      `已儲存。學員到 course.huangxi.info/live 輸入查看碼 ${accessCode} 即可看到連結` +
+      `已儲存。學員到 course.huangxi.info/live 輸入上課碼 ${accessCode} 即可看到連結` +
       (regenerate || accessCode !== session.accessCode
-        ? "（查看碼已更新，舊碼與已開啟的頁面立即失效）"
+        ? "（上課碼已更新，舊碼與已開啟的頁面立即失效）"
         : ""),
   };
 }

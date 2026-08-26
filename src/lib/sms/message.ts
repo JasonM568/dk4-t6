@@ -66,7 +66,7 @@ export function applySmsMergeTags(
   return text
     .replace(/\{name\}/g, r.name ?? "")
     .replace(/\{mobile\}/g, r.mobile)
-    // {code} = 該場次的 /live 查看碼；沒設碼的場次留空（同 {name} 的處理），
+    // {code} = 該場次的 /live 上課碼；沒設碼的場次留空（同 {name} 的處理），
     // 「有沒有人會收到空的」由發送前試算的 withCodeCount 負責提醒
     .replace(/\{code\}/g, r.code ?? "");
 }

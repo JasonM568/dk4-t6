@@ -64,7 +64,7 @@ export type SessionRow = {
   adminNote: string | null;
   groupCap: number;
   groupCaps: number[]; // 逐組上限覆寫（index 0 = 第 1 組；0 = 用預設）
-  // 線上上課資訊（/live 憑碼索取）；accessCode 有值 = 這場已開放索取
+  // 上課連結（/live 憑碼索取）；accessCode 有值 = 這場已開放索取
   accessCode: string | null;
   meetingUrl: string | null;
   meetingId: string | null;
@@ -670,8 +670,8 @@ function GroupPanel({ session }: { session: SessionRow }) {
   );
 }
 
-/** 線上場次的上課資訊：Zoom 連結、會議 ID／密碼、課程資料，以及學員索取用的 4 位查看碼。
- *  發簡訊時把查看碼寫進去，學員到 /live 輸入即可自行取得連結。 */
+/** 線上場次的上課資訊：Zoom 連結、會議 ID／密碼、課程資料，以及學員索取用的 4 位上課碼。
+ *  發簡訊時把上課碼寫進去，學員到 /live 輸入即可自行取得連結。 */
 function LiveInfoForm({ session }: { session: SessionRow }) {
   const [state, action, pending] = useActionState<SessionFormState, FormData>(
     saveSessionLiveAction.bind(null, session.id),
@@ -682,10 +682,10 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
   return (
     <details className="rounded-lg border border-sky-200 bg-sky-50/40" open={open}>
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-sky-800">
-        🎥 線上上課資訊（Zoom 連結／查看碼）
+        🎥 上課連結（Zoom／上課碼）
         {session.accessCode ? (
           <span className="ml-1 font-normal text-sky-600">
-            — 已開放，查看碼 {session.accessCode}
+            — 已開放，上課碼 {session.accessCode}
           </span>
         ) : (
           <span className="ml-1 font-normal text-gray-400">— 尚未設定</span>
@@ -695,7 +695,7 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
         <input type="hidden" name="regenerate" value={regenerate ? "1" : "0"} />
         <label className="block">
           <span className="mb-1 block text-xs text-gray-600">
-            會議連結（Zoom 等，完整網址；清空並儲存＝關閉索取並作廢查看碼）
+            會議連結（Zoom 等，完整網址；清空並儲存＝關閉索取並作廢上課碼）
           </span>
           <input
             name="meetingUrl"
@@ -727,7 +727,7 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
             />
           </label>
           <label className="flex items-center gap-1.5 text-xs text-gray-600">
-            查看碼
+            上課碼
             <input
               name="accessCode"
               inputMode="numeric"
@@ -768,7 +768,7 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
             disabled={pending}
             className="rounded-lg border border-sky-400 px-3 py-1.5 text-sm text-sky-800 transition hover:bg-sky-100 disabled:opacity-50"
           >
-            {pending ? "儲存中…" : "儲存上課資訊"}
+            {pending ? "儲存中…" : "儲存上課連結"}
           </button>
           {session.accessCode && (
             // 預覽：直接用一鍵連結開，看到的就是學員看到的那一頁
@@ -795,7 +795,7 @@ function LiveInfoForm({ session }: { session: SessionRow }) {
               </span>
             </p>
             <p>
-              手動輸入：course.huangxi.info/live 　查看碼{" "}
+              手動輸入：course.huangxi.info/live 　上課碼{" "}
               <span className="font-mono text-gray-700">{session.accessCode}</span>
             </p>
             <p className="text-gray-400">
@@ -937,7 +937,7 @@ export function SessionCard({
             className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-800"
             title="已開放 /live 憑碼索取上課連結"
           >
-            🎥 查看碼 {session.accessCode}
+            🎥 上課碼 {session.accessCode}
           </span>
         )}
         {session.isVisible && hasEndedInTaipei(session.endDate ?? session.eventDate) && (

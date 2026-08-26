@@ -1,4 +1,4 @@
-/* /live 查看碼閘門驗證（會寫入資料庫，**只能對本機 localhost 跑**）。
+/* /live 上課碼閘門驗證（會寫入資料庫，**只能對本機 localhost 跑**）。
  *
  * 這是一個公開頁面上的鎖，所以驗的是「拿不到的人真的拿不到」：
  * 跨場次重放、改碼後的舊 cookie、竄改的簽章、過期。
@@ -83,7 +83,7 @@ async function main() {
       verifyLiveToken(`v1.${Date.now() + 60000}.${"0".repeat(16)}.${"0".repeat(64)}`, codeOf) === null,
     );
 
-    console.log("\n查看碼唯一");
+    console.log("\n上課碼唯一");
     let dup = false;
     try {
       await prisma.courseSession.create({

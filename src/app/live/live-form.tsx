@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { liveLoginAction, type LiveLoginState } from "@/actions/live";
 
-/** 4 位查看碼輸入表單（簡訊上的碼）。
+/** 4 位上課碼輸入表單（簡訊上的碼）。
  *  linkError = 從 /live/<碼> 一鍵連結進來但驗失敗的原因，先講清楚再讓他手動輸入 */
 export function LiveLoginForm({ linkError }: { linkError?: string | null }) {
   const [state, action, pending] = useActionState<LiveLoginState, FormData>(
@@ -13,9 +13,9 @@ export function LiveLoginForm({ linkError }: { linkError?: string | null }) {
   return (
     <form action={action} className="w-full max-w-xs space-y-4 text-center">
       <div className="text-4xl">🎥</div>
-      <h1 className="text-xl font-bold">線上上課資訊</h1>
+      <h1 className="text-xl font-bold">上課連結</h1>
       <p className="text-sm text-gray-500">
-        輸入簡訊／通知信裡的 4 位查看碼，取得上課連結與課程資料
+        輸入簡訊／通知信裡的 4 位上課碼，取得上課連結與課程資料
       </p>
       <input
         name="code"
@@ -32,13 +32,13 @@ export function LiveLoginForm({ linkError }: { linkError?: string | null }) {
         disabled={pending}
         className="w-full rounded-xl bg-black px-4 py-3 font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
       >
-        {pending ? "查詢中…" : "查看上課資訊"}
+        {pending ? "查詢中…" : "取得上課連結"}
       </button>
       {(state?.error || linkError) && (
         <p className="text-sm text-red-600">{state?.error ?? linkError}</p>
       )}
       <p className="pt-2 text-xs text-gray-400">
-        找不到查看碼？請洽客服，或回覆您收到的上課通知簡訊。
+        找不到上課碼？請洽客服，或回覆您收到的上課通知簡訊。
       </p>
     </form>
   );

@@ -1122,7 +1122,7 @@ export async function sendBroadcastAction(
   // 測試模式：只寄給自己（發送對象與排程時間不影響測試信；不過濾退訂名單，版面所見即所寄）
   if (mode === "test") {
     if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
-    // {code} 帶入真正的查看碼：測試信是版面確認的唯一管道，
+    // {code} 帶入真正的上課碼：測試信是版面確認的唯一管道，
     // 這裡留白會讓人以為功能壞了。多選場次時取第一場（示意用途）
     const testCode =
       audience === "session" && sessionIds.length > 0
@@ -1317,7 +1317,7 @@ export async function updateBroadcastAction(
   // 測試信：不動紀錄
   if (mode === "test") {
     if (!admin?.email) return { error: "讀不到你的 email，無法寄測試信" };
-    // {code} 帶入真正的查看碼：測試信是版面確認的唯一管道，
+    // {code} 帶入真正的上課碼：測試信是版面確認的唯一管道，
     // 這裡留白會讓人以為功能壞了。多選場次時取第一場（示意用途）
     const testCode =
       audience === "session" && sessionIds.length > 0

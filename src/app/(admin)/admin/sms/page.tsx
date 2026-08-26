@@ -44,7 +44,7 @@ function manualRowsToText(rows: unknown): string {
       };
       if (typeof mobile !== "string" || !mobile) return "";
       const nm = typeof name === "string" ? name : "";
-      // 第三欄是補發帶過來的查看碼；有碼就得連空姓名的逗號一起補上，
+      // 第三欄是補發帶過來的上課碼；有碼就得連空姓名的逗號一起補上，
       // 否則碼會被當成姓名解析回去
       if (typeof code === "string" && /^\d{4}$/.test(code))
         return `${mobile},${nm},${code}`;
@@ -110,7 +110,7 @@ export default async function SmsPage({
         sessionIds: followUp ? [] : source.sessionIds,
         manualList: followUp
           ? followUp.rows
-              // 第三欄是查看碼：有碼就得連空姓名的逗號一起補，否則碼會被當成姓名讀回去
+              // 第三欄是上課碼：有碼就得連空姓名的逗號一起補，否則碼會被當成姓名讀回去
               .map((r) =>
                 r.code
                   ? `${r.mobile},${r.name ?? ""},${r.code}`
