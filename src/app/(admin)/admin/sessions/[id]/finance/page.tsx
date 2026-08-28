@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { pageGuardEditor } from "@/lib/auth/staff";
+import { pageGuardFullAdmin } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { getFinanceSettings } from "@/lib/finance/settings";
 import {
@@ -14,13 +14,14 @@ export const metadata = { title: "場次收支 — 管理後台" };
 export const dynamic = "force-dynamic";
 
 // 單場收支結算：三段結構（收入／支出／分潤）與他的 Excel 收支表 1:1。
-// 分潤金額是內部薪酬——頁面走 pageGuardEditor，總教練（coach）進不來。
+// 分潤金額是內部薪酬——僅管理員（pageGuardFullAdmin）；
+// 操作人員（operator）與總教練（coach）都進不來，入口按鈕也只對管理員顯示。
 export default async function SessionFinancePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await pageGuardEditor();
+  await pageGuardFullAdmin();
   const { id } = await params;
 
   const [session, orders, storedCosts, storedShares, settings, signupStats] =

@@ -62,7 +62,7 @@ export default async function AdminLayout({
           )}
         </nav>
       </div>
-      <AdminSubNav canEdit={editor} />
+      <AdminSubNav canEdit={editor} isAdmin={admin} />
       {children}
     </div>
   );

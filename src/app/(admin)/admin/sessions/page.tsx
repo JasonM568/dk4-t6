@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { currentCanEdit } from "@/lib/auth/staff";
+import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
 import {
   BoardCodeForm,
   CreateSessionForm,
@@ -10,7 +10,7 @@ import {
 export const metadata = { title: "場次看板 — 管理後台" };
 
 export default async function AdminSessionsPage() {
-  const [sessions, boardCode, boardHours, canEditNow] = await Promise.all([
+  const [sessions, boardCode, boardHours, canEditNow, roleNow] = await Promise.all([
     prisma.courseSession.findMany({
       orderBy: [{ sortOrder: "asc" }, { eventDate: "desc" }, { createdAt: "desc" }],
       include: { signups: { orderBy: { orderedAt: "asc" } } },
@@ -18,7 +18,9 @@ export default async function AdminSessionsPage() {
     prisma.siteSetting.findUnique({ where: { key: "boardCode" } }),
     prisma.siteSetting.findUnique({ where: { key: "boardSessionHours" } }),
     currentCanEdit(),
+    currentStaffRole(),
   ]);
+  const isAdminNow = roleNow === "admin";
   const hoursNum = Number(boardHours?.value);
   const currentHours = Number.isFinite(hoursNum)
     ? Math.min(24, Math.max(1, Math.round(hoursNum)))
@@ -76,6 +78,7 @@ export default async function AdminSessionsPage() {
           <SessionCard
             key={s.id}
             canEdit={canEditNow}
+            isAdmin={isAdminNow}
             // 延期目標選單與「延期→/延期自」徽章要能解析其他場次的名稱
             sessionOptions={sessions.map((o) => ({ id: o.id, title: o.title }))}
             session={{

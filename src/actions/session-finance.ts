@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireEditor } from "@/lib/auth/staff";
+import { requireFullAdmin } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
 import { roundNT } from "@/lib/finance/compute";
 import { normalizePaymentMethod } from "@/lib/finance/labels";
@@ -13,6 +13,8 @@ import {
 } from "@/lib/finance/settings";
 
 // 場次收支的後台 actions。此檔只能 export async 函式（常數在 lib/finance/labels.ts）。
+// 權限：一律 requireFullAdmin（僅管理員）——分潤金額是內部薪酬，
+// 操作人員（operator）不可讀寫；頁面與匯出 route 同一標準。
 //
 // 通則：
 // 1. 任何動到「訂單金額/認列/分類」的編輯都把該訂單標 manualOverride=true——
@@ -48,7 +50,7 @@ export async function setLineRecognitionAction(
   recognizedAmountRaw: string,
   note: string,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const recognizedAmount = Math.round(Number(recognizedAmountRaw));
   if (!Number.isFinite(recognizedAmount) || recognizedAmount < 0)
     return { error: "認列金額須為 0 以上的整數" };
@@ -86,7 +88,7 @@ export async function setLineStudentTypeAction(
   lineId: string,
   type: string,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   if (!["AUTO", "NEW", "RETRAIN"].includes(type)) return { error: "分類不正確" };
   const line = await prisma.sessionOrderLine.findUnique({
     where: { id: lineId },
@@ -116,7 +118,7 @@ export async function setOrderRecognizedAction(
   recognized: boolean,
   reason: string,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const order = await prisma.sessionOrder.findUnique({
     where: { id: orderId },
     select: { sessionId: true },
@@ -144,7 +146,7 @@ export async function addManualIncomeAction(
   _prev: FinanceFormState,
   formData: FormData,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const locked = await guardSession(sessionId);
   if (locked) return { error: locked };
 
@@ -204,7 +206,7 @@ export async function addManualIncomeAction(
 
 /** 刪除手動收入（只允許 MANUAL/ONSITE；1shop 匯入的訂單用「排除認列」而非刪除） */
 export async function deleteManualOrderAction(orderId: string): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const order = await prisma.sessionOrder.findUnique({
     where: { id: orderId },
     select: { sessionId: true, source: true },
@@ -227,7 +229,7 @@ export async function addCostAction(
   _prev: FinanceFormState,
   formData: FormData,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const locked = await guardSession(sessionId);
   if (locked) return { error: locked };
 
@@ -292,7 +294,7 @@ export async function updateCostAction(
   labelRaw: string,
   amountRaw: string,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const label = labelRaw.trim();
   const amount = Math.round(Number(amountRaw));
   if (!label) return { error: "名稱不可空白" };
@@ -316,7 +318,7 @@ export async function updateCostAction(
 }
 
 export async function deleteCostAction(costId: string): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const cost = await prisma.sessionCost.findUnique({
     where: { id: costId },
     select: { sessionId: true },
@@ -335,7 +337,7 @@ export async function saveSharesAction(
   sessionId: string,
   rowsJson: string,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const locked = await guardSession(sessionId);
   if (locked) return { error: locked };
 
@@ -380,7 +382,7 @@ export async function saveFinanceSettingsAction(
   _prev: FinanceFormState,
   formData: FormData,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
 
   const pctFields: [keyof typeof FINANCE_SETTING_KEYS, string][] = [
     ["invoiceTaxPpm", "invoiceTaxPct"],
@@ -435,7 +437,7 @@ export async function uploadFinanceOnlyAction(
   _prev: FinanceFormState,
   formData: FormData,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "請選擇訂單檔案" };
   if (file.size > 10 * 1024 * 1024) return { error: "檔案請小於 10MB" };
@@ -465,7 +467,7 @@ export async function savePlanAliasAction(
   productRaw: string,
   planLabel: string,
 ): Promise<FinanceFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const admin = await getAuthUser();
   const raw = productRaw.trim();
   const label = planLabel.trim();

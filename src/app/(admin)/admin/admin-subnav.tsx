@@ -29,7 +29,8 @@ const MARKETING_TABS = [
 // 場次相關：看板本體＋收支設定（收支頁本身從場次卡片進，deep page 不進 tabs）
 const SESSION_TABS = [
   { href: "/admin/sessions", label: "場次看板" },
-  { href: "/admin/sessions/finance/settings", label: "收支費率設定", editorOnly: true },
+  // adminOnly：收支含分潤金額（內部薪酬），操作人員不可見
+  { href: "/admin/sessions/finance/settings", label: "收支費率設定", adminOnly: true },
 ];
 const SYSTEM_TABS = [
   { href: "/admin/settings", label: "分頁管理" },
@@ -53,10 +54,16 @@ function isUnder(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-export function AdminSubNav({ canEdit = true }: { canEdit?: boolean }) {
+export function AdminSubNav({
+  canEdit = true,
+  isAdmin = false,
+}: {
+  canEdit?: boolean;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
   let tabs:
-    | { href: string; label: string; editorOnly?: boolean }[]
+    | { href: string; label: string; editorOnly?: boolean; adminOnly?: boolean }[]
     | null = null;
   let title = "";
   if (isUnder(pathname, PLATFORM_PREFIXES)) {
@@ -73,8 +80,10 @@ export function AdminSubNav({ canEdit = true }: { canEdit?: boolean }) {
     title = "系統設定";
   }
   if (!tabs) return null;
-  // 總教練（唯讀）隱藏編輯/操作類子分頁
-  const visible = tabs.filter((t) => canEdit || !t.editorOnly);
+  // 總教練（唯讀）隱藏編輯/操作類子分頁；adminOnly（收支）連操作人員也隱藏
+  const visible = tabs.filter(
+    (t) => (canEdit || !t.editorOnly) && (isAdmin || !t.adminOnly),
+  );
 
   // 巢狀路徑（如 /admin/broadcast 與 /admin/broadcast/groups）只亮最長符合的那個分頁
   const activeHref = visible

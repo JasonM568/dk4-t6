@@ -1,4 +1,4 @@
-import { pageGuardEditor } from "@/lib/auth/staff";
+import { pageGuardFullAdmin } from "@/lib/auth/staff";
 import { getFinanceSettings } from "@/lib/finance/settings";
 import { SettingsForm } from "./settings-form";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // 收支模組的全域費率與預設分潤。改動只影響「之後的計算」；
 // 已結算（LOCKED）場次讀快照不受影響，DRAFT 場次下次開頁即用新費率。
 export default async function FinanceSettingsPage() {
-  await pageGuardEditor();
+  await pageGuardFullAdmin();
   const settings = await getFinanceSettings();
   return (
     <div className="max-w-2xl">

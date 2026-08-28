@@ -1019,10 +1019,12 @@ function SaveToMailGroupForm({ session }: { session: SessionRow }) {
 export function SessionCard({
   session,
   canEdit,
+  isAdmin = false,
   sessionOptions,
 }: {
   session: SessionRow;
   canEdit: boolean;
+  isAdmin?: boolean; // 收支入口僅管理員（分潤金額是內部薪酬）
   sessionOptions: { id: string; title: string }[];
 }) {
   const [editState, editAction, editing] = useActionState<SessionFormState, FormData>(
@@ -1234,12 +1236,15 @@ export function SessionCard({
               >
                 📱 發課前通知（簡訊）
               </Link>
-              <Link
-                href={`/admin/sessions/${session.id}/finance`}
-                className="inline-block rounded-lg border border-emerald-400 px-3 py-1.5 text-sm text-emerald-700 transition hover:bg-emerald-50"
-              >
-                💰 收支結算
-              </Link>
+              {/* 收支含分潤金額（內部薪酬）：僅管理員可見；頁面本身也擋 pageGuardFullAdmin */}
+              {isAdmin && (
+                <Link
+                  href={`/admin/sessions/${session.id}/finance`}
+                  className="inline-block rounded-lg border border-emerald-400 px-3 py-1.5 text-sm text-emerald-700 transition hover:bg-emerald-50"
+                >
+                  💰 收支結算
+                </Link>
+              )}
             </div>
             <p className="text-xs text-gray-400">
               點下去會自動勾好這個場次、帶入課前通知草稿（含上課連結），確認內容即可送出。

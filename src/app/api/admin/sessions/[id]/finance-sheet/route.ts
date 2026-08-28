@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireEditor } from "@/lib/auth/staff";
+import { requireFullAdmin } from "@/lib/auth/staff";
 import { getFinanceSettings } from "@/lib/finance/settings";
 import {
   computeSessionFinance,
@@ -9,14 +9,15 @@ import {
 import { buildFinanceWorkbook } from "@/lib/finance/sheet";
 
 // 場次收支表下載：權限＋撈資料在這裡，版面建構在 lib/finance/sheet.ts（測試共用）。
-// 用 requireEditor（throw → 403）而非 pageGuard——下載連結吃 3xx 會存到錯誤內容。
+// 僅管理員（requireFullAdmin，throw → 403）：分潤金額是內部薪酬，操作人員不可下載。
+// 用 throw→403 而非 pageGuard——下載連結吃 3xx 會存到錯誤內容。
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireEditor();
+    await requireFullAdmin();
   } catch {
     return new Response("需要編輯權限", { status: 403 });
   }
