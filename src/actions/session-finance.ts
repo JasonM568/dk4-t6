@@ -204,6 +204,63 @@ export async function addManualIncomeAction(
   return { success: `已新增收入 ${name} NT$${amount.toLocaleString("zh-TW")}` };
 }
 
+/** 編輯手動收入（只允許 MANUAL/ONSITE；1shop 匯入的訂單走認列調整）。
+ *  單價/數量改了金額就變，認列金額同步重設為新金額（要下修再到訂單明細調） */
+export async function updateManualIncomeAction(
+  orderId: string,
+  input: {
+    name: string;
+    unitPrice: number;
+    quantity: number;
+    paymentMethod: string;
+    studentType: string;
+  },
+): Promise<FinanceFormState> {
+  await requireFullAdmin();
+  const name = String(input.name ?? "").trim();
+  const unitPrice = Math.round(Number(input.unitPrice));
+  const quantity = Math.round(Number(input.quantity));
+  if (!name) return { error: "請填寫姓名／名目" };
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) return { error: "單價須為 0 以上整數" };
+  if (!Number.isFinite(quantity) || quantity < 1 || quantity > 99)
+    return { error: "數量須為 1–99" };
+  if (!["CREDIT_ONE", "CREDIT_INSTALLMENT", "ATM", "CASH", "OTHER"].includes(input.paymentMethod))
+    return { error: "付款方式不正確" };
+  if (!["NEW", "RETRAIN"].includes(input.studentType)) return { error: "分類不正確" };
+
+  const order = await prisma.sessionOrder.findUnique({
+    where: { id: orderId },
+    select: { sessionId: true, source: true, lines: { select: { id: true }, orderBy: { sortOrder: "asc" } } },
+  });
+  if (!order) return { error: "找不到這筆收入，請重新整理" };
+  if (order.source === "IMPORT")
+    return { error: "1shop 匯入的訂單不可直接改金額——請用訂單明細的認列調整" };
+  const locked = await guardSession(order.sessionId);
+  if (locked) return { error: locked };
+  const lineId = order.lines[0]?.id;
+  if (!lineId) return { error: "這筆收入沒有明細列，請刪除後重新新增" };
+
+  const amount = unitPrice * quantity;
+  await prisma.$transaction([
+    prisma.sessionOrder.update({
+      where: { id: orderId },
+      data: { buyerName: name, paymentMethod: input.paymentMethod, seats: quantity },
+    }),
+    prisma.sessionOrderLine.update({
+      where: { id: lineId },
+      data: {
+        studentType: input.studentType,
+        unitPrice,
+        quantity,
+        amount,
+        recognizedAmount: amount,
+      },
+    }),
+  ]);
+  revalidateFinance(order.sessionId);
+  return { success: `已更新 ${name} NT$${amount.toLocaleString("zh-TW")}` };
+}
+
 /** 刪除手動收入（只允許 MANUAL/ONSITE；1shop 匯入的訂單用「排除認列」而非刪除） */
 export async function deleteManualOrderAction(orderId: string): Promise<FinanceFormState> {
   await requireFullAdmin();

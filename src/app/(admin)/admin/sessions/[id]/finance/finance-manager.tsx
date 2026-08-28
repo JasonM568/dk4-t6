@@ -12,6 +12,7 @@ import {
   setLineStudentTypeAction,
   setOrderRecognizedAction,
   updateCostAction,
+  updateManualIncomeAction,
   type FinanceFormState,
 } from "@/actions/session-finance";
 import type { FinanceResult } from "@/lib/finance/compute";
@@ -159,6 +160,11 @@ export function FinanceManager({
           </tbody>
         </table>
 
+        <ManualIncomeList
+          orders={orders.filter((o) => o.source !== "IMPORT")}
+          run={run}
+          pending={pending}
+        />
         <AddIncomeForm sessionId={sessionId} />
       </section>
 
@@ -402,6 +408,136 @@ function OrderDetail({
         ))}
       </div>
     </details>
+  );
+}
+
+/** 手動收入列表：每筆可直接編輯／刪除（1shop 匯入的訂單不在此，走訂單明細的認列調整） */
+function ManualIncomeList({
+  orders,
+  run,
+  pending,
+}: {
+  orders: OrderRow[];
+  run: (fn: () => Promise<FinanceFormState>) => void;
+  pending: boolean;
+}) {
+  if (orders.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/40">
+      <p className="px-3 pt-2 text-xs font-medium text-emerald-800">
+        手動新增的收入（{orders.length} 筆）——可直接修改後儲存，或刪除
+      </p>
+      <div className="space-y-1 px-3 py-2">
+        {orders.map((o) => (
+          <ManualIncomeRow key={o.id} order={o} run={run} pending={pending} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ManualIncomeRow({
+  order: o,
+  run,
+  pending,
+}: {
+  order: OrderRow;
+  run: (fn: () => Promise<FinanceFormState>) => void;
+  pending: boolean;
+}) {
+  const line = o.lines[0];
+  const [draft, setDraft] = useState({
+    name: o.buyerName,
+    unitPrice: line?.unitPrice ?? 0,
+    quantity: line?.quantity ?? 1,
+    paymentMethod: o.paymentMethod,
+    studentType: line?.studentType ?? "NEW",
+  });
+  const saved = {
+    name: o.buyerName,
+    unitPrice: line?.unitPrice ?? 0,
+    quantity: line?.quantity ?? 1,
+    paymentMethod: o.paymentMethod,
+    studentType: line?.studentType ?? "NEW",
+  };
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">
+        {o.source === "ONSITE" ? "現場" : "手動"}
+      </span>
+      <input
+        value={draft.name}
+        disabled={pending}
+        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        className="w-32 rounded border border-gray-300 px-2 py-1"
+        title="姓名／名目"
+      />
+      <label className="flex items-center gap-1">
+        <span className="text-xs text-gray-400">單價</span>
+        <input
+          value={draft.unitPrice}
+          inputMode="numeric"
+          disabled={pending}
+          onChange={(e) => setDraft({ ...draft, unitPrice: Number(e.target.value) || 0 })}
+          className="w-20 rounded border border-gray-300 px-2 py-1 text-right font-mono"
+        />
+      </label>
+      <label className="flex items-center gap-1">
+        <span className="text-xs text-gray-400">×</span>
+        <input
+          value={draft.quantity}
+          inputMode="numeric"
+          disabled={pending}
+          onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) || 1 })}
+          className="w-12 rounded border border-gray-300 px-2 py-1 text-right"
+          title="數量"
+        />
+      </label>
+      <select
+        value={draft.studentType}
+        disabled={pending}
+        onChange={(e) => setDraft({ ...draft, studentType: e.target.value })}
+        className="rounded border border-gray-300 bg-white px-1 py-1"
+      >
+        <option value="NEW">新生</option>
+        <option value="RETRAIN">複訓</option>
+      </select>
+      <select
+        value={draft.paymentMethod}
+        disabled={pending}
+        onChange={(e) => setDraft({ ...draft, paymentMethod: e.target.value })}
+        className="rounded border border-gray-300 bg-white px-1 py-1"
+      >
+        {["CASH", "CREDIT_ONE", "CREDIT_INSTALLMENT", "ATM", "OTHER"].map((m) => (
+          <option key={m} value={m}>
+            {METHOD_LABEL[m]}
+          </option>
+        ))}
+      </select>
+      <span className="font-mono text-xs text-gray-500">
+        ＝{formatNT(draft.unitPrice * draft.quantity)}
+      </span>
+      <button
+        type="button"
+        disabled={pending || !dirty}
+        onClick={() => run(() => updateManualIncomeAction(o.id, draft))}
+        className="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
+      >
+        儲存
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          if (confirm(`刪除手動收入「${o.buyerName}」？`))
+            run(() => deleteManualOrderAction(o.id));
+        }}
+        className="text-xs text-red-500 hover:underline"
+      >
+        刪除
+      </button>
+    </div>
   );
 }
 
