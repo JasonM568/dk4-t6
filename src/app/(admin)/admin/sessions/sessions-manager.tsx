@@ -1234,6 +1234,12 @@ export function SessionCard({
               >
                 📱 發課前通知（簡訊）
               </Link>
+              <Link
+                href={`/admin/sessions/${session.id}/finance`}
+                className="inline-block rounded-lg border border-emerald-400 px-3 py-1.5 text-sm text-emerald-700 transition hover:bg-emerald-50"
+              >
+                💰 收支結算
+              </Link>
             </div>
             <p className="text-xs text-gray-400">
               點下去會自動勾好這個場次、帶入課前通知草稿（含上課連結），確認內容即可送出。

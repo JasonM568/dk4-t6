@@ -26,6 +26,11 @@ const MARKETING_TABS = [
   { href: "/admin/sms", label: "簡訊發送", editorOnly: true },
   { href: "/admin/sms/optouts", label: "簡訊退訂", editorOnly: true },
 ];
+// 場次相關：看板本體＋收支設定（收支頁本身從場次卡片進，deep page 不進 tabs）
+const SESSION_TABS = [
+  { href: "/admin/sessions", label: "場次看板" },
+  { href: "/admin/sessions/finance/settings", label: "收支費率設定", editorOnly: true },
+];
 const SYSTEM_TABS = [
   { href: "/admin/settings", label: "分頁管理" },
   { href: "/admin/staff", label: "權限管理" },
@@ -41,6 +46,7 @@ const PLATFORM_PREFIXES = [
   "/admin/subscription",
 ];
 const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/corporate", "/admin/sms"];
+const SESSION_PREFIXES = ["/admin/sessions"];
 const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff"];
 
 function isUnder(pathname: string, prefixes: string[]) {
@@ -59,6 +65,9 @@ export function AdminSubNav({ canEdit = true }: { canEdit?: boolean }) {
   } else if (isUnder(pathname, MARKETING_PREFIXES)) {
     tabs = MARKETING_TABS;
     title = "行銷推播";
+  } else if (isUnder(pathname, SESSION_PREFIXES)) {
+    tabs = SESSION_TABS;
+    title = "場次";
   } else if (isUnder(pathname, SYSTEM_PREFIXES)) {
     tabs = SYSTEM_TABS;
     title = "系統設定";

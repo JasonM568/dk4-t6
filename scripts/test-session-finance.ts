@@ -137,7 +137,28 @@ const times = (n: number, f: () => FinanceOrderInput) => Array.from({ length: n 
     settings: { ...S, remitUnitFee: 0 },
   });
   check("收入 80,240（6 種方案×付款方式）", r.totalIncome === 80_240, `實際 ${r.totalIncome}`);
-  check("收入明細恰 6 列", r.incomeRows.length === 6, `實際 ${r.incomeRows.length}`);
+  // 新分組（新生/複訓 × 付款方式 × 單價）：組合方案進階部分與進階正價同為
+  // 新生-信用卡單筆-8680，合併成一列 → 6 列變 5 列，總額不變
+  check("收入明細 5 列（新生單筆 5 筆合併）", r.incomeRows.length === 5, `實際 ${r.incomeRows.length}`);
+  check(
+    "新生-信用卡單筆 8680×5 = 43,400",
+    r.incomeRows[0].label === "新生-信用卡單筆" &&
+      r.incomeRows[0].quantity === 5 &&
+      r.incomeRows[0].amount === 43_400,
+    JSON.stringify(r.incomeRows[0]),
+  );
+  check(
+    "排序：新生（單筆→分期→ATM）→ 複訓",
+    JSON.stringify(r.incomeRows.map((x) => x.label)) ===
+      JSON.stringify([
+        "新生-信用卡單筆",
+        "新生-信用卡分期",
+        "新生-ATM匯款",
+        "複訓-信用卡單筆",
+        "複訓-信用卡分期",
+      ]),
+    JSON.stringify(r.incomeRows.map((x) => x.label)),
+  );
   check("支出 8,883", r.totalCost === 8_883, `實際 ${r.totalCost}`);
   check("毛利 71,357", r.grossProfit === 71_357, `實際 ${r.grossProfit}`);
   check(

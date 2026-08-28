@@ -36,6 +36,33 @@ export function normalizePaymentMethod(raw: string | null | undefined): {
   return { method: "OTHER", installments: 0 };
 }
 
+/** 收入分類：新生／複訓（收支表收入區塊的第一層分組）。
+ *  自動判定沿用全站同一條規則：產品名含「複訓」（session-roster.isRetrainProduct）。
+ *  line.studentType 有值＝人工覆寫，一律以人工為準。 */
+export const STUDENT_TYPE_LABEL: Record<string, string> = {
+  NEW: "新生",
+  RETRAIN: "複訓",
+};
+
+export function deriveStudentType(
+  productRaw: string,
+  override: string | null | undefined,
+): "NEW" | "RETRAIN" {
+  if (override === "NEW" || override === "RETRAIN") return override;
+  return productRaw.includes("複訓") ? "RETRAIN" : "NEW";
+}
+
+/** 收入列排序：新生在前、複訓在後；同類內依付款方式（單筆→分期→ATM→其他） */
+export const STUDENT_TYPE_ORDER: Record<string, number> = { NEW: 0, RETRAIN: 1 };
+export const PAYMENT_METHOD_ORDER: Record<string, number> = {
+  CREDIT_ONE: 0,
+  CREDIT_INSTALLMENT: 1,
+  ATM: 2,
+  CASH: 3,
+  OTHER: 4,
+  UNKNOWN: 5,
+};
+
 /** 自動費率支出的科目碼（SessionCost.code） */
 export const RATE_COST_CODES = [
   "INVOICE_TAX",

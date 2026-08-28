@@ -705,8 +705,12 @@ model SessionOrderLine {
   recognizedAmount Int
   recognizeNote    String? // 例：「本表僅計入 AI 進階 8/1 的 8,680」
 
-  isOnsite  Boolean @default(false) // 現場收款（與線上合在同一張收入明細，僅標示來源）
-  sortOrder Int     @default(0)
+  // 收入明細的分類鍵之一：NEW 新生 / RETRAIN 複訓。
+  // null = 依 productRaw 是否含「複訓」自動判斷（同 session-roster.isRetrainProduct）；
+  // 有值 = 後台人工改過（訂單買錯方案、代訂），一律以此為準——與 SessionSignup.isRetrain 同一套覆寫哲學
+  studentType String?
+  isOnsite    Boolean @default(false) // 現場收款（與線上合在同一張收入明細，僅標示來源）
+  sortOrder   Int     @default(0)
 
   @@index([orderId])
 }
