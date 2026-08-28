@@ -34,6 +34,8 @@ export function SettingsForm({
   );
   const [atmMode, setAtmMode] = useState<"UNIT" | "RATE">(initial.atmMode);
   const [shares, setShares] = useState(initial.shares);
+  // 原生 file input 長得跟一般文字一樣，改成明顯的點擊區塊＋選檔後回饋（同場次看板上傳）
+  const [picked, setPicked] = useState<{ name: string; size: number } | null>(null);
   const totalPct = shares.reduce((n, s) => n + (Number.isFinite(s.pct) ? s.pct : 0), 0);
 
   const pctInput = (name: string, label: string, def: number, hint?: string) => (
@@ -162,7 +164,12 @@ export function SettingsForm({
         </section>
 
         <div className="flex items-center gap-3">
-          <SubmitButton pendingText="儲存中…">儲存設定</SubmitButton>
+          <SubmitButton
+            pendingText="儲存中…"
+            className="rounded-lg bg-black px-5 py-2 text-sm font-medium text-white transition hover:bg-gray-800"
+          >
+            儲存設定
+          </SubmitButton>
           {state?.success && <span className="text-sm text-green-700">✓ {state.success}</span>}
           {state?.error && <span className="text-sm text-red-600">{state.error}</span>}
         </div>
@@ -171,22 +178,68 @@ export function SettingsForm({
       {/* 金額補匯：歷史場次補資料／同場修正金額，不碰名單 */}
       <form
         action={uploadAction}
-        className="space-y-2 rounded-xl border border-dashed border-gray-300 p-4"
+        className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4"
       >
-        <h2 className="font-bold">金額補匯（不動名單）</h2>
-        <p className="text-xs text-gray-500">
+        <h2 className="font-bold text-amber-900">📥 金額補匯（不動名單）</h2>
+        <p className="text-xs text-amber-800/80">
           上傳 1shop 訂單檔，只寫入收支金額、完全不動報名名單——歷史場次要開始算收支、
           或匯過名單但當時還沒有收支模組時用。人工調整過與已結算的訂單不會被覆蓋。
         </p>
-        <div className="flex flex-wrap items-center gap-2">
+        <label
+          className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed px-4 py-3 transition ${
+            picked
+              ? "border-amber-400 bg-white"
+              : "border-amber-300 bg-white/60 hover:border-amber-500 hover:bg-white"
+          }`}
+        >
+          <span className="text-2xl">📄</span>
+          <span className="min-w-0 flex-1">
+            {picked ? (
+              <>
+                <span className="block truncate text-sm font-medium text-amber-900">
+                  {picked.name}
+                </span>
+                <span className="block text-xs text-amber-600">
+                  {(picked.size / 1024).toFixed(0)} KB · 點擊可重新選擇
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="block text-sm font-medium text-gray-700">
+                  點擊這裡選擇訂單檔
+                </span>
+                <span className="block text-xs text-gray-400">
+                  1shop 匯出的 .xlsx 或 .csv
+                </span>
+              </>
+            )}
+          </span>
+          {!picked && (
+            <span className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-sm font-medium text-amber-800">
+              選擇檔案
+            </span>
+          )}
           <input
             type="file"
             name="file"
-            accept=".xlsx,.csv"
+            accept=".xlsx,.xls,.csv"
             required
-            className="text-sm"
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              setPicked(f ? { name: f.name, size: f.size } : null);
+            }}
           />
-          <SubmitButton pendingText="匯入中…">補匯金額</SubmitButton>
+        </label>
+        <div className="flex items-center gap-3">
+          <SubmitButton
+            pendingText="匯入中，請勿關閉頁面…"
+            disabled={!picked}
+            className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-amber-700"
+          >
+            📥 補匯金額
+          </SubmitButton>
+          {!picked && <span className="text-xs text-amber-700/70">請先選擇訂單檔</span>}
         </div>
         {uploadState?.success && (
           <p className="text-sm text-green-700">✓ {uploadState.success}</p>
