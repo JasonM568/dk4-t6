@@ -181,6 +181,89 @@ const times = (n: number, f: () => FinanceOrderInput) => Array.from({ length: n 
   );
 }
 
+// ───────────────────── 量子思維 0627 台北（最複雜的真實場） ─────────────────────
+// 來源：docs/量子思維課程_6-27台北_課程收支表_v4 - 課程收支表.csv
+// 涵蓋：折價造成同類型多價位列、天使長/講師外部分潤 5 筆、退費差額、
+// 分潤匯費人工覆寫（$15×7 而非內部 3 人）、延期者不計收入（33 人只算 32 筆）
+{
+  console.log("\n量子思維 0627 台北（33 人，收入 135,660）");
+  const orders: FinanceOrderInput[] = [
+    ...times(10, () => order("CREDIT_ONE", "新生方案｜6/27 台北場", 5880)),
+    order("CREDIT_ONE", "新生方案｜6/27 台北場(延期補差)", 3980),
+    ...times(4, () => order("ATM", "新生方案｜6/27 台北場", 5880)),
+    order("ATM", "新生方案｜6/27 台北場", 5580), // 洪仟瑜 分享會折價300
+    order("CREDIT_ONE", "新生官網折價｜6/27 台北場", 4880), // 黃佩鈺
+    order("CREDIT_INSTALLMENT", "新生方案｜6/27 台北場", 5580), // 謝幸娟 折價300分3期
+    ...times(13, () => order("CREDIT_ONE", "複訓生方案｜6/27 台北場", 2380)),
+    order("ATM", "複訓生方案｜6/27 台北場", 2380),
+  ];
+  const ext = (label: string, payee: string, basis: number) => ({
+    kind: "EXTERNAL_SHARE", code: null as string | null, label, payee,
+    basisText: `${basis.toLocaleString()} × 20%`, basisAmount: basis, ratePpm: 200_000,
+    unitAmount: null, unitCount: null, amount: roundNT(basis * 0.2), sortOrder: 0,
+  });
+  const fixed = (label: string, amount: number, sortOrder: number) => ({
+    kind: "FIXED", code: null as string | null, label, basisText: null, basisAmount: null,
+    ratePpm: null, unitAmount: null, unitCount: null, amount, payee: null, sortOrder,
+  });
+  const manualCosts: ManualCostInput[] = [
+    ext("天使長 鄭婕予 分潤", "鄭婕予", 5880),
+    ext("天使長 楊立慧 分潤", "楊立慧", 5880),
+    ext("天使長 吳旻玹 分潤", "吳旻玹", 3980),
+    ext("講師 黃靖閔 分潤", "黃靖閔", 11760),
+    ext("講師 高名萱 分潤", "高名萱", 5880),
+    fixed("謝幸娟退費差額", 400, 5),
+    fixed("場地費", 24180, 6),
+    // 分潤匯費人工覆寫：$15×7（天使長+講師+退費匯款），取代自動的內部 3 人×15
+    { kind: "RATE", code: "REMIT_FEE", label: "分潤匯費", basisText: "$15 × 7",
+      basisAmount: null, ratePpm: null, unitAmount: 15, unitCount: 7, amount: 105,
+      payee: null, sortOrder: 7 },
+    fixed("午餐便當", 4760, 8),
+  ];
+  const r = computeSessionFinance({
+    orders, manualCosts,
+    shares: [
+      { payeeName: "顧院長", sharePpm: 400_000 },
+      { payeeName: "孟宏", sharePpm: 400_000 },
+      { payeeName: "舒庭", sharePpm: 200_000 },
+    ],
+    settings: S,
+  });
+  check("收入 135,660（32 筆；延期者不入列）", r.totalIncome === 135_660, `實際 ${r.totalIncome}`);
+  check(
+    "收入 8 列（折價不同價位各自成列）",
+    r.incomeRows.length === 8,
+    JSON.stringify(r.incomeRows.map((x) => `${x.label} ${x.unitPrice}×${x.quantity}`)),
+  );
+  // 他的表把刷卡手續費拆成新生/複訓兩列（1,353＋619）；本模組合併一列，
+  // 金額必須等於兩列之和（98,600×2% = 1,972 = 1,353+619）
+  check(
+    "刷卡手續費合併列 = 他拆列之和（1,972 = 1,353+619）",
+    r.costRows.find((c) => c.code === "CARD_FEE")?.amount === 1_972,
+  );
+  check(
+    "分期手續費 5,580×2.4% = 134",
+    r.costRows.find((c) => c.code === "CARD_INSTALLMENT_FEE")?.amount === 134,
+  );
+  check(
+    "ATM 合併 6 筆×15 = 90（他拆 75+15）",
+    r.costRows.find((c) => c.code === "ATM_FEE")?.amount === 90,
+  );
+  check(
+    "分潤匯費覆寫 105 生效（自動 45 讓位）",
+    r.costRows.filter((c) => c.code === "REMIT_FEE").length === 1 &&
+      r.costRows.find((c) => c.code === "REMIT_FEE")?.amount === 105,
+  );
+  check("支出 47,813", r.totalCost === 47_813, `實際 ${r.totalCost}`);
+  check("毛利 87,847", r.grossProfit === 87_847, `實際 ${r.grossProfit}`);
+  check(
+    "分潤 [35139, 35139, 17569]",
+    JSON.stringify(r.shareRows.map((x) => x.amount)) === "[35139,35139,17569]",
+    JSON.stringify(r.shareRows.map((x) => x.amount)),
+  );
+  check("分潤加總 = 毛利（他的表也是 87,847）", r.totalShared === 87_847);
+}
+
 // ───────────────────────── 規則不變量 ─────────────────────────
 {
   console.log("\n規則不變量");
