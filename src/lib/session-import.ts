@@ -245,9 +245,9 @@ function parseTaipei(s: string): Date | null {
 // 解析防線：惡意/畸形檔案要快速安全失敗，不能拖垮 serverless function
 const PARSE_LIMITS = {
   maxRows: 20_000, // 1shop 單檔實務上是數百列，2 萬列已是十倍餘裕
-  // 1shop「原始訂單資料」近版匯出已超過 60 欄；保留足夠空間給其固定欄位，
-  // 仍拒絕不合理的大型寬表，避免異常檔案耗盡解析資源。
-  maxCols: 150,
+  // 1shop「原始訂單資料」的自訂欄位每個銷售頁各自成欄：全期間匯出實測 156 欄
+  //（2026-08-29 order_2026_08_29 檔）。250 給足成長空間，仍擋得住異常寬表。
+  maxCols: 250,
   maxCellLen: 2_000,
 } as const;
 

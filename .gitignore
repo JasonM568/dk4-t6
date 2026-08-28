@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .gstack/
+
+# 學員名單原始檔（個資，絕不入 repo）
+docs/*學員名單*.csv
+docs/*學員名單*.xlsx
+docs/order_*.xlsx
+docs/learndash_*.csv
