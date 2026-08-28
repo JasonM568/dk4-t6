@@ -96,6 +96,7 @@ export default async function AdminSessionsPage() {
               meetingId: s.meetingId,
               meetingPassword: s.meetingPassword,
               meetingInfo: s.meetingInfo,
+              financeTemplate: s.financeTemplate,
               signups: s.signups.map((g) => ({
                 id: g.id,
                 orderNo: g.orderNo,

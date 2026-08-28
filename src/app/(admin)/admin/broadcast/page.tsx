@@ -46,6 +46,8 @@ export default async function BroadcastPage({
     preset?: string;
     // 從場次看板「發課前通知」帶過來：勾好場次並填好草稿
     session?: string;
+    // 場次名單列的「EDM」：只寄給這一位（手動名單自動填好該學員）
+    signup?: string;
     followUp?: string;
     filter?: string;
   }>;
@@ -59,6 +61,7 @@ export default async function BroadcastPage({
     followUp: followUpId,
     filter,
     session: sessionParam,
+    signup: signupParam,
   } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
@@ -182,6 +185,19 @@ export default async function BroadcastPage({
       ? sessions.find((x) => x.id === sessionParam)
       : undefined;
   const noticeDraft = noticeSession ? buildClassNoticeEmail(noticeSession) : null;
+  // 帶 signup=<id>：只寄給名單上這一位（晚報名/沒收到的人補寄）——
+  // 改走手動名單並自動填好「email,姓名」，內容仍是課前通知草稿、仍標履約通知
+  const singleSignup =
+    signupParam && noticeSession
+      ? await prisma.sessionSignup.findUnique({
+          where: { id: signupParam },
+          select: { name: true, email: true, sessionId: true },
+        })
+      : null;
+  const singleRecipient =
+    singleSignup?.email && singleSignup.sessionId === noticeSession?.id
+      ? singleSignup
+      : null;
 
   return (
     <div className="max-w-3xl">
@@ -305,7 +321,7 @@ export default async function BroadcastPage({
         </div>
       )}
       <BroadcastForm
-        key={from ?? tpl ?? preset ?? sessionParam ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
+        key={from ?? tpl ?? preset ?? (sessionParam ? `${sessionParam}-${signupParam ?? ""}` : null) ?? (followUpProp ? `fu-${followUpProp.sourceId}-${followUpProp.filter}` : "blank")}
         courses={courses}
         groups={groupOptions}
         sessions={sessionOptions}
@@ -320,11 +336,13 @@ export default async function BroadcastPage({
                 subject: noticeDraft.subject,
                 body: noticeDraft.body,
                 courseId: "",
-                audience: "session",
+                audience: singleRecipient ? "manual" : "session",
                 groupIds: [],
-                sessionIds: [noticeSession.id],
+                sessionIds: singleRecipient ? [] : [noticeSession.id],
                 isNotice: true,
-                manualList: "",
+                manualList: singleRecipient
+                  ? `${singleRecipient.email},${singleRecipient.name}`
+                  : "",
                 scheduledAt: "",
               }
             : template || savedTemplate || selectedPreset

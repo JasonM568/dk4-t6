@@ -75,6 +75,8 @@ export default async function SmsPage({
     followup?: string;
     // 從場次看板「發課前通知」帶過來：勾好場次並填好草稿
     session?: string;
+    // 場次名單列的「簡訊」：只發給這一位（手動名單自動填好該學員）
+    signup?: string;
   }>;
 }) {
   await pageGuardEditor();
@@ -84,6 +86,7 @@ export default async function SmsPage({
     copy: copyParam,
     followup: followUpParam,
     session: sessionParam,
+    signup: signupParam,
   } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
@@ -165,14 +168,31 @@ export default async function SmsPage({
   const noticeSession = sessionParam
     ? sessions.find((x) => x.id === sessionParam)
     : undefined;
+  // 帶 signup=<id>：只發給名單上這一位（晚報名/改號碼的人補通知）——
+  // 改走手動名單並自動填好「手機,姓名,上課碼」，內容仍是課前通知草稿
+  const singleSignup =
+    signupParam && noticeSession
+      ? await prisma.sessionSignup.findUnique({
+          where: { id: signupParam },
+          select: { name: true, phone: true, sessionId: true },
+        })
+      : null;
   if (!initial && noticeSession) {
+    const single =
+      singleSignup?.phone && singleSignup.sessionId === noticeSession.id
+        ? singleSignup
+        : null;
     initial = {
       id: null,
       title: buildClassNoticeSmsTitle(noticeSession),
       body: buildClassNoticeSms(noticeSession),
-      audience: "session",
-      sessionIds: [noticeSession.id],
-      manualList: "",
+      audience: single ? "manual" : "session",
+      sessionIds: single ? [] : [noticeSession.id],
+      manualList: single
+        ? noticeSession.accessCode
+          ? `${single.phone},${single.name},${noticeSession.accessCode}`
+          : `${single.phone},${single.name}`
+        : "",
       scheduledAt: "",
       copiedFrom: null,
       followUp: null,
@@ -191,7 +211,7 @@ export default async function SmsPage({
 
       {/* key：切換草稿/複製來源時強制重掛，表單內的狀態才會換成新內容 */}
       <SmsForm
-        key={initial?.id ?? loadId ?? sessionParam ?? "new"}
+        key={initial?.id ?? loadId ?? (sessionParam ? `${sessionParam}-${signupParam ?? ""}` : "new")}
         sessions={sessions.map((s) => ({
           id: s.id,
           title: s.title,

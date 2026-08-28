@@ -53,6 +53,8 @@ import {
   matchesTag,
   isSearchableQuery,
 } from "@/lib/roster-search";
+// 講座型場次判斷與收支表模板共用同一條規則（人工指定優先、否則看名稱）
+import { deriveFinanceTemplate } from "@/lib/finance/labels";
 
 export type SignupRow = {
   id: string;
@@ -86,6 +88,9 @@ export type SessionRow = {
   meetingId: string | null;
   meetingPassword: string | null;
   meetingInfo: string | null;
+  // 收支表模板（QUANTUM/GENERAL/SEMINAR；null = 依名稱自動判斷）。
+  // 名單列表沿用同一判斷：講座型（SEMINAR）不顯示葷素與組別欄
+  financeTemplate: string | null;
   signups: SignupRow[];
 };
 
@@ -1038,6 +1043,9 @@ export function SessionCard({
   const sessionTitle = (id: string | null) =>
     sessionOptions.find((o) => o.id === id)?.title ?? "其他場次";
   const stats = computeRosterStats(session.signups);
+  // 講座型場次：不供餐、不分組——名單列表隱藏葷素與組別欄（版面也不再擠爆）
+  const isSeminar =
+    (session.financeTemplate ?? deriveFinanceTemplate(session.title)) === "SEMINAR";
   // 手動指定組別的選單範圍：已用到的最大組號與公式組數取大者
   const maxGroupNo = Math.max(
     groupCountFor(stats.total, session.groupCap),
@@ -1292,13 +1300,14 @@ export function SessionCard({
               這場沒有符合「{rawQuery}」的名單
             </p>
           ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-gray-400">
               <tr>
                 <th className="px-2 py-1.5">#</th>
                 <th className="px-2 py-1.5">姓名</th>
-                <th className="px-2 py-1.5">葷素</th>
-                <th className="px-2 py-1.5">組別</th>
+                {!isSeminar && <th className="px-2 py-1.5">葷素</th>}
+                {!isSeminar && <th className="px-2 py-1.5">組別</th>}
                 <th className="px-2 py-1.5">手機</th>
                 <th className="px-2 py-1.5">Email</th>
                 <th className="px-2 py-1.5">訂單編號</th>
@@ -1384,7 +1393,8 @@ export function SessionCard({
                       </span>
                     )}
                   </td>
-                  {/* 葷素：下拉直選（延出列不給改） */}
+                  {/* 葷素：下拉直選（延出列不給改）；講座型場次不供餐，整欄隱藏 */}
+                  {!isSeminar && (
                   <td className="px-2 py-1.5 text-xs">
                     {canEdit && !deferredOut ? (
                       <select
@@ -1413,6 +1423,8 @@ export function SessionCard({
                       <span className="text-gray-500">{deferredOut ? "—" : mealLabel(s.meal)}</span>
                     )}
                   </td>
+                  )}
+                  {!isSeminar && (
                   <td className="px-2 py-1.5 text-xs">
                     {canEdit && !deferredOut && !s.isStaff ? (
                       <select
@@ -1436,6 +1448,7 @@ export function SessionCard({
                       </span>
                     )}
                   </td>
+                  )}
                   {/* 手機：團報名單匯入時整批沒號碼，管理員在這裡逐人補（補上才收得到上課提醒簡訊）。
                       離開欄位即存、清空＝未填；格式由 server action 驗（09 開頭 10 碼，
                       海外門號加國碼存 E.164）。
@@ -1497,13 +1510,38 @@ export function SessionCard({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{s.orderNo}</td>
-                  <td className="px-2 py-1.5 text-xs text-gray-500">{s.product ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-xs text-gray-500">
+                    {/* 產品名經常超長（銷售頁全名），截斷防撐爆表格；游標懸停看全文 */}
+                    <span className="block max-w-[14rem] truncate" title={s.product ?? undefined}>
+                      {s.product ?? "—"}
+                    </span>
+                  </td>
                   <td className="px-2 py-1.5 text-gray-400">
                     {s.orderedAt ? formatDate(s.orderedAt) : "—"}
                   </td>
                   {canEdit && (
                     <td className="px-2 py-1.5 text-right">
                       <span className="inline-flex items-center gap-1">
+                        {/* 單人補通知（晚報名/改號碼的人）：帶場次＋這個人到簡訊/EDM 頁，
+                            名單欄自動填好這一位、內容帶課前通知草稿 */}
+                        {!deferredOut && s.phone && !isOverseasPhone(s.phone) && (
+                          <Link
+                            href={`/admin/sms?session=${session.id}&signup=${s.id}`}
+                            title={`只發簡訊給 ${s.name}（課前通知草稿自動帶入）`}
+                            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+                          >
+                            簡訊
+                          </Link>
+                        )}
+                        {!deferredOut && s.email && (
+                          <Link
+                            href={`/admin/broadcast?session=${session.id}&signup=${s.id}`}
+                            title={`只寄 EDM 給 ${s.name}（課前通知草稿自動帶入）`}
+                            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+                          >
+                            EDM
+                          </Link>
+                        )}
                         {deferredOut ? (
                           <button
                             type="button"
@@ -1565,6 +1603,7 @@ export function SessionCard({
               })}
             </tbody>
           </table>
+          </div>
           )}
           </>
         )}
