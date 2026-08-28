@@ -10,6 +10,7 @@
 import {
   computeSessionFinance,
   buildIncomeRows,
+  buildExternalShareRows,
   roundNT,
   type FinanceOrderInput,
   type ManualCostInput,
@@ -18,7 +19,11 @@ import {
   FINANCE_SETTING_DEFAULTS,
   type FinanceSettings,
 } from "../src/lib/finance/settings";
-import { normalizePaymentMethod } from "../src/lib/finance/labels";
+import {
+  attributeOrder,
+  extractPromoter,
+  normalizePaymentMethod,
+} from "../src/lib/finance/labels";
 
 let pass = 0;
 let fail = 0;
@@ -228,6 +233,7 @@ const times = (n: number, f: () => FinanceOrderInput) => Array.from({ length: n 
       { payeeName: "舒庭", sharePpm: 200_000 },
     ],
     settings: S,
+    template: "QUANTUM", // 量子模板：手續費拆新生/複訓列（2026-08-28 拍板）
   });
   check("收入 135,660（32 筆；延期者不入列）", r.totalIncome === 135_660, `實際 ${r.totalIncome}`);
   check(
@@ -235,19 +241,32 @@ const times = (n: number, f: () => FinanceOrderInput) => Array.from({ length: n 
     r.incomeRows.length === 8,
     JSON.stringify(r.incomeRows.map((x) => `${x.label} ${x.unitPrice}×${x.quantity}`)),
   );
-  // 他的表把刷卡手續費拆成新生/複訓兩列（1,353＋619）；本模組合併一列，
-  // 金額必須等於兩列之和（98,600×2% = 1,972 = 1,353+619）
+  // QUANTUM 模板拆列——與他的表第 3–7 列逐格對照
   check(
-    "刷卡手續費合併列 = 他拆列之和（1,972 = 1,353+619）",
-    r.costRows.find((c) => c.code === "CARD_FEE")?.amount === 1_972,
+    "刷卡手續費-新生 67,660×2% = 1,353",
+    r.costRows.find((c) => c.code === "CARD_FEE_NEW")?.amount === 1_353,
+    JSON.stringify(r.costRows.filter((c) => c.isAuto).map((c) => `${c.code}=${c.amount}`)),
   );
   check(
-    "分期手續費 5,580×2.4% = 134",
-    r.costRows.find((c) => c.code === "CARD_INSTALLMENT_FEE")?.amount === 134,
+    "刷卡手續費-複訓 30,940×2% = 619",
+    r.costRows.find((c) => c.code === "CARD_FEE_RETRAIN")?.amount === 619,
   );
   check(
-    "ATM 合併 6 筆×15 = 90（他拆 75+15）",
-    r.costRows.find((c) => c.code === "ATM_FEE")?.amount === 90,
+    "分期手續費-新生 5,580×2.4% = 134",
+    r.costRows.find((c) => c.code === "CARD_INSTALLMENT_FEE_NEW")?.amount === 134,
+  );
+  check(
+    "ATM-新生 5 筆×15 = 75",
+    r.costRows.find((c) => c.code === "ATM_FEE_NEW")?.amount === 75,
+  );
+  check(
+    "ATM-複訓 1 筆×15 = 15",
+    r.costRows.find((c) => c.code === "ATM_FEE_RETRAIN")?.amount === 15,
+  );
+  check(
+    "新生 12 位／複訓 13 位進到列名（同他的表）",
+    (r.costRows.find((c) => c.code === "CARD_FEE_NEW")?.label ?? "").includes("新生 12 位") &&
+      (r.costRows.find((c) => c.code === "CARD_FEE_RETRAIN")?.label ?? "").includes("複訓 13 位"),
   );
   check(
     "分潤匯費覆寫 105 生效（自動 45 讓位）",
@@ -262,6 +281,79 @@ const times = (n: number, f: () => FinanceOrderInput) => Array.from({ length: n 
     JSON.stringify(r.shareRows.map((x) => x.amount)),
   );
   check("分潤加總 = 毛利（他的表也是 87,847）", r.totalShared === 87_847);
+}
+
+// ──────────────── 外部分潤自動歸屬（銷售頁推廣者／推薦人） ────────────────
+// 資料型態來自高雄 8/15 真實訂單檔：銷售頁「(推廣者-XXX專用)」、
+// 推薦人欄自由文字（「顧及然 院長」）。規則：推薦人優先、內部人員不分潤、只算新生
+{
+  console.log("\n外部分潤自動歸屬");
+  const PAGE = (who: string) => `HOPE OS 初階｜AI 時代的人生升級系統 (推廣者-${who}專用)`;
+
+  check("銷售頁抽推廣者：黃詩雅", extractPromoter(PAGE("黃詩雅")) === "黃詩雅");
+  check("官方頁抽不到推廣者", extractPromoter("希望學院課程報名網") === null);
+  check(
+    "推薦人優先於頁主",
+    JSON.stringify(attributeOrder("謝佳玲", PAGE("黃詩雅"), S.internalPromoters)) ===
+      JSON.stringify({ name: "謝佳玲", via: "REFERRER" }),
+  );
+  check(
+    "內部推薦人不分潤（顧及然 院長）",
+    attributeOrder("顧及然 院長", null, S.internalPromoters) === null,
+  );
+  check(
+    "內部頁主不分潤（陳孟宏）",
+    attributeOrder(null, PAGE("陳孟宏"), S.internalPromoters) === null,
+  );
+
+  const orders: FinanceOrderInput[] = [
+    // 黃詩雅頁：新生 5,880 計入、複訓 2,380 不計
+    order("CREDIT_ONE", "量子思維2.0 新生方案｜8/15 高雄", 5880, 1, { salesPage: PAGE("黃詩雅") }),
+    order("CREDIT_ONE", "量子思維2.0 複訓方案｜8/15 高雄", 2380, 1, { salesPage: PAGE("黃詩雅") }),
+    // 孟宏頁＋推薦人謝佳玲：歸謝佳玲
+    order("ATM", "量子思維2.0 新生方案｜8/15 高雄", 5880, 1, {
+      salesPage: PAGE("陳孟宏"),
+      referrer: "謝佳玲",
+    }),
+    // 孟宏頁無推薦人：內部，不產生
+    order("CREDIT_ONE", "量子思維2.0 新生方案｜8/15 高雄", 5880, 1, { salesPage: PAGE("陳孟宏") }),
+    // 內部推薦人：不產生
+    order("CREDIT_ONE", "量子思維2.0 新生方案｜8/15 高雄", 5880, 1, { referrer: "顧院長 世華南加分會理事" }),
+    // 退款訂單：不計
+    order("CREDIT_ONE", "量子思維2.0 新生方案｜8/15 高雄", 5880, 1, {
+      salesPage: PAGE("李憶瑄"),
+      refundedAt: new Date("2026-08-20"),
+      isRecognized: false,
+    }),
+  ];
+  const ext = buildExternalShareRows(orders, S);
+  check(
+    "自動列：黃詩雅與謝佳玲各一列（內部/複訓/退款都不產生）",
+    ext.length === 2 &&
+      ext.some((c) => c.payee === "黃詩雅") &&
+      ext.some((c) => c.payee === "謝佳玲"),
+    JSON.stringify(ext.map((c) => `${c.payee}=${c.amount}`)),
+  );
+  check(
+    "金額 = 新生 5,880 × 20% = 1,176（複訓 2,380 不進基數）",
+    ext.find((c) => c.payee === "黃詩雅")?.amount === 1_176,
+  );
+  check(
+    "同名人工列讓自動列讓位",
+    buildExternalShareRows(orders, S, ["黃詩雅"]).every((c) => c.payee !== "黃詩雅"),
+  );
+  // 整條鏈：computeSessionFinance 把自動外部列算進支出
+  const rr = computeSessionFinance({
+    orders,
+    manualCosts: [],
+    shares: [{ payeeName: "顧院長", sharePpm: 1_000_000 }],
+    settings: { ...S, remitUnitFee: 0 },
+  });
+  check(
+    "自動外部分潤進支出（含 2,352）且毛利已扣",
+    rr.costRows.filter((c) => c.kind === "EXTERNAL_SHARE").reduce((n, c) => n + c.amount, 0) ===
+      2_352 && rr.grossProfit === rr.totalIncome - rr.totalCost,
+  );
 }
 
 // ───────────────────────── 規則不變量 ─────────────────────────

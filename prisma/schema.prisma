@@ -581,6 +581,10 @@ model CourseSession {
   meetingPassword String? // 會議密碼；連結沒帶 pwd 參數時自動附加（同 Webinar 慣例）
   meetingInfo     String? @db.Text // 課程資料／上課須知（講義連結、注意事項），純文字換行
 
+  // 收支表模板：QUANTUM 量子思維 / GENERAL 一般課程 / SEMINAR 講座。
+  // null = 依場次名稱自動判斷（deriveFinanceTemplate）；收支頁可人工指定
+  financeTemplate String?
+
   signups SessionSignup[]
 
   // 收支與分潤（見下方 SessionOrder 等模型的檔頭註解）
@@ -662,6 +666,13 @@ model SessionOrder {
   paymentStatus String? // 1shop 原始金流狀態
   orderedAt     DateTime?
   seats         Int       @default(1) // 訂單席次加總（與名單人數對帳用）
+
+  // 外部分潤歸屬（1shop 原文，追溯用）：
+  // 銷售頁名稱含「(推廣者-XXX專用)」＝頁主；推薦人欄有名字＝推薦人（優先）。
+  // 自動分潤建議由 compute 層即時算，不落地——原文在就能隨規則演進重算
+  salesPage     String? // 1shop「銷售頁名稱」
+  salesPageCode String? // 1shop「銷售頁編號前綴」（02A / 08K…）
+  referrer      String? // 1shop「推薦人」
 
   // 結算控制
   isRecognized   Boolean   @default(true) // false = 暫不認列（分期未繳完等），收入不計

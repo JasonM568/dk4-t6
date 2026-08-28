@@ -96,6 +96,10 @@ type ParsedRow = {
   // 收支模組用：付款方式原文（「金流」欄）與每人單價；名單邏輯完全不讀這兩個欄位
   paymentMethodRaw: string | null;
   unitPrice: number | null;
+  // 收支模組用：外部分潤歸屬（銷售頁推廣者／推薦人），名單邏輯不讀
+  salesPage: string | null;
+  salesPageCode: string | null;
+  referrer: string | null;
   attendees: OrderAttendee[];
 };
 
@@ -113,6 +117,9 @@ const HEADERS = {
   // 收支模組用（optional：舊匯出檔沒有也不影響名單匯入）
   paymentMethod: "金流",
   unitPrice: "單價",
+  salesPage: "銷售頁名稱",
+  salesPageCode: "銷售頁編號前綴",
+  referrer: "推薦人",
 } as const;
 
 /** 1shop 的自訂欄位會直接成為匯出欄位。各銷售頁的命名不同，因此以欄位
@@ -440,6 +447,9 @@ export async function parseOrderFile(
       meal: findMeal(r),
       paymentMethodRaw: cell(r, col.paymentMethod) || null,
       unitPrice: unitPrice !== null && Number.isFinite(unitPrice) ? unitPrice : null,
+      salesPage: cell(r, col.salesPage) || null,
+      salesPageCode: cell(r, col.salesPageCode) || null,
+      referrer: cell(r, col.referrer) || null,
       quantity: qty !== null && Number.isFinite(qty) && qty > 0 ? qty : null,
       attendees: [
         { key: "buyer", name },

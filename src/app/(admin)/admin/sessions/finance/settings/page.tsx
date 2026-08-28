@@ -28,6 +28,8 @@ export default async function FinanceSettingsPage() {
           atmFeePct: settings.atmFeePpm / 10_000,
           remitUnitFee: settings.remitUnitFee,
           shares: settings.internalShares.map((s) => ({ name: s.name, pct: s.ppm / 10_000 })),
+          externalSharePct: settings.externalSharePpm / 10_000,
+          internalPromoters: settings.internalPromoters.join("、"),
         }}
       />
     </div>

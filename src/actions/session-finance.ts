@@ -390,6 +390,25 @@ export async function deleteCostAction(costId: string): Promise<FinanceFormState
   return { success: "已刪除" };
 }
 
+/** 指定本場收支表模板（量子思維／一般課程／講座）。
+ *  null（AUTO）= 回到依場次名稱自動判斷 */
+export async function setFinanceTemplateAction(
+  sessionId: string,
+  template: string,
+): Promise<FinanceFormState> {
+  await requireFullAdmin();
+  if (!["AUTO", "QUANTUM", "GENERAL", "SEMINAR"].includes(template))
+    return { error: "模板不正確" };
+  const locked = await guardSession(sessionId);
+  if (locked) return { error: locked };
+  await prisma.courseSession.update({
+    where: { id: sessionId },
+    data: { financeTemplate: template === "AUTO" ? null : template },
+  });
+  revalidateFinance(sessionId);
+  return { success: "已切換收支表模板" };
+}
+
 /** 儲存本場的內部分潤名單（整組取代）。
  *  比例合計不強制 100%（單一講師 100%、刻意保留比例都合法），警告由畫面顯示 */
 export async function saveSharesAction(
@@ -467,6 +486,20 @@ export async function saveFinanceSettingsAction(
   }
   const atmMode = String(formData.get("atmMode") ?? "UNIT");
   await setFinanceSetting("atmMode", atmMode === "RATE" ? "RATE" : "UNIT");
+
+  // 外部分潤：預設費率（%）與內部人員名單（頓號/逗號分隔輸入）
+  const extPct = Number(String(formData.get("externalSharePct") ?? "").trim());
+  if (!Number.isFinite(extPct) || extPct < 0 || extPct > 100)
+    return { error: "外部分潤費率須為 0–100 的百分比" };
+  await setFinanceSetting("externalSharePpm", String(Math.round(extPct * 10_000)));
+  const internalNames = String(formData.get("internalPromoters") ?? "")
+    .split(/[、,，;；\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length <= 30)
+    .slice(0, 50);
+  if (internalNames.length === 0)
+    return { error: "內部人員名單至少要有一位（否則內部推廣頁會被當外部算分潤）" };
+  await setFinanceSetting("internalPromoters", JSON.stringify(internalNames));
 
   // 預設內部分潤（新場次的起始值；已設定的場次不受影響）
   const sharesJson = String(formData.get("sharesJson") ?? "");

@@ -105,3 +105,71 @@ export const FINANCE_STATUS_LABEL: Record<string, string> = {
   DRAFT: "編製中",
   LOCKED: "已結算",
 };
+
+// ── 收支表模板（量子思維／一般課程／講座）──
+
+export const FINANCE_TEMPLATES = ["QUANTUM", "GENERAL", "SEMINAR"] as const;
+export type FinanceTemplate = (typeof FINANCE_TEMPLATES)[number];
+
+export const FINANCE_TEMPLATE_LABEL: Record<FinanceTemplate, string> = {
+  QUANTUM: "量子思維課程",
+  GENERAL: "一般課程",
+  SEMINAR: "講座／分享會",
+};
+
+/** 場次沒指定模板時依名稱判斷（收支頁可人工覆寫存回 financeTemplate）。
+ *  差異：QUANTUM 的刷卡/ATM 手續費拆「新生/複訓」兩列（對照他的量子收支表），
+ *  GENERAL 合併單列；SEMINAR 留給講座規則（單一講師 100% 等，之後擴充）。 */
+export function deriveFinanceTemplate(title: string): FinanceTemplate {
+  if (title.includes("量子")) return "QUANTUM";
+  if (/講座|分享會|微型|讀冊/.test(title)) return "SEMINAR";
+  return "GENERAL";
+}
+
+// ── 外部分潤歸屬（銷售頁推廣者／推薦人）──
+
+/** 1shop 銷售頁名稱裡的推廣者：「HOPE OS 初階｜…(推廣者-黃詩雅專用)」→「黃詩雅」。
+ *  實測 2026-08 匯出檔的固定格式是「(推廣者-XXX專用)」；抓不到回 null（官方頁）。 */
+export function extractPromoter(salesPage: string | null | undefined): string | null {
+  if (!salesPage) return null;
+  const m = salesPage.match(/推廣者\s*[-－–—]\s*([^()（）]+?)\s*專用/);
+  return m ? m[1].trim() : null;
+}
+
+/** 姓名清洗：去空白與常見頭銜，讓「顧及然 院長」「顧院長 世華南加分會理事」
+ *  都能對上內部名單的「顧及然」「顧院長」。比對方向：訂單上的名字包含名單裡的名字 */
+function cleanName(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+export function isInternalName(name: string, internalNames: string[]): boolean {
+  const n = cleanName(name);
+  return internalNames.some((x) => {
+    const c = cleanName(x);
+    return c.length > 0 && n.includes(c);
+  });
+}
+
+export type OrderAttribution = { name: string; via: "REFERRER" | "SALES_PAGE" };
+
+/** 訂單的外部分潤歸屬。優先序（Jason 2026-08-28 拍板）：
+ *  1. 推薦人欄有名字 → 歸推薦人（高雄 8/15 有 13/22 筆是掛在別人頁面下靠推薦人記功勞）
+ *  2. 否則銷售頁含「推廣者-XXX專用」→ 歸頁主
+ *  內部人員（顧院長／陳孟宏／梁舒庭…，見 finance 設定）一律不產生外部分潤 → null */
+export function attributeOrder(
+  referrer: string | null | undefined,
+  salesPage: string | null | undefined,
+  internalNames: string[],
+): OrderAttribution | null {
+  const ref = (referrer ?? "").trim();
+  if (ref) {
+    return isInternalName(ref, internalNames) ? null : { name: ref, via: "REFERRER" };
+  }
+  const promoter = extractPromoter(salesPage);
+  if (promoter) {
+    return isInternalName(promoter, internalNames)
+      ? null
+      : { name: promoter, via: "SALES_PAGE" };
+  }
+  return null;
+}

@@ -22,6 +22,8 @@ export function SettingsForm({
     atmFeePct: number;
     remitUnitFee: number;
     shares: { name: string; pct: number }[];
+    externalSharePct: number;
+    internalPromoters: string;
   };
 }) {
   const [state, action] = useActionState<FinanceFormState, FormData>(
@@ -109,6 +111,27 @@ export function SettingsForm({
             /筆
             <span className="text-xs text-gray-400">筆數＝內部分潤人數；個別場次可在收支頁覆寫</span>
           </label>
+        </section>
+
+        <section className="space-y-2 rounded-xl border border-gray-200 p-4">
+          <h2 className="font-bold">外部分潤（自動歸屬）</h2>
+          <p className="text-xs text-gray-400">
+            訂單匯入後依「推薦人」（優先）與銷售頁「推廣者-XXX專用」自動歸屬，
+            基數只算該人的新生認列金額；內部人員不產生外部分潤。
+          </p>
+          {pctInput("externalSharePct", "外部分潤費率（新生毛收 ×）", initial.externalSharePct)}
+          <label className="flex items-center gap-2 text-sm">
+            <span className="w-40 shrink-0 text-gray-600">內部人員名單</span>
+            <input
+              name="internalPromoters"
+              defaultValue={initial.internalPromoters}
+              placeholder="顧及然、顧院長、孟宏、舒庭"
+              className="w-full rounded-lg border border-gray-300 px-2 py-1.5"
+            />
+          </label>
+          <p className="pl-42 text-xs text-gray-400">
+            用頓號或逗號分隔；比對用「包含」——填「孟宏」就擋得住「陳孟宏」
+          </p>
         </section>
 
         <section className="space-y-2 rounded-xl border border-gray-200 p-4">

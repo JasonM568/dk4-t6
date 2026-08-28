@@ -8,6 +8,7 @@ import {
   deleteCostAction,
   deleteManualOrderAction,
   saveSharesAction,
+  setFinanceTemplateAction,
   setLineRecognitionAction,
   setLineStudentTypeAction,
   setOrderRecognizedAction,
@@ -16,6 +17,12 @@ import {
   type FinanceFormState,
 } from "@/actions/session-finance";
 import type { FinanceResult } from "@/lib/finance/compute";
+import {
+  FINANCE_TEMPLATES,
+  FINANCE_TEMPLATE_LABEL,
+  extractPromoter,
+  type FinanceTemplate,
+} from "@/lib/finance/labels";
 import { formatNT } from "@/lib/format";
 import { SubmitButton } from "@/components/admin/submit-button";
 
@@ -34,6 +41,8 @@ type OrderRow = {
   refundedAt: string | null;
   refundAmount: number;
   manualOverride: boolean;
+  salesPage: string | null;
+  referrer: string | null;
   lines: {
     id: string;
     productRaw: string;
@@ -71,6 +80,8 @@ export function FinanceManager({
   orders,
   shares: initialShares,
   sharesSaved,
+  template,
+  templateStored,
 }: {
   sessionId: string;
   result: FinanceResult;
@@ -78,6 +89,8 @@ export function FinanceManager({
   orders: OrderRow[];
   shares: { name: string; pct: number }[];
   sharesSaved: boolean;
+  template: FinanceTemplate;
+  templateStored: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [flash, setFlash] = useState<FinanceFormState>(null);
@@ -89,6 +102,27 @@ export function FinanceManager({
 
   return (
     <div className="space-y-8">
+      {/* 收支表模板：量子拆手續費列、一般合併；AUTO = 依場次名稱判斷 */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-gray-600">收支表模板</span>
+        <select
+          value={template}
+          disabled={pending}
+          onChange={(e) => run(() => setFinanceTemplateAction(sessionId, e.target.value))}
+          className="rounded-lg border border-gray-300 bg-white px-2 py-1.5"
+        >
+          {FINANCE_TEMPLATES.map((t) => (
+            <option key={t} value={t}>
+              {FINANCE_TEMPLATE_LABEL[t]}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-gray-400">
+          {templateStored ? "本場已指定" : "依場次名稱自動判斷（切換後固定為本場設定）"}
+          ・量子模板的刷卡/ATM 手續費拆新生/複訓兩列
+        </span>
+      </div>
+
       {/* 對帳列：數字對不齊 = 有漏單，紅字擺在最上面 */}
       <div
         className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border px-4 py-2.5 text-sm ${
@@ -304,6 +338,23 @@ function OrderDetail({
                   人工調整
                 </span>
               )}
+              {(() => {
+                // 外部分潤歸屬（推薦人優先；內部/外部由 compute 層依設定判斷）
+                const promoter = extractPromoter(o.salesPage);
+                if (o.referrer)
+                  return (
+                    <span className="rounded bg-purple-100 px-1 text-xs text-purple-800" title={`推薦人：${o.referrer}${promoter ? `（銷售頁主：${promoter}）` : ""}`}>
+                      推薦：{o.referrer}
+                    </span>
+                  );
+                if (promoter)
+                  return (
+                    <span className="rounded bg-purple-50 px-1 text-xs text-purple-700" title={o.salesPage ?? ""}>
+                      頁主：{promoter}
+                    </span>
+                  );
+                return null;
+              })()}
               {o.refundedAt && (
                 <span className="rounded bg-red-100 px-1 text-xs text-red-700">
                   已退款 {formatNT(o.refundAmount)}
@@ -658,7 +709,11 @@ function ExternalShareBlock({
   return (
     <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50/40">
       <p className="px-3 pt-2 text-sm font-medium text-purple-900">
-        外部分潤（講師／天使長抽成）——毛收 × %，列為支出先扣，不參與下方內部比例分配
+        外部分潤（講師／天使長抽成）——列為支出先扣，不參與下方內部比例分配
+      </p>
+      <p className="px-3 text-xs text-purple-800/70">
+        標「自動」的列＝依訂單的推薦人／銷售頁「推廣者-XXX專用」自動歸屬，
+        基數只算該人的<strong>新生</strong>認列金額；要改費率或金額，用下方表單加同名人工列即可覆寫
       </p>
       {rows.length > 0 ? (
         <table className="mt-1 w-full text-sm">
@@ -671,23 +726,39 @@ function ExternalShareBlock({
             </tr>
           </thead>
           <tbody>
-            {rows.map((c) => (
-              <tr key={c.id} className="border-t border-purple-100">
-                <td className="px-3 py-1.5">{c.payee ? `${c.payee}｜${c.label}` : c.label}</td>
+            {rows.map((c, i) => (
+              <tr key={c.id ?? `auto-ext-${i}`} className="border-t border-purple-100">
+                <td className="px-3 py-1.5">
+                  {c.label}
+                  {c.isAuto && (
+                    <span
+                      className="ml-1 rounded bg-purple-100 px-1 text-xs text-purple-700"
+                      title="依訂單的推薦人／銷售頁推廣者自動計算；用下方表單加同名人工列即可覆寫金額或費率"
+                    >
+                      自動
+                    </span>
+                  )}
+                </td>
                 <td className="px-2 py-1.5 text-xs text-gray-500">{c.basisText ?? "—"}</td>
                 <td className="px-2 py-1.5 text-right font-mono">{formatNT(c.amount)}</td>
                 <td className="px-2 py-1.5 text-right">
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => {
-                      if (confirm(`刪除外部分潤「${c.label}」？`))
-                        run(() => deleteCostAction(c.id!));
-                    }}
-                    className="text-xs text-red-500 hover:underline"
-                  >
-                    刪除
-                  </button>
+                  {c.isAuto ? (
+                    <span className="text-xs text-gray-400" title="同名人工列可覆寫">
+                      自動
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => {
+                        if (confirm(`刪除外部分潤「${c.label}」？`))
+                          run(() => deleteCostAction(c.id!));
+                      }}
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      刪除
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -703,7 +774,8 @@ function ExternalShareBlock({
         </table>
       ) : (
         <p className="px-3 py-1 text-xs text-gray-500">
-          本場尚未新增外部分潤——有講師／天使長要抽成的，在下面加：
+          本場沒有自動歸屬到的外部分潤（訂單無推薦人／推廣者頁，或都是內部人員）——
+          要手動加的在下面：
         </p>
       )}
       <form action={action} className="flex flex-wrap items-end gap-2 border-t border-purple-100 px-3 py-2 text-sm">

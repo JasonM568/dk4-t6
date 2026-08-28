@@ -33,10 +33,12 @@ const KEYWORD = "fin測試場次";
 const HEADER = [
   "訂單編號", "建立日期", "訂單狀態", "顧客", "產品", "產品數量",
   "單價", "小計", "金流", "金流狀態", "顧客電話", "顧客信箱",
+  "銷售頁編號前綴", "銷售頁名稱", "推薦人",
 ];
 type Row = {
   orderNo: string; name: string; product?: string; qty?: number;
   unit?: number; amount?: number; pay?: string; payStatus?: string; status?: string;
+  pageCode?: string; page?: string; ref?: string;
 };
 const mk = (r: Row) => [
   r.orderNo, "2026-08-20 10:00:00", r.status ?? "已完成", r.name,
@@ -44,6 +46,7 @@ const mk = (r: Row) => [
   r.unit ?? 2800, r.amount ?? (r.unit ?? 2800) * (r.qty ?? 1),
   r.pay ?? "信用卡", r.payStatus ?? "已付款",
   "0912345678", "fin-test@example.com",
+  r.pageCode ?? "", r.page ?? "", r.ref ?? "",
 ];
 async function xlsx(rowsIn: Row[]): Promise<ArrayBuffer> {
   const wb = new ExcelJS.Workbook();
@@ -81,8 +84,9 @@ async function main() {
       // 莊秀玲式訂單：同一張訂單「複訓×2＋新生×1」分兩列匯出
       { orderNo: "F001", name: "測試甲", product: `${KEYWORD} 複訓方案`, qty: 2, unit: 1500, pay: "信用卡" },
       { orderNo: "F001", name: "測試甲", product: `${KEYWORD} 新生方案`, qty: 1, unit: 2800, pay: "信用卡" },
-      { orderNo: "F002", name: "測試乙", unit: 2800, pay: "信用卡分3期" },
-      { orderNo: "F003", name: "測試丙", unit: 2800, pay: "ATM匯款轉帳" },
+      { orderNo: "F002", name: "測試乙", unit: 2800, pay: "信用卡分3期",
+        pageCode: "08K", page: "HOPE OS 初階｜AI 時代的人生升級系統 (推廣者-黃詩雅專用)" },
+      { orderNo: "F003", name: "測試丙", unit: 2800, pay: "ATM匯款轉帳", ref: "謝佳玲" },
       { orderNo: "F004", name: "測試丁", unit: 2800, pay: "單筆滿3000可信用卡分3期" },
       { orderNo: "F005", name: "測試戊", unit: 2800, pay: "信用卡線上付款" },
     ]);
@@ -100,6 +104,15 @@ async function main() {
     check("F004 → CREDIT_INSTALLMENT（另一種寫法）", methods.get("F004") === "CREDIT_INSTALLMENT");
     check("F005 → CREDIT_ONE（信用卡線上付款）", methods.get("F005") === "CREDIT_ONE");
     check("F003 → ATM", methods.get("F003") === "ATM");
+    const attrF002 = t1.orders.find((o) => o.orderNo === "F002");
+    const attrF003 = t1.orders.find((o) => o.orderNo === "F003");
+    check(
+      "外部分潤歸屬欄位落地（F002 銷售頁推廣者、F003 推薦人）",
+      attrF002?.salesPageCode === "08K" &&
+        (attrF002?.salesPage ?? "").includes("推廣者-黃詩雅專用") &&
+        attrF003?.referrer === "謝佳玲",
+      JSON.stringify({ page: attrF002?.salesPage, code: attrF002?.salesPageCode, ref: attrF003?.referrer }),
+    );
 
     // 名單端也照常工作（同一次匯入）
     const signups = await prisma.sessionSignup.count({ where: { sessionId: session.id } });

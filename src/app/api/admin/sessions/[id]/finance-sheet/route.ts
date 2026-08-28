@@ -7,6 +7,7 @@ import {
   type ManualCostInput,
 } from "@/lib/finance/compute";
 import { buildFinanceWorkbook } from "@/lib/finance/sheet";
+import { deriveFinanceTemplate, type FinanceTemplate } from "@/lib/finance/labels";
 
 // 場次收支表下載：權限＋撈資料在這裡，版面建構在 lib/finance/sheet.ts（測試共用）。
 // 僅管理員（requireFullAdmin，throw → 403）：分潤金額是內部薪酬，操作人員不可下載。
@@ -27,7 +28,7 @@ export async function GET(
     await Promise.all([
       prisma.courseSession.findUnique({
         where: { id },
-        select: { id: true, title: true, finance: true },
+        select: { id: true, title: true, financeTemplate: true, finance: true },
       }),
       prisma.sessionOrder.findMany({
         where: { sessionId: id },
@@ -60,6 +61,8 @@ export async function GET(
     isRecognized: o.isRecognized,
     refundedAt: o.refundedAt,
     buyerName: o.buyerName,
+    salesPage: o.salesPage,
+    referrer: o.referrer,
     lines: o.lines.map((l) => ({
       planLabel: l.planLabel,
       productRaw: l.productRaw,
@@ -84,7 +87,16 @@ export async function GET(
     payee: c.payee,
     sortOrder: c.sortOrder,
   }));
-  const result = computeSessionFinance({ orders: orderInputs, manualCosts, shares, settings });
+  const template: FinanceTemplate =
+    (session.financeTemplate as FinanceTemplate | null) ??
+    deriveFinanceTemplate(session.title);
+  const result = computeSessionFinance({
+    orders: orderInputs,
+    manualCosts,
+    shares,
+    settings,
+    template,
+  });
 
   const wb = buildFinanceWorkbook({
     title: session.title,

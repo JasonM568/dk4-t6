@@ -17,6 +17,8 @@ export const FINANCE_SETTING_KEYS = {
   atmFeePpm: "finance:atmFeePpm",
   remitUnitFee: "finance:remitUnitFee",
   internalShares: "finance:internalShares",
+  externalSharePpm: "finance:externalSharePpm",
+  internalPromoters: "finance:internalPromoters",
 } as const;
 
 export type InternalShareSetting = { name: string; ppm: number };
@@ -31,6 +33,8 @@ export type FinanceSettings = {
   atmFeePpm: number;
   remitUnitFee: number; // 分潤匯費 元/筆（筆數 = 內部分潤人數）
   internalShares: InternalShareSetting[]; // 預設內部分潤（每場可覆寫）
+  externalSharePpm: number; // 外部分潤預設費率（基數：歸屬訂單的新生認列金額）
+  internalPromoters: string[]; // 內部人員名單：推廣頁/推薦人是這些人不產生外部分潤
 };
 
 export const FINANCE_SETTING_DEFAULTS: FinanceSettings = {
@@ -47,6 +51,9 @@ export const FINANCE_SETTING_DEFAULTS: FinanceSettings = {
     { name: "孟宏", ppm: 400_000 },
     { name: "舒庭", ppm: 200_000 },
   ],
+  externalSharePpm: 200_000, // 20%（量子 6/27 表全體 20%，Jason 2026-08-28 拍板）
+  // 比對用「包含」：訂單上的「顧及然 院長」「陳孟宏」都對得上
+  internalPromoters: ["顧及然", "顧院長", "孟宏", "舒庭"],
 };
 
 /** SiteSetting.value 是自由文字，解析一律 clamp + fallback（同 sms/settings.ts）。
@@ -81,6 +88,23 @@ function parseShares(raw: string | undefined): InternalShareSetting[] {
   }
 }
 
+/** 內部人員名單存 JSON 字串陣列；解析失敗回退預設（同 parseShares 的防線思路） */
+function parseNameList(raw: string | undefined): string[] {
+  if (!raw) return FINANCE_SETTING_DEFAULTS.internalPromoters;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length > 50)
+      return FINANCE_SETTING_DEFAULTS.internalPromoters;
+    const out = arr
+      .filter((x): x is string => typeof x === "string")
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0 && x.length <= 30);
+    return out.length > 0 ? out : FINANCE_SETTING_DEFAULTS.internalPromoters;
+  } catch {
+    return FINANCE_SETTING_DEFAULTS.internalPromoters;
+  }
+}
+
 export async function getFinanceSettings(): Promise<FinanceSettings> {
   const rows = await prisma.siteSetting.findMany({
     where: { key: { in: Object.values(FINANCE_SETTING_KEYS) } },
@@ -98,6 +122,8 @@ export async function getFinanceSettings(): Promise<FinanceSettings> {
     atmFeePpm: parseNum(get("atmFeePpm"), D.atmFeePpm, 0, 200_000),
     remitUnitFee: parseNum(get("remitUnitFee"), D.remitUnitFee, 0, 1_000),
     internalShares: parseShares(get("internalShares")),
+    externalSharePpm: parseNum(get("externalSharePpm"), D.externalSharePpm, 0, 1_000_000),
+    internalPromoters: parseNameList(get("internalPromoters")),
   };
 }
 

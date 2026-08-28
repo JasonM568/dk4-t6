@@ -8,6 +8,7 @@ import {
   type FinanceOrderInput,
   type ManualCostInput,
 } from "@/lib/finance/compute";
+import { deriveFinanceTemplate, type FinanceTemplate } from "@/lib/finance/labels";
 import { FinanceManager } from "./finance-manager";
 
 export const metadata = { title: "場次收支 — 管理後台" };
@@ -32,6 +33,7 @@ export default async function SessionFinancePage({
           id: true,
           title: true,
           eventDate: true,
+          financeTemplate: true,
           finance: true,
         },
       }),
@@ -67,6 +69,8 @@ export default async function SessionFinancePage({
     isRecognized: o.isRecognized,
     refundedAt: o.refundedAt,
     buyerName: o.buyerName,
+    salesPage: o.salesPage,
+    referrer: o.referrer,
     lines: o.lines.map((l) => ({
       planLabel: l.planLabel,
       productRaw: l.productRaw,
@@ -92,11 +96,17 @@ export default async function SessionFinancePage({
     sortOrder: c.sortOrder,
   }));
 
+  // 模板：人工指定優先，否則依場次名稱判斷（量子→拆手續費列）
+  const template: FinanceTemplate =
+    (session.financeTemplate as FinanceTemplate | null) ??
+    deriveFinanceTemplate(session.title);
+
   const result = computeSessionFinance({
     orders: orderInputs,
     manualCosts,
     shares,
     settings,
+    template,
   });
 
   // 日常對帳列：四個數字對不齊就是有漏單（比任何測試都常用）
@@ -130,6 +140,8 @@ export default async function SessionFinancePage({
       <FinanceManager
         sessionId={session.id}
         sharesSaved={storedShares.length > 0}
+        template={template}
+        templateStored={session.financeTemplate !== null}
         result={result}
         reconcile={{
           signupCount: signupStats,
@@ -148,6 +160,8 @@ export default async function SessionFinancePage({
           refundedAt: o.refundedAt?.toISOString() ?? null,
           refundAmount: o.refundAmount,
           manualOverride: o.manualOverride,
+          salesPage: o.salesPage,
+          referrer: o.referrer,
           lines: o.lines.map((l) => ({
             id: l.id,
             productRaw: l.productRaw,

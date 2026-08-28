@@ -21,8 +21,10 @@ import {
   RATE_COST_LABEL,
   STUDENT_TYPE_LABEL,
   STUDENT_TYPE_ORDER,
+  attributeOrder,
   deriveStudentType,
   formatPpm,
+  type FinanceTemplate,
 } from "./labels";
 
 /** Excel ROUND(x,0) 語意：half away from zero。
@@ -38,6 +40,9 @@ export type FinanceOrderInput = {
   isRecognized: boolean;
   refundedAt: Date | string | null;
   buyerName?: string; // 收入列尾的名單欄（他的 Excel 每列都附學員名字）
+  // 外部分潤歸屬（1shop 原文；沒有就不產生自動分潤建議）
+  salesPage?: string | null;
+  referrer?: string | null;
   lines: {
     planLabel: string;
     productRaw?: string; // 新生/複訓自動判定用（含「複訓」＝複訓）
@@ -182,13 +187,45 @@ function sumByMethod(orders: FinanceOrderInput[]) {
 
 const fmtNT = (n: number) => `NT$${n.toLocaleString("zh-TW")}`;
 
+/** 各(付款方式 × 新生/複訓)的認列收入、人數（Σ quantity）、訂單筆數。
+ *  QUANTUM 模板拆列用。訂單筆數的桶＝該訂單認列金額最大的那一列的類型
+ *  （混合訂單極罕見；取最大列可避免一張訂單在兩桶都算一次轉帳手續費）。 */
+function sumByMethodType(orders: FinanceOrderInput[]) {
+  const amount = new Map<string, number>();
+  const qty = new Map<string, number>();
+  const count = new Map<string, number>();
+  for (const o of orders) {
+    if (!o.isRecognized || o.refundedAt) continue;
+    let bestType = "NEW";
+    let bestAmount = -1;
+    for (const l of o.lines) {
+      const st = deriveStudentType(l.productRaw ?? l.planLabel, l.studentType);
+      const key = `${o.paymentMethod}|${st}`;
+      amount.set(key, (amount.get(key) ?? 0) + l.recognizedAmount);
+      qty.set(key, (qty.get(key) ?? 0) + l.quantity);
+      if (l.recognizedAmount > bestAmount) {
+        bestAmount = l.recognizedAmount;
+        bestType = st;
+      }
+    }
+    const ck = `${o.paymentMethod}|${bestType}`;
+    count.set(ck, (count.get(ck) ?? 0) + 1);
+  }
+  return { amount, qty, count };
+}
+
 /** 自動費率支出（Step 2）。加總順序鐵則：**逐列先 round、再相加**——
- *  Excel 每一格都有 ROUND(...,0)，先加浮點再 round 會系統性差 1~2 元。 */
+ *  Excel 每一格都有 ROUND(...,0)，先加浮點再 round 會系統性差 1~2 元。
+ *
+ *  template="QUANTUM" 時刷卡/分期/ATM 手續費拆「新生/複訓」列（對照他的量子
+ *  收支表：信用卡手續費-新生12位／-複訓13位…），金額總和與合併模式相同
+ *  （基數本來就是逐(方式×類型)的整數金額，各自 × 費率再 round）。 */
 export function buildAutoRateCosts(
   orders: FinanceOrderInput[],
   totalIncome: number,
   settings: FinanceSettings,
   internalShareCount: number,
+  template: FinanceTemplate = "GENERAL",
 ): CostRow[] {
   const { amount, count } = sumByMethod(orders);
   const rows: CostRow[] = [];
@@ -214,42 +251,85 @@ export function buildAutoRateCosts(
     amount: roundNT((totalIncome * settings.incomeTaxPpm) / 1_000_000),
   });
 
-  const cardOne = amount.get("CREDIT_ONE") ?? 0;
-  push({
-    code: "CARD_FEE",
-    label: RATE_COST_LABEL.CARD_FEE,
-    basisText: `信用卡單筆 ${fmtNT(cardOne)} × ${formatPpm(settings.cardFeePpm)}`,
-    ratePpm: settings.cardFeePpm,
-    amount: roundNT((cardOne * settings.cardFeePpm) / 1_000_000),
-  });
-
-  const cardInstall = amount.get("CREDIT_INSTALLMENT") ?? 0;
-  push({
-    code: "CARD_INSTALLMENT_FEE",
-    label: RATE_COST_LABEL.CARD_INSTALLMENT_FEE,
-    basisText: `信用卡分期 ${fmtNT(cardInstall)} × ${formatPpm(settings.cardInstallFeePpm)}`,
-    ratePpm: settings.cardInstallFeePpm,
-    amount: roundNT((cardInstall * settings.cardInstallFeePpm) / 1_000_000),
-  });
-
-  const atmAmount = amount.get("ATM") ?? 0;
-  const atmCount = count.get("ATM") ?? 0;
-  if (settings.atmMode === "UNIT") {
-    push({
-      code: "ATM_FEE",
-      label: RATE_COST_LABEL.ATM_FEE,
-      basisText: `ATM ${atmCount} 筆 × $${settings.atmUnitFee}`,
-      ratePpm: null,
-      amount: atmCount * settings.atmUnitFee,
-    });
+  if (template === "QUANTUM") {
+    // 拆列模式：新生三列在前、複訓三列在後（他的量子表列序）
+    const mt = sumByMethodType(orders);
+    for (const st of ["NEW", "RETRAIN"] as const) {
+      const stLabel = STUDENT_TYPE_LABEL[st];
+      const cardOne = mt.amount.get(`CREDIT_ONE|${st}`) ?? 0;
+      push({
+        code: `CARD_FEE_${st}`,
+        label: `${RATE_COST_LABEL.CARD_FEE}-${stLabel} ${mt.qty.get(`CREDIT_ONE|${st}`) ?? 0} 位`,
+        basisText: `信用卡單筆 ${fmtNT(cardOne)} × ${formatPpm(settings.cardFeePpm)}`,
+        ratePpm: settings.cardFeePpm,
+        amount: roundNT((cardOne * settings.cardFeePpm) / 1_000_000),
+      });
+      const cardInstall = mt.amount.get(`CREDIT_INSTALLMENT|${st}`) ?? 0;
+      push({
+        code: `CARD_INSTALLMENT_FEE_${st}`,
+        label: `${RATE_COST_LABEL.CARD_INSTALLMENT_FEE}-${stLabel} ${mt.qty.get(`CREDIT_INSTALLMENT|${st}`) ?? 0} 位`,
+        basisText: `信用卡分期 ${fmtNT(cardInstall)} × ${formatPpm(settings.cardInstallFeePpm)}`,
+        ratePpm: settings.cardInstallFeePpm,
+        amount: roundNT((cardInstall * settings.cardInstallFeePpm) / 1_000_000),
+      });
+      const atmAmount = mt.amount.get(`ATM|${st}`) ?? 0;
+      const atmCount = mt.count.get(`ATM|${st}`) ?? 0;
+      if (settings.atmMode === "UNIT") {
+        push({
+          code: `ATM_FEE_${st}`,
+          label: `${RATE_COST_LABEL.ATM_FEE}-${stLabel} ${mt.qty.get(`ATM|${st}`) ?? 0} 位`,
+          basisText: `ATM ${atmCount} 筆 × $${settings.atmUnitFee}`,
+          ratePpm: null,
+          amount: atmCount * settings.atmUnitFee,
+        });
+      } else {
+        push({
+          code: `ATM_FEE_${st}`,
+          label: `${RATE_COST_LABEL.ATM_FEE}-${stLabel}`,
+          basisText: `ATM ${fmtNT(atmAmount)} × ${formatPpm(settings.atmFeePpm)}`,
+          ratePpm: settings.atmFeePpm,
+          amount: roundNT((atmAmount * settings.atmFeePpm) / 1_000_000),
+        });
+      }
+    }
   } else {
+    const cardOne = amount.get("CREDIT_ONE") ?? 0;
     push({
-      code: "ATM_FEE",
-      label: RATE_COST_LABEL.ATM_FEE,
-      basisText: `ATM ${fmtNT(atmAmount)} × ${formatPpm(settings.atmFeePpm)}`,
-      ratePpm: settings.atmFeePpm,
-      amount: roundNT((atmAmount * settings.atmFeePpm) / 1_000_000),
+      code: "CARD_FEE",
+      label: RATE_COST_LABEL.CARD_FEE,
+      basisText: `信用卡單筆 ${fmtNT(cardOne)} × ${formatPpm(settings.cardFeePpm)}`,
+      ratePpm: settings.cardFeePpm,
+      amount: roundNT((cardOne * settings.cardFeePpm) / 1_000_000),
     });
+
+    const cardInstall = amount.get("CREDIT_INSTALLMENT") ?? 0;
+    push({
+      code: "CARD_INSTALLMENT_FEE",
+      label: RATE_COST_LABEL.CARD_INSTALLMENT_FEE,
+      basisText: `信用卡分期 ${fmtNT(cardInstall)} × ${formatPpm(settings.cardInstallFeePpm)}`,
+      ratePpm: settings.cardInstallFeePpm,
+      amount: roundNT((cardInstall * settings.cardInstallFeePpm) / 1_000_000),
+    });
+
+    const atmAmount = amount.get("ATM") ?? 0;
+    const atmCount = count.get("ATM") ?? 0;
+    if (settings.atmMode === "UNIT") {
+      push({
+        code: "ATM_FEE",
+        label: RATE_COST_LABEL.ATM_FEE,
+        basisText: `ATM ${atmCount} 筆 × $${settings.atmUnitFee}`,
+        ratePpm: null,
+        amount: atmCount * settings.atmUnitFee,
+      });
+    } else {
+      push({
+        code: "ATM_FEE",
+        label: RATE_COST_LABEL.ATM_FEE,
+        basisText: `ATM ${fmtNT(atmAmount)} × ${formatPpm(settings.atmFeePpm)}`,
+        ratePpm: settings.atmFeePpm,
+        amount: roundNT((atmAmount * settings.atmFeePpm) / 1_000_000),
+      });
+    }
   }
 
   // 分潤匯費：筆數 = 內部分潤人數（見檔頭的循環依賴說明——只吃人數，不吃金額）
@@ -264,6 +344,52 @@ export function buildAutoRateCosts(
   return rows;
 }
 
+/** 外部分潤自動建議列（Step 3）。歸屬：推薦人優先、其次銷售頁「推廣者-XXX專用」；
+ *  內部人員（settings.internalPromoters）不產生。基數＝該人歸屬訂單的**新生**
+ *  認列金額（複訓不計、退款/不認列不計）——「非內部人員可認列分潤金額是新生費用」。
+ *  excludePayees：本場已有同名人工外部分潤列 → 自動列讓位（同費率列 override 慣例）。 */
+export function buildExternalShareRows(
+  orders: FinanceOrderInput[],
+  settings: FinanceSettings,
+  excludePayees: string[] = [],
+): CostRow[] {
+  const clean = (s: string) => s.replace(/\s+/g, "");
+  const excluded = new Set(excludePayees.map(clean));
+  const acc = new Map<string, { qty: number; amount: number; via: Set<string> }>();
+  for (const o of orders) {
+    if (!o.isRecognized || o.refundedAt) continue;
+    const attr = attributeOrder(o.referrer, o.salesPage, settings.internalPromoters);
+    if (!attr || excluded.has(clean(attr.name))) continue;
+    for (const l of o.lines) {
+      const st = deriveStudentType(l.productRaw ?? l.planLabel, l.studentType);
+      if (st !== "NEW") continue; // 外部分潤只認新生費用
+      const cur = acc.get(attr.name) ?? { qty: 0, amount: 0, via: new Set<string>() };
+      cur.qty += l.quantity;
+      cur.amount += l.recognizedAmount;
+      cur.via.add(attr.via === "REFERRER" ? "推薦人" : "銷售頁");
+      acc.set(attr.name, cur);
+    }
+  }
+  const rows: CostRow[] = [];
+  let sort = 0;
+  for (const [name, a] of [...acc.entries()].sort((x, y) => y[1].amount - x[1].amount)) {
+    if (a.amount === 0) continue;
+    rows.push({
+      kind: "EXTERNAL_SHARE",
+      code: `EXT_SHARE:${name}`,
+      label: `${name} 分潤`,
+      basisText: `新生 ${a.qty} 位 ${fmtNT(a.amount)} × ${formatPpm(settings.externalSharePpm)}（${[...a.via].join("＋")}）`,
+      ratePpm: settings.externalSharePpm,
+      amount: roundNT((a.amount * settings.externalSharePpm) / 1_000_000),
+      isAuto: true,
+      payee: name,
+      note: null,
+      sortOrder: sort++,
+    });
+  }
+  return rows;
+}
+
 /** 完整結算（Step 1–6）。
  *  manualCosts = 資料庫裡 isAuto=false 的列（手填成本、外部分潤、人工覆寫的費率列），
  *  重算時原樣保留；自動費率列一律重建。 */
@@ -272,8 +398,10 @@ export function computeSessionFinance(input: {
   manualCosts: ManualCostInput[];
   shares: ShareInput[];
   settings: FinanceSettings;
+  template?: FinanceTemplate; // 預設 GENERAL（合併手續費列）；QUANTUM 拆新生/複訓
 }): FinanceResult {
   const { orders, manualCosts, shares, settings } = input;
+  const template = input.template ?? "GENERAL";
   const warnings: string[] = [];
 
   // Step 1 收入
@@ -290,8 +418,15 @@ export function computeSessionFinance(input: {
   const overriddenCodes = new Set(
     manualCosts.map((c) => c.code).filter((c): c is string => !!c),
   );
-  const autoRows = buildAutoRateCosts(orders, totalIncome, settings, shares.length)
+  const autoRows = buildAutoRateCosts(orders, totalIncome, settings, shares.length, template)
     .filter((r) => !r.code || !overriddenCodes.has(r.code));
+
+  // Step 3 外部分潤自動建議：同名人工列（payee 相同）讓自動列讓位——
+  // 人工調過費率/金額後，重匯與重算都不會再冒出第二列
+  const manualExternalPayees = manualCosts
+    .filter((c) => c.kind === "EXTERNAL_SHARE" && c.payee)
+    .map((c) => c.payee as string);
+  const externalAutoRows = buildExternalShareRows(orders, settings, manualExternalPayees);
 
   // Step 3+4 支出合併：自動列在前、手填列照 sortOrder 在後（匯出列序即此序）
   const manualRows: CostRow[] = manualCosts
@@ -310,7 +445,7 @@ export function computeSessionFinance(input: {
       note: c.note ?? null,
       sortOrder: c.sortOrder,
     }));
-  const costRows = [...autoRows, ...manualRows];
+  const costRows = [...autoRows, ...externalAutoRows, ...manualRows];
   const totalCost = costRows.reduce((n, r) => n + r.amount, 0);
 
   // Step 5 毛利：允許負數。歸零會讓「支出 > 收入」在報表上消失
