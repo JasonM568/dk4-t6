@@ -25,7 +25,8 @@ import {
 export type FinanceFormState = { error?: string; success?: string } | null;
 
 const FINANCE_PATHS = (sessionId: string) => [
-  `/admin/sessions/${sessionId}/finance`,
+  `/admin/finance/${sessionId}`,
+  "/admin/finance",
   "/admin/sessions",
 ];
 
@@ -519,8 +520,8 @@ export async function saveFinanceSettingsAction(
     return { error: "預設分潤資料格式錯誤" };
   }
 
-  revalidatePath("/admin/sessions/finance/settings");
-  revalidatePath("/admin/sessions");
+  revalidatePath("/admin/finance/settings");
+  revalidatePath("/admin/finance");
   return { success: "已儲存費率與預設分潤（已結算的場次不受影響）" };
 }
 
@@ -541,6 +542,7 @@ export async function uploadFinanceOnlyAction(
       sourceFile: file.name,
     });
     const f = report.finance;
+    revalidatePath("/admin/finance");
     revalidatePath("/admin/sessions");
     const skipped =
       f.skippedOverride.length + f.skippedLocked.length > 0

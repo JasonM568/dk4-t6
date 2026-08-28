@@ -26,11 +26,12 @@ const MARKETING_TABS = [
   { href: "/admin/sms", label: "簡訊發送", editorOnly: true },
   { href: "/admin/sms/optouts", label: "簡訊退訂", editorOnly: true },
 ];
-// 場次相關：看板本體＋收支設定（收支頁本身從場次卡片進，deep page 不進 tabs）
-const SESSION_TABS = [
-  { href: "/admin/sessions", label: "場次看板" },
-  // adminOnly：收支含分潤金額（內部薪酬），操作人員不可見
-  { href: "/admin/sessions/finance/settings", label: "收支費率設定", adminOnly: true },
+const SESSION_TABS = [{ href: "/admin/sessions", label: "場次看板" }];
+// 收支結算：獨立類別（2026-08-29 從場次分出）。整組 adminOnly——
+// 分潤金額是內部薪酬，操作人員/總教練連分組都看不到
+const FINANCE_TABS = [
+  { href: "/admin/finance", label: "收支總覽", adminOnly: true },
+  { href: "/admin/finance/settings", label: "費率與分潤設定", adminOnly: true },
 ];
 const SYSTEM_TABS = [
   { href: "/admin/settings", label: "分頁管理" },
@@ -48,6 +49,7 @@ const PLATFORM_PREFIXES = [
 ];
 const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/corporate", "/admin/sms"];
 const SESSION_PREFIXES = ["/admin/sessions"];
+const FINANCE_PREFIXES = ["/admin/finance"];
 const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff"];
 
 function isUnder(pathname: string, prefixes: string[]) {
@@ -75,6 +77,9 @@ export function AdminSubNav({
   } else if (isUnder(pathname, SESSION_PREFIXES)) {
     tabs = SESSION_TABS;
     title = "場次";
+  } else if (isUnder(pathname, FINANCE_PREFIXES)) {
+    tabs = FINANCE_TABS;
+    title = "收支結算";
   } else if (isUnder(pathname, SYSTEM_PREFIXES)) {
     tabs = SYSTEM_TABS;
     title = "系統設定";
@@ -84,6 +89,7 @@ export function AdminSubNav({
   const visible = tabs.filter(
     (t) => (canEdit || !t.editorOnly) && (isAdmin || !t.adminOnly),
   );
+  if (visible.length === 0) return null;
 
   // 巢狀路徑（如 /admin/broadcast 與 /admin/broadcast/groups）只亮最長符合的那個分頁
   const activeHref = visible

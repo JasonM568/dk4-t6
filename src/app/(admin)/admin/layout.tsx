@@ -51,6 +51,12 @@ export default async function AdminLayout({
           <Link href="/admin/sessions" className="text-gray-600 hover:text-black">
             場次看板
           </Link>
+          {/* 收支結算：獨立類別，僅管理員（分潤金額是內部薪酬） */}
+          {admin && (
+            <Link href="/admin/finance" className="text-gray-600 hover:text-black">
+              收支結算
+            </Link>
+          )}
           {/* 系統設定：分頁管理、權限管理，僅管理員 */}
           {admin && (
             <Link

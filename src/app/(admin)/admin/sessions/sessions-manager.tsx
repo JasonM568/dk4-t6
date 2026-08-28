@@ -1247,7 +1247,7 @@ export function SessionCard({
               {/* 收支含分潤金額（內部薪酬）：僅管理員可見；頁面本身也擋 pageGuardFullAdmin */}
               {isAdmin && (
                 <Link
-                  href={`/admin/sessions/${session.id}/finance`}
+                  href={`/admin/finance/${session.id}`}
                   className="inline-block rounded-lg border border-emerald-400 px-3 py-1.5 text-sm text-emerald-700 transition hover:bg-emerald-50"
                 >
                   💰 收支結算
