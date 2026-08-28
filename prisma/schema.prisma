@@ -8,7 +8,7 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")          // …?schema=course（runtime，Supabase 走 6543 pooler）
+  url       = env("DATABASE_URL") // …?schema=course（runtime，Supabase 走 6543 pooler）
   directUrl = env("DATABASE_URL_UNPOOLED") // …?schema=course（migrate 用，Supabase 必須 5432 direct）
 }
 
@@ -70,29 +70,29 @@ model MemberProfile {
 // （蘇郁雅報名時填的是先生陳建中的信箱），email 當唯一鍵會讓第二個人根本建不了檔。
 // email 保留為選填、不設唯一，只在「該信箱剛好只有一筆」時當認領備援。
 model StudentRecord {
-  id            String   @id @default(cuid())
-  phone         String?  @unique
+  id            String                 @id @default(cuid())
+  phone         String?                @unique
   email         String?
   name          String?
-  claimedUserId String?  @db.Uuid
+  claimedUserId String?                @db.Uuid
   claimedAt     DateTime?
   histories     StudentCourseHistory[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
   @@index([email])
   @@index([claimedUserId])
 }
 
 model StudentCourseHistory {
-  id        String   @id @default(cuid())
-  studentId String
-  student   StudentRecord @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id         String        @id @default(cuid())
+  studentId  String
+  student    StudentRecord @relation(fields: [studentId], references: [id], onDelete: Cascade)
   courseName String
   attendedAt DateTime?
-  source    String? // IMPORT / MANUAL / 1SHOP
-  note      String? @db.Text
-  createdAt DateTime @default(now())
+  source     String? // IMPORT / MANUAL / 1SHOP
+  note       String?       @db.Text
+  createdAt  DateTime      @default(now())
 
   @@index([studentId])
 }
@@ -139,12 +139,12 @@ model AdminAuditLog {
 // OPERATOR=操作人員（可查看+編輯+匯出+批次/群發）；COACH=總教練（只能查看訂單/課程/會員）。
 // userId = auth.users.id；email 為指派當下快照，純顯示用。
 model StaffRole {
-  userId    String   @id @db.Uuid
-  role      String // OPERATOR | COACH
-  email     String? // 指派當下 email 快照（權限管理頁顯示用）
+  userId     String   @id @db.Uuid
+  role       String // OPERATOR | COACH
+  email      String? // 指派當下 email 快照（權限管理頁顯示用）
   assignedBy String? // 指派的管理員 email
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // 等級門檻設定表（後台可調）
@@ -199,8 +199,8 @@ model EmailBroadcast {
 
   sourceBroadcastId String? // audienceType=FOLLOWUP 時的來源群發 id（軟連結不加 FK，與 resendOfId 慣例一致）
   followUpFilter    String? // 跟進條件：OPENED（開信者）/ NOT_OPENED（未開信者）/ CLICKED（點擊者）；名單於寄出當下解析
-  recipients    String[]  @default([]) // 實際寄出名單快照（供事後存成群組）
-  claimedAt     DateTime? // 進入 SENDING（cron 認領）的時間；用於回收逾時卡死的寄送
+  recipients        String[]  @default([]) // 實際寄出名單快照（供事後存成群組）
+  claimedAt         DateTime? // 進入 SENDING（cron 認領）的時間；用於回收逾時卡死的寄送
 
   failedRecipients Json? // 逐筆失敗名單 [{email,name?,reason}]；補寄後更新為「仍失敗子集」，全成功設 null
   resendOfId       String? // 此紀錄若為「補寄失敗者」，記來源群發紀錄 id（軟連結不加 FK，與 groupId 慣例一致）
@@ -279,75 +279,79 @@ model CourseGroup {
   themePrimary String? // 專區主題色 #RRGGBB（標題區/按鈕）；空 = 全站預設靛藍
   themeAccent  String? // 輔助色 #RRGGBB（漸層第二色/徽章）；空 = 沿用主題色
 
-  courses     Course[]
-  members     CourseGroupMember[]
-  inviteCodes GroupInviteCode[]
-  dailyBriefs DailyBrief[]
+  courses           Course[]
+  members           CourseGroupMember[]
+  inviteCodes       GroupInviteCode[]
+  dailyBriefs       DailyBrief[]
   subscriptionPlans SubscriptionPlan[]
-  subscriptions Subscription[]
+  subscriptions     Subscription[]
 
   createdAt DateTime @default(now())
 }
 
 // 訂閱金流與會籍狀態：付款供應商 adapter 完成後，回呼只需寫入此處並同步 group member。
 model SubscriptionPlan {
-  id String @id @default(cuid())
-  groupId String
-  group CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  name String
-  interval String // MONTHLY | YEARLY
-  price Int
-  isActive Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String         @id @default(cuid())
+  groupId       String
+  group         CourseGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name          String
+  interval      String // MONTHLY | YEARLY
+  price         Int
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   subscriptions Subscription[]
 }
+
 model Subscription {
-  id String @id @default(cuid())
-  groupId String
-  group CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  planId String
-  plan SubscriptionPlan @relation(fields: [planId], references: [id])
-  email String
-  userId String? @db.Uuid
-  status String @default("PENDING") // PENDING | ACTIVE | FAILED | CANCELED | EXPIRED
-  provider String?
-  providerRef String? @unique
-  currentPeriodEnd DateTime?
-  cancelAtPeriodEnd Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  payments SubscriptionPayment[]
+  id                String                @id @default(cuid())
+  groupId           String
+  group             CourseGroup           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  planId            String
+  plan              SubscriptionPlan      @relation(fields: [planId], references: [id])
+  email             String
+  userId            String?               @db.Uuid
+  status            String                @default("PENDING") // PENDING | ACTIVE | FAILED | CANCELED | EXPIRED
+  provider          String?
+  providerRef       String?               @unique
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean               @default(false)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  payments          SubscriptionPayment[]
+
   @@index([email, status])
   @@index([groupId, status])
 }
+
 model SubscriptionPayment {
-  id String @id @default(cuid())
-  subscriptionId String
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  amount Int
-  status String @default("PENDING")
+  id              String       @id @default(cuid())
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount          Int
+  status          String       @default("PENDING")
   providerTradeNo String?
-  paidAt DateTime?
-  rawPayload Json?
-  createdAt DateTime @default(now())
+  paidAt          DateTime?
+  rawPayload      Json?
+  createdAt       DateTime     @default(now())
+
   @@index([subscriptionId, status])
 }
 
 // ── 訂閱專區每日財經剪報 ──
 // 管理員只需上傳新聞截圖；標題、日期與三款固定封面由系統產生。
 model DailyBrief {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   groupId      String
-  group        CourseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  dateKey      String   // Asia/Taipei 日期，YYYY-MM-DD；每個專區每天一篇
+  group        CourseGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  dateKey      String // Asia/Taipei 日期，YYYY-MM-DD；每個專區每天一篇
   title        String
-  coverVariant Int      @default(0) // 0/1/2 三款系統固定封面輪替
-  status       String   @default("PUBLISHED") // DRAFT | PUBLISHED | UNPUBLISHED
+  coverVariant Int               @default(0) // 0/1/2 三款系統固定封面輪替
+  status       String            @default("PUBLISHED") // DRAFT | PUBLISHED | UNPUBLISHED
   publishedAt  DateTime?
   images       DailyBriefImage[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   @@unique([groupId, dateKey])
   @@index([groupId, status, dateKey])
@@ -410,27 +414,27 @@ model Category {
 }
 
 model Course {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  courseCode  String?  @unique // 課程編號（如 HA-001，選填）
-  title       String
-  description String   @db.Text
-  coverImage  String?
-  introImages String[] @default([]) // 課程介紹圖（詳情頁描述下方依序顯示）
-  listPrice   Int? // 建議售價（僅展示用，前台劃線價；空 = 不顯示）
-  price       Int // 優惠價 = 實際售價（新台幣整數，金流以此計算）
-  sortOrder   Int      @default(0) // 前台顯示順序（小的在前，後台上移/下移調整）
-  isPublished Boolean  @default(false)
-  unpublishAt DateTime? // 公開課程自動下架時間；到點後型錄、詳情與結帳一律關閉
-  groupId     String? // 所屬企業專區；null = 一般公開販售課程
-  group       CourseGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  id               String       @id @default(cuid())
+  slug             String       @unique
+  courseCode       String?      @unique // 課程編號（如 HA-001，選填）
+  title            String
+  description      String       @db.Text
+  coverImage       String?
+  introImages      String[]     @default([]) // 課程介紹圖（詳情頁描述下方依序顯示）
+  listPrice        Int? // 建議售價（僅展示用，前台劃線價；空 = 不顯示）
+  price            Int // 優惠價 = 實際售價（新台幣整數，金流以此計算）
+  sortOrder        Int          @default(0) // 前台顯示順序（小的在前，後台上移/下移調整）
+  isPublished      Boolean      @default(false)
+  unpublishAt      DateTime? // 公開課程自動下架時間；到點後型錄、詳情與結帳一律關閉
+  groupId          String? // 所屬企業專區；null = 一般公開販售課程
+  group            CourseGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   openToGroupUntil DateTime? // 專區限時免開通觀看：此日期前專區會員不需 Enrollment 即可觀看；null/過期 = 回到手動開通
 
-  lessons     Lesson[]
-  materials   CourseMaterial[]
-  categories  Category[]
-  orderItems  OrderItem[]
-  enrollments Enrollment[]
+  lessons            Lesson[]
+  materials          CourseMaterial[]
+  categories         Category[]
+  orderItems         OrderItem[]
+  enrollments        Enrollment[]
   pendingEnrollments PendingEnrollment[]
 
   createdAt DateTime @default(now())
@@ -460,20 +464,20 @@ model CustomPage {
 // ── 知識專欄 ──
 // 從「系統設定 → 分頁管理」維護；可公開或僅限任一訂閱專區會員閱讀。
 model KnowledgeArticle {
-  id           String   @id @default(cuid())
-  slug         String   @unique
-  title        String
-  summary      String   @db.Text
-  coverImage   String?
-  content      String   @db.Text
-  images       String[] @default([])
-  tags         String[] @default([])
-  visibility   String   @default("PUBLIC") // PUBLIC | SUBSCRIBER
-  status       String   @default("DRAFT") // DRAFT | PUBLISHED | UNPUBLISHED
-  publishedAt  DateTime?
-  unpublishAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  summary     String    @db.Text
+  coverImage  String?
+  content     String    @db.Text
+  images      String[]  @default([])
+  tags        String[]  @default([])
+  visibility  String    @default("PUBLIC") // PUBLIC | SUBSCRIBER
+  status      String    @default("DRAFT") // DRAFT | PUBLISHED | UNPUBLISHED
+  publishedAt DateTime?
+  unpublishAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([status, publishedAt])
   @@index([visibility, status])
@@ -483,21 +487,21 @@ model KnowledgeArticle {
 // 訪客到 /webinar/[slug] 輸入 email → 寄含講座連結的品牌信，
 // 並自動加入指定 EDM 名單群組（groupId 軟連結，慣例同 EmailBroadcast）。
 model Webinar {
-  id           String  @id @default(cuid())
-  slug         String  @unique // 公開網址 /webinar/[slug]
-  title        String
-  description  String  @db.Text // 頁面說明（純文字換行顯示）
-  lectureUrl   String // 講座連結（寄信用，不直接露出在頁面）
+  id              String    @id @default(cuid())
+  slug            String    @unique // 公開網址 /webinar/[slug]
+  title           String
+  description     String    @db.Text // 頁面說明（純文字換行顯示）
+  lectureUrl      String // 講座連結（寄信用，不直接露出在頁面）
   meetingId       String? // 會議 ID（Zoom 等；只進信件不露出在頁面）
   meetingPassword String? // 會議密碼；連結無 pwd 參數時自動附加 ?pwd=
-  meetingInfo     String? @db.Text // 會議補充資訊（時間/注意事項，附在信末資訊區塊）
-  dmImage      String? // 講座 DM 圖（瀏覽器直傳 Storage 的公開網址，頁面說明上方顯示）
-  emailSubject String
-  emailBody    String  @db.Text // 支援 {link}=講座連結、[按鈕文字](網址) CTA
-  groupId      String? // 索取者自動加入的 MailGroup；null = 不加名單
-  isActive     Boolean @default(true) // 關閉後頁面顯示「已結束」不再寄信
-  endDate      DateTime? // 講座結束日：當天照常，隔天（台北時間）看板自動下架＋報名頁自動關閉；null = 不自動結束
-  unpublishAt  DateTime? // 精確自動下架時間；與舊結束日並存，任一到期即關閉
+  meetingInfo     String?   @db.Text // 會議補充資訊（時間/注意事項，附在信末資訊區塊）
+  dmImage         String? // 講座 DM 圖（瀏覽器直傳 Storage 的公開網址，頁面說明上方顯示）
+  emailSubject    String
+  emailBody       String    @db.Text // 支援 {link}=講座連結、[按鈕文字](網址) CTA
+  groupId         String? // 索取者自動加入的 MailGroup；null = 不加名單
+  isActive        Boolean   @default(true) // 關閉後頁面顯示「已結束」不再寄信
+  endDate         DateTime? // 講座結束日：當天照常，隔天（台北時間）看板自動下架＋報名頁自動關閉；null = 不自動結束
+  unpublishAt     DateTime? // 精確自動下架時間；與舊結束日並存，任一到期即關閉
 
   requests WebinarRequest[]
 
@@ -507,13 +511,13 @@ model Webinar {
 
 // 索取紀錄：同講座同 email 一筆，重複索取更新寄送次數（60 秒限流防轟炸）
 model WebinarRequest {
-  id         String    @id @default(cuid())
-  webinarId  String
-  webinar    Webinar   @relation(fields: [webinarId], references: [id], onDelete: Cascade)
-  email      String // 一律小寫正規化
-  name       String? // 訪客填的姓名（重複索取以最新為準）
-  sentCount  Int       @default(0)
-  lastSentAt DateTime?
+  id             String    @id @default(cuid())
+  webinarId      String
+  webinar        Webinar   @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  email          String // 一律小寫正規化
+  name           String? // 訪客填的姓名（重複索取以最新為準）
+  sentCount      Int       @default(0)
+  lastSentAt     DateTime?
   // 講座信寄送狀態（Resend webhook 回流，依嚴重度只升不降）：
   // SENT | DELIVERED | OPENED | CLICKED | BOUNCED | COMPLAINED | FAILED；null = 追蹤上線前的舊資料
   deliveryStatus String?
@@ -579,30 +583,38 @@ model CourseSession {
 
   signups SessionSignup[]
 
+  // 收支與分潤（見下方 SessionOrder 等模型的檔頭註解）
+  finanOrders SessionOrder[]
+  finanCosts  SessionCost[]
+  finanShares SessionProfitShare[]
+  finance     SessionFinance?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 // 場次報名（來源：1shop 訂單匯入）。只收金流狀態=已付款的列。
 model SessionSignup {
-  id        String        @id @default(cuid())
-  sessionId String
-  session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  orderNo   String // 1shop 訂單編號
-  attendeeKey String @default("buyer") // 同張訂單的報名者識別（buyer / companion-1…）
-  name      String // 顧客姓名（看板顯示）
-  email     String?
-  phone     String?
-  product   String? // 原始產品欄（追溯歸類依據）
-  amount    Int? // 該列小計（新台幣整數）
-  orderedAt DateTime? // 訂單建立日期
-  meal      String? // 葷素："MEAT" 葷 / "VEG" 素 / null 未標（統計時往安全側算葷）
-  groupNo   Int? // 自動/手動分組結果；null = 未分組
-  isStaff   Boolean @default(false) // 工作人員：不列入分組與新舊生統計，但計入用餐葷素
+  id          String        @id @default(cuid())
+  sessionId   String
+  session     CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  orderNo     String // 1shop 訂單編號
+  attendeeKey String        @default("buyer") // 同張訂單的報名者識別（buyer / companion-1…）
+  name        String // 顧客姓名（看板顯示）
+  email       String?
+  phone       String?
+  product     String? // 原始產品欄（追溯歸類依據）
+  // @deprecated 不可加總：同訂單多人各記全額、多明細列只取第一列、延期複製。
+  // 金額真值一律看 SessionOrderLine；此欄僅保留至寫入端清理（Phase 5）後移除。
+  amount      Int?
+  orderedAt   DateTime? // 訂單建立日期
+  meal        String? // 葷素："MEAT" 葷 / "VEG" 素 / null 未標（統計時往安全側算葷）
+  groupNo     Int? // 自動/手動分組結果；null = 未分組
+  isStaff     Boolean       @default(false) // 工作人員：不列入分組與新舊生統計，但計入用餐葷素
   // 新舊生人工覆寫：null = 依 product 是否含「複訓」自動判斷（預設）；
   // true/false = 管理員在後台改過，一律以此為準（訂單買錯方案、代訂、事後才知道是舊生）。
   // 判別入口統一走 session-roster.isRetrainSignup，勿在別處自行讀這兩個欄位。
-  isRetrain Boolean?
+  isRetrain   Boolean?
 
   // 延期：原列保留但標記（排除於統計/分組/看板/簡訊），目標場次建新列。
   // 新列沿用原 orderNo+attendeeKey（跨場不撞唯一鍵）——1shop 退款的全域刪除
@@ -615,6 +627,166 @@ model SessionSignup {
 
   @@unique([sessionId, orderNo, attendeeKey]) // 重複上傳冪等；一張訂單可有多位同行者
   @@index([sessionId])
+}
+
+// ── 場次收支與分潤 ──
+// SessionSignup 是「誰要來上課」（一人一列，餵名單/分組/簽到表/簡訊/EDM），
+// SessionOrder/SessionOrderLine 是「這筆錢從哪來」（一訂單一列＋逐明細列）。
+// 兩者以 (sessionId, orderNo) 鬆耦合、不設 FK——手動加人、延期、退款刪名單列的
+// 既有語意都不能被金額拖著走。
+// 金額一律 Int = 新台幣元；費率一律存 ppm（百萬分之一：2% = 20000、2.4% = 24000），
+// 理由同 SmsBroadcast 存「分」——2.4% 用整數百分比存不下。
+
+// 場次收入的「訂單」層：一場次一訂單一列。
+// 組合方案跨場認列 = 同 orderNo 在兩個場次各一筆 SessionOrder、各自認列一段。
+model SessionOrder {
+  id        String        @id @default(cuid())
+  sessionId String
+  session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  orderNo   String // 1shop 訂單編號；現場/手動收入為 "ONSITE-xxxx"/"MANUAL-xxxx"
+  source    String        @default("IMPORT") // IMPORT 1shop匯入 / MANUAL 後台手建 / ONSITE 現場收款
+
+  buyerName  String
+  buyerPhone String?
+  buyerEmail String?
+  payerName  String? // 「不同付款人」（夫妻代付）；null = 同 buyerName
+
+  // 付款方式：正規化碼＋原始字串。1shop 的「金流」寫法不只一種
+  //（信用卡/信用卡線上付款/信用卡分3期/單筆滿3000可信用卡分3期…），
+  // 正規化規則會演進，留原文才能重新對照而不必重匯。
+  paymentMethod    String  @default("UNKNOWN") // CREDIT_ONE / CREDIT_INSTALLMENT / ATM / CASH / OTHER / UNKNOWN
+  paymentMethodRaw String?
+  installments     Int     @default(0) // 分期數；0 = 非分期
+
+  orderStatus   String? // 1shop 原始訂單狀態（追溯用）
+  paymentStatus String? // 1shop 原始金流狀態
+  orderedAt     DateTime?
+  seats         Int       @default(1) // 訂單席次加總（與名單人數對帳用）
+
+  // 結算控制
+  isRecognized   Boolean   @default(true) // false = 暫不認列（分期未繳完等），收入不計
+  excludeReason  String? // 不認列原因（匯出時進底部逐條例外說明）
+  refundedAt     DateTime? // 有值 = 已退款。名單列會被匯入端刪除，金額列保留供追溯
+  refundAmount   Int       @default(0)
+  // 任何後台人工編輯（金額/認列/方案名）一律設 true：
+  // 之後重匯只更新原始追溯欄位，金額與認列一概不動——否則使用者
+  // 花半小時處理完組合方案認列，隔天重匯就全部消失且沒有錯誤訊息。
+  manualOverride Boolean   @default(false)
+  note           String?   @db.Text
+
+  lines SessionOrderLine[]
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, orderNo]) // 重匯冪等
+  @@index([sessionId])
+  @@index([orderNo])
+}
+
+// 收入明細的最小單位：一列 = 1shop 的一條明細（或一筆手動收入）。
+// 收支表的「收入明細」= GROUP BY (planLabel, 訂單.paymentMethod, unitPrice)。
+// 「複訓×2＋新生×1」一張訂單會落在兩個不同收入列——這正是只存訂單層會漏錢的原因。
+model SessionOrderLine {
+  id      String       @id @default(cuid())
+  orderId String
+  order   SessionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productRaw String // 1shop「產品」欄原文（歸類與追溯依據，永不改）
+  planLabel  String // 收入明細「項目」的方案名（例：進階正價／複訓生方案），可改
+  unitPrice  Int // 每人單價（元）
+  quantity   Int    @default(1)
+  amount     Int // 小計（元）= 1shop 原值 =「付款金額」
+
+  // 認列金額 ≠ 付款金額的唯一出口，預設 = amount。
+  // 組合方案訂單在本場只認列本場那一段（例：訂單 8,680 只認列進階部分），
+  // 由後台人工指定，不自動拆。
+  recognizedAmount Int
+  recognizeNote    String? // 例：「本表僅計入 AI 進階 8/1 的 8,680」
+
+  isOnsite  Boolean @default(false) // 現場收款（與線上合在同一張收入明細，僅標示來源）
+  sortOrder Int     @default(0)
+
+  @@index([orderId])
+}
+
+// 支出明細：費率型（自動）／固定型（手填）／外部分潤（毛收×%）三類合一張表——
+// Excel 的「二、支出明細」本來就是一個連續區塊一起加總成總支出，
+// 外部分潤（講師抽成）也在這一區先扣，扣完的毛利才進內部分潤。
+model SessionCost {
+  id        String        @id @default(cuid())
+  sessionId String
+  session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  kind  String // RATE 費率自動 / FIXED 固定手填 / EXTERNAL_SHARE 外部分潤
+  // RATE 專用科目碼：INVOICE_TAX 發票稅金 / INCOME_TAX 營所稅 / CARD_FEE 刷卡單筆
+  // / CARD_INSTALLMENT_FEE 刷卡分期 / ATM_FEE / REMIT_FEE 分潤匯費
+  code  String?
+  label String // 顯示名：「發票稅金」「便當」「講師抽成-黃OO」
+
+  basisText   String? // 「計算基礎」欄顯示文字：「信用卡單筆 NT$34,720 × 2%」
+  basisAmount Int? // 計算基礎金額（元）
+  ratePpm     Int? // 費率 ppm（2% = 20000）
+  unitAmount  Int? // 單筆固定費（ATM $15/筆）
+  unitCount   Int? // 筆數
+  amount      Int // 本列金額（元，已四捨五入）
+
+  // true = 系統自動產生，重算時刪除重建；false = 人工填入或覆寫，重算一律不動
+  //（分享會舊版 ATM 用金額×1% 而非 $15/筆，就是靠人工列保住）
+  isAuto Boolean @default(true)
+  payee  String? // EXTERNAL_SHARE 的分潤對象（講師/推廣者姓名）
+  note   String?
+
+  sortOrder Int @default(0)
+
+  @@index([sessionId])
+}
+
+// 內部分潤：外部分潤已在支出扣除後，對毛利按比例分配
+model SessionProfitShare {
+  id        String        @id @default(cuid())
+  sessionId String
+  session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  payeeName String // 顧院長 / 孟宏 / 舒庭…
+  sharePpm  Int // 比例 ppm：40% = 400000
+  amount    Int // ROUND(毛利 × 比例)，重算時更新
+  note      String?
+  sortOrder Int           @default(0)
+
+  @@unique([sessionId, payeeName])
+  @@index([sessionId])
+}
+
+// 場次結算表頭（1:1）。LOCKED 後快照凍結、重匯與費率調整都不再改動——
+// 沒有快照，日後調一次費率會讓所有歷史場次數字集體漂移，跟已發出的分潤對不上。
+model SessionFinance {
+  sessionId String        @id
+  session   CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  status    String        @default("DRAFT") // DRAFT / LOCKED
+
+  totalIncome Int @default(0) // 結算快照
+  totalCost   Int @default(0)
+  grossProfit Int @default(0)
+
+  sourceFile String? // 「order_2026_08_01_10_23_45.xlsx」（收支表底部的資料來源列）
+  sourceNote String? @db.Text // 底部逐條例外說明（自動草稿＋人工補）
+
+  lockedAt DateTime?
+  lockedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 產品原文 → 收支表方案顯示名（全域對照，一次設定長期受用）。
+// 1shop 產品欄是「AI進階班 8/1 台北場｜進階正價方案」這種長字串，
+// 同一批字串每個月都會再出現；完整原文比對、不做模糊比對（避免誤套）。
+model FinancePlanAlias {
+  productRaw String   @id
+  planLabel  String
+  updatedBy  String?
+  updatedAt  DateTime @updatedAt
 }
 
 // 待開通名單：批次開通遇「查無會員」時存底（以 email 為鍵），
@@ -736,10 +908,10 @@ model Enrollment {
 // audienceType：SESSION（場次報名者，可複選）/ GROUP（名單群組，第二階段）/ MANUAL（手動貼名單）
 // 沒有 ALL：會員資料表沒有手機，且「簡訊轟炸全體會員」本來就不該存在
 model SmsBroadcast {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   title       String? // 後台識別用，不會出現在簡訊內容裡
-  body        String @db.Text
-  messageType String @default("NOTICE") // NOTICE（履約通知）/ MARKETING（行銷推播，需帶退訂連結）
+  body        String  @db.Text
+  messageType String  @default("NOTICE") // NOTICE（履約通知）/ MARKETING（行銷推播，需帶退訂連結）
 
   audienceType  String   @default("MANUAL")
   sessionIds    String[] @default([]) // audienceType=SESSION 的場次（可複選，發送當下取最新報名）
@@ -801,10 +973,10 @@ model SmsMessage {
   /// 簡訊商的 message id（MAAC Go 為 sms_xxx）；連 API 都沒送出去時為 null
   providerMessageId String? @unique
   /// QUEUED 待送 / SENT 電信已接收 / DELIVERED 已送達 / FAILED 失敗 / STOP 拒收退訂
-  status    String  @default("QUEUED")
-  segments  Int     @default(0)
-  costCents Int     @default(0)
-  error     String? // 失敗原因（簡訊商回的英文碼會轉成中文顯示）
+  status            String  @default("QUEUED")
+  segments          Int     @default(0)
+  costCents         Int     @default(0)
+  error             String? // 失敗原因（簡訊商回的英文碼會轉成中文顯示）
 
   sentAt      DateTime?
   deliveredAt DateTime?

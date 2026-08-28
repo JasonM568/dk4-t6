@@ -1,5 +1,12 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
+import {
+  collectOrderFinance,
+  markRefundedOrders,
+  persistOrderFinance,
+  emptyFinanceReport,
+  type FinanceImportReport,
+} from "./session-finance-import";
 import { normalizeMobile, normalizeContactPhone } from "@/lib/sms/phone";
 import {
   MEAL_HEADER_RE,
@@ -70,6 +77,8 @@ export type ImportReport = {
     existingOrderNo: string;
     sessionTitle: string;
   }[];
+  // 金額第二階段（收支模組）的結果；名單數字在上面，錢的數字在這裡
+  finance: FinanceImportReport;
 };
 
 type ParsedRow = {
@@ -84,6 +93,9 @@ type ParsedRow = {
   amount: number | null;
   meal: Meal | null;
   quantity: number | null; // 訂單明細數量（有欄位才有值）
+  // 收支模組用：付款方式原文（「金流」欄）與每人單價；名單邏輯完全不讀這兩個欄位
+  paymentMethodRaw: string | null;
+  unitPrice: number | null;
   attendees: OrderAttendee[];
 };
 
@@ -98,6 +110,9 @@ const HEADERS = {
   phone: "顧客電話",
   email: "顧客信箱",
   amount: "小計",
+  // 收支模組用（optional：舊匯出檔沒有也不影響名單匯入）
+  paymentMethod: "金流",
+  unitPrice: "單價",
 } as const;
 
 /** 1shop 的自訂欄位會直接成為匯出欄位。各銷售頁的命名不同，因此以欄位
@@ -410,6 +425,8 @@ export async function parseOrderFile(
     const qty = qtyStr ? Math.round(Number(qtyStr)) : null;
     const name = cell(r, col.name);
     const companions = findCompanions(header, r, name);
+    const unitPriceStr = cell(r, col.unitPrice);
+    const unitPrice = unitPriceStr ? Math.round(Number(unitPriceStr)) : null;
     return {
       orderNo: cell(r, col.orderNo),
       orderedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed : null,
@@ -421,6 +438,8 @@ export async function parseOrderFile(
       email: cell(r, col.email),
       amount: amount !== null && Number.isFinite(amount) ? amount : null,
       meal: findMeal(r),
+      paymentMethodRaw: cell(r, col.paymentMethod) || null,
+      unitPrice: unitPrice !== null && Number.isFinite(unitPrice) ? unitPrice : null,
       quantity: qty !== null && Number.isFinite(qty) && qty > 0 ? qty : null,
       attendees: [
         { key: "buyer", name },
@@ -440,8 +459,17 @@ export async function parseOrderFile(
   };
 }
 
-/** 依場次關鍵字歸類並寫入報名（冪等）；回傳匯入報告 */
-export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
+/** 依場次關鍵字歸類並寫入報名（冪等）；回傳匯入報告。
+ *
+ *  mode="full"（預設）：名單＋金額都寫，名單行為與收支模組上線前完全相同。
+ *  mode="financeOnly"：只寫金額（SessionOrder/Line），完全跳過 SessionSignup 的
+ *  建立/回填/退款刪除——歷史場次補金額、同一場重傳修正金額的唯一安全路徑，
+ *  不會觸發名單端的 dupSkipped 雜訊與退款 deleteMany。 */
+export async function importOrders(
+  buf: ArrayBuffer,
+  opts: { mode?: "full" | "financeOnly" } = {},
+): Promise<ImportReport> {
+  const mode = opts.mode ?? "full";
   const { rows, mealColumnFound, quantityColumnFound } = await parseOrderFile(buf);
   const sessions = await prisma.courseSession.findMany({
     select: { id: true, title: true, keywords: true },
@@ -475,7 +503,40 @@ export async function importOrders(buf: ArrayBuffer): Promise<ImportReport> {
     companionCheck: [],
     seatOverflow: [],
     dupSkipped: [],
+    finance: emptyFinanceReport(),
   };
+
+  // ── 金額第二階段（收支模組）──
+  // 與名單階段刻意分家：名單把一張訂單的多明細列合併（席次/同行者語意），
+  // 金額必須逐列保留（複訓×2＋新生×1 分兩列的錢不能少一列）。
+  // 這段壞掉只影響收支分頁，名單完全不經過這裡。
+  try {
+    const { drafts, noAmount } = collectOrderFinance(rows, matchSession);
+    report.finance.noAmount = noAmount;
+    await persistOrderFinance(drafts, report.finance);
+    await markRefundedOrders(
+      rows
+        .filter(
+          (r) =>
+            r.orderNo &&
+            (r.orderStatus.includes("取消") || r.paymentStatus.includes("退款")),
+        )
+        .map((r) => ({
+          orderNo: r.orderNo,
+          product: r.product,
+          amount: r.amount,
+          name: r.name,
+        })),
+      matchSession,
+      report.finance,
+    );
+  } catch (e) {
+    // 金額階段失敗不能拖垮名單匯入——上課通知比收支報表緊急
+    console.error("[session-finance-import] 金額階段失敗（名單不受影響）：", e);
+  }
+
+  // financeOnly：到此為止，完全不碰 SessionSignup（歷史補金額/重傳修正金額用）
+  if (mode === "financeOnly") return report;
   const unmatchedRows = new Map<string, UnmatchedOrderRow[]>();
   const toCreate: {
     sessionId: string;
