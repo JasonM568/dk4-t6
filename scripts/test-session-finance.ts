@@ -273,5 +273,115 @@ const times = (n: number, f: () => FinanceOrderInput) => Array.from({ length: n 
   }
 }
 
-console.log(`\n通過 ${pass}、失敗 ${fail}`);
-process.exit(fail > 0 ? 1 : 0);
+// ───────────────────────── Excel 匯出（sheet.ts 與 route 共用同一份建構） ─────────────────────────
+(async () => {
+  const ExcelJS = (await import("exceljs")).default;
+  const { buildFinanceWorkbook } = await import("../src/lib/finance/sheet");
+  console.log("\nExcel 匯出（以 0801 場驗）");
+
+  // 重建 0801 場（同上方黃金測資）
+  seq = 0;
+  const orders: FinanceOrderInput[] = [
+    ...times(4, () => order("CREDIT_ONE", "進階正價", 8680)),
+    ...times(2, () => order("CREDIT_INSTALLMENT", "進階正價", 8680)),
+    order("ATM", "進階正價", 8680),
+    ...times(2, () => order("CREDIT_ONE", "複訓生方案", 3600)),
+    order("CREDIT_INSTALLMENT", "複訓生方案", 3600),
+    order("CREDIT_ONE", "組合方案進階部分", 8680),
+  ];
+  const r = computeSessionFinance({
+    orders,
+    manualCosts: [
+      { kind: "EXTERNAL_SHARE", code: null, label: "講師推廣黃OO分潤", basisText: "(8680×2) × 10%", basisAmount: 17_360, ratePpm: 100_000, unitAmount: null, unitCount: null, amount: 1_736, payee: "黃OO", sortOrder: 0 },
+    ],
+    shares: [
+      { payeeName: "顧院長", sharePpm: 400_000 },
+      { payeeName: "孟宏", sharePpm: 400_000 },
+      { payeeName: "舒庭", sharePpm: 200_000 },
+    ],
+    settings: { ...S, remitUnitFee: 0 },
+  });
+  const wb = buildFinanceWorkbook({
+    title: "AI 進階課程 8/1",
+    signupCount: 11,
+    todayText: "2026-08-28",
+    result: r,
+    sharesPpmTotal: 1_000_000,
+    orders: [
+      {
+        orderNo: "08K607111",
+        buyerName: "吳宥靜",
+        isRecognized: true,
+        excludeReason: null,
+        refundedAt: null,
+        refundAmount: 0,
+        lines: [{ amount: 15_480, recognizedAmount: 8_680, recognizeNote: "組合方案僅認列進階部分" }],
+      },
+    ],
+    sourceFile: "order_2026_08_07_10_24_57.xlsx",
+  });
+
+  // 寫出再回讀：驗的是「收到檔的人看到的東西」，不是記憶體物件
+  const buf = await wb.xlsx.writeBuffer();
+  const rb = new ExcelJS.Workbook();
+  await rb.xlsx.load(buf as ArrayBuffer);
+  const ws = rb.worksheets[0];
+
+  check("工作表名無斜線（8/1 → 8-1）", !ws.name.includes("/"), ws.name);
+
+  // 找關鍵列
+  const findRow = (label: string) => {
+    for (let i = 1; i <= ws.rowCount; i++) {
+      if (String(ws.getRow(i).getCell(1).value ?? "").startsWith(label)) return ws.getRow(i);
+    }
+    return null;
+  };
+  const cellNum = (c: { value: unknown }) => {
+    const v = c.value;
+    if (typeof v === "number") return v;
+    if (v && typeof v === "object" && "result" in v) return (v as { result: number }).result;
+    return NaN;
+  };
+  const cellFormula = (c: { value: unknown }) => {
+    const v = c.value;
+    return v && typeof v === "object" && "formula" in v ? (v as { formula: string }).formula : null;
+  };
+
+  const incomeTotal = findRow("收入合計");
+  check("收入合計 = 80,240 且為 SUM 公式",
+    !!incomeTotal && cellNum(incomeTotal.getCell(5)) === 80_240 &&
+      (cellFormula(incomeTotal.getCell(5)) ?? "").startsWith("SUM("),
+    incomeTotal ? `${cellNum(incomeTotal.getCell(5))} / ${cellFormula(incomeTotal.getCell(5))}` : "列不存在");
+
+  const costTotal = findRow("支出合計");
+  check("支出合計 = 8,883（SUM 公式）",
+    !!costTotal && cellNum(costTotal.getCell(5)) === 8_883 &&
+      (cellFormula(costTotal.getCell(5)) ?? "").startsWith("SUM("));
+
+  const profit = findRow("毛利");
+  check("毛利 = 71,357（收入-支出公式）",
+    !!profit && cellNum(profit.getCell(5)) === 71_357 && !!cellFormula(profit.getCell(5)));
+
+  // 分潤列：金額是 ROUND(毛利×比例) 公式、比例欄是 0.4
+  let shareOk = false;
+  for (let i = 1; i <= ws.rowCount; i++) {
+    const row = ws.getRow(i);
+    if (String(row.getCell(2).value ?? "") === "顧院長") {
+      shareOk =
+        cellNum(row.getCell(5)) === 28_543 &&
+        (cellFormula(row.getCell(5)) ?? "").startsWith("ROUND(") &&
+        Number(row.getCell(4).value) === 0.4;
+      break;
+    }
+  }
+  check("顧院長列：0.4 比例＋ROUND 公式＋28,543", shareOk);
+
+  // 底部例外說明含認列調整與資料來源
+  const allText: string[] = [];
+  for (let i = 1; i <= ws.rowCount; i++) allText.push(String(ws.getRow(i).getCell(1).value ?? ""));
+  check("底部含認列例外說明", allText.some((t) => t.includes("組合方案僅認列進階部分")));
+  check("底部含資料來源", allText.some((t) => t.includes("order_2026_08_07_10_24_57.xlsx")));
+
+  console.log(`\n（含匯出）通過 ${pass}、失敗 ${fail}`);
+  process.exit(fail > 0 ? 1 : 0);
+})();

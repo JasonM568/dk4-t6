@@ -108,7 +108,16 @@ export default async function SessionFinancePage({
       <Link href="/admin/sessions" className="text-sm text-indigo-600 hover:underline">
         ← 回場次看板
       </Link>
-      <h1 className="mb-1 mt-2 text-2xl font-bold">{session.title}　收支結算</h1>
+      <div className="mb-1 mt-2 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold">{session.title}　收支結算</h1>
+        <a
+          href={`/api/admin/sessions/${session.id}/finance-sheet`}
+          download
+          className="rounded-lg border border-gray-400 px-3 py-1.5 text-sm transition hover:bg-gray-100"
+        >
+          ⬇︎ 匯出收支表（Excel，合計與分潤帶公式）
+        </a>
+      </div>
       <p className="mb-6 text-sm text-gray-500">
         收入來自訂單匯入自動彙總（新生／複訓 × 付款方式）；稅費與手續費依
         <Link href="/admin/sessions/finance/settings" className="mx-1 text-indigo-600 underline">

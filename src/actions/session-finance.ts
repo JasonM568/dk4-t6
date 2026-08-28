@@ -442,7 +442,10 @@ export async function uploadFinanceOnlyAction(
 
   const { importOrders } = await import("@/lib/session-import");
   try {
-    const report = await importOrders(await file.arrayBuffer(), { mode: "financeOnly" });
+    const report = await importOrders(await file.arrayBuffer(), {
+      mode: "financeOnly",
+      sourceFile: file.name,
+    });
     const f = report.finance;
     revalidatePath("/admin/sessions");
     const skipped =

@@ -62,6 +62,7 @@ export type ManualCostInput = {
   unitCount: number | null;
   amount: number;
   payee: string | null;
+  note?: string | null;
   sortOrder: number;
 };
 
@@ -91,6 +92,7 @@ export type CostRow = {
   amount: number;
   isAuto: boolean;
   payee: string | null;
+  note: string | null;
   sortOrder: number;
 };
 
@@ -191,10 +193,10 @@ export function buildAutoRateCosts(
   const { amount, count } = sumByMethod(orders);
   const rows: CostRow[] = [];
   let sort = 0;
-  const push = (row: Omit<CostRow, "kind" | "isAuto" | "payee" | "sortOrder">) => {
+  const push = (row: Omit<CostRow, "kind" | "isAuto" | "payee" | "note" | "sortOrder">) => {
     // 金額為 0 的自動列不建（他的 Excel「零筆數的列不顯示」同一慣例）
     if (row.amount === 0) return;
-    rows.push({ ...row, kind: "RATE", isAuto: true, payee: null, sortOrder: sort++ });
+    rows.push({ ...row, kind: "RATE", isAuto: true, payee: null, note: null, sortOrder: sort++ });
   };
 
   push({
@@ -305,6 +307,7 @@ export function computeSessionFinance(input: {
       amount: c.amount,
       isAuto: false,
       payee: c.payee,
+      note: c.note ?? null,
       sortOrder: c.sortOrder,
     }));
   const costRows = [...autoRows, ...manualRows];

@@ -467,7 +467,7 @@ export async function parseOrderFile(
  *  不會觸發名單端的 dupSkipped 雜訊與退款 deleteMany。 */
 export async function importOrders(
   buf: ArrayBuffer,
-  opts: { mode?: "full" | "financeOnly" } = {},
+  opts: { mode?: "full" | "financeOnly"; sourceFile?: string } = {},
 ): Promise<ImportReport> {
   const mode = opts.mode ?? "full";
   const { rows, mealColumnFound, quantityColumnFound } = await parseOrderFile(buf);
@@ -514,6 +514,21 @@ export async function importOrders(
     const { drafts, noAmount } = collectOrderFinance(rows, matchSession);
     report.finance.noAmount = noAmount;
     await persistOrderFinance(drafts, report.finance);
+    // 收支表底部的「資料來源」列：記下最後一次餵進金額的檔名（LOCKED 場次不動）
+    if (opts.sourceFile) {
+      const touched = [...new Set(drafts.map((d) => d.sessionId))];
+      for (const sid of touched) {
+        await prisma.sessionFinance.upsert({
+          where: { sessionId: sid },
+          update: {},
+          create: { sessionId: sid },
+        });
+        await prisma.sessionFinance.updateMany({
+          where: { sessionId: sid, status: { not: "LOCKED" } },
+          data: { sourceFile: opts.sourceFile },
+        });
+      }
+    }
     await markRefundedOrders(
       rows
         .filter(

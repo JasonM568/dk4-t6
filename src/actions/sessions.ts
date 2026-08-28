@@ -635,7 +635,9 @@ export async function uploadOrdersAction(
     return { error: "只接受 .xlsx 或 .csv 檔（1shop 匯出的訂單檔）" };
 
   try {
-    const report = await importOrders(await file.arrayBuffer());
+    const report = await importOrders(await file.arrayBuffer(), {
+      sourceFile: file.name,
+    });
     revalidatePath("/admin/sessions");
     revalidatePath("/board");
     return { report };
