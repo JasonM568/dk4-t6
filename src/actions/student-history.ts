@@ -40,3 +40,188 @@ export async function importStudentHistory(_p:StudentImportState,fd:FormData):Pr
   revalidatePath("/admin/students");
   return{success:"匯入完成",imported,histories,noPhone};
 }
+
+/** 依手機（優先）或 email 找/建學員檔；姓名/信箱只補空不覆蓋（匯入資料品質參差） */
+async function upsertStudent(
+  phone: string | null,
+  email: string | null,
+  name: string | null,
+): Promise<{ id: string } | null> {
+  if (phone) {
+    return prisma.studentRecord.upsert({
+      where: { phone },
+      update: { name: name || undefined, email: email || undefined },
+      create: { phone, name, email },
+      select: { id: true },
+    });
+  }
+  if (email) {
+    const found = await prisma.studentRecord.findFirst({
+      where: { email },
+      select: { id: true },
+    });
+    if (found) return found;
+    return prisma.studentRecord.create({ data: { email, name }, select: { id: true } });
+  }
+  return null;
+}
+
+/** 已有同鍵紀錄就跳過（防重複匯入把記錄卡灌成十筆一樣的） */
+async function addHistoryOnce(
+  studentId: string,
+  courseName: string,
+  attendedAt: Date | null,
+  source: string,
+  note: string,
+): Promise<boolean> {
+  const exists = await prisma.studentCourseHistory.findFirst({
+    where: { studentId, note },
+    select: { id: true },
+  });
+  if (exists) return false;
+  await prisma.studentCourseHistory.create({
+    data: { studentId, courseName, attendedAt, source, note },
+  });
+  return true;
+}
+
+export type OrderHistoryImportState = {
+  error?: string;
+  success?: string;
+  students?: number;
+  histories?: number;
+  duplicates?: number;
+  noContact?: number;
+} | null;
+
+/** 1shop 訂單檔直接匯入上課紀錄（免轉 CSV 範本）。
+ *  已付款的每一列 = 一筆紀錄；課程名 = 產品欄原文（通常含場次日期）；
+ *  同行者有電話/信箱的也各自建卡。防重複鍵 = 訂單編號＋產品（重傳同檔不會灌爆）。 */
+export async function importStudentHistoryFromOrders(
+  _p: OrderHistoryImportState,
+  fd: FormData,
+): Promise<OrderHistoryImportState> {
+  await requireEditor();
+  const f = fd.get("file");
+  if (!(f instanceof File) || !f.size) return { error: "請選擇 1shop 訂單檔（.xlsx / .csv）" };
+  if (f.size > 20 * 1024 * 1024) return { error: "檔案請小於 20MB" };
+
+  const { parseOrderFile } = await import("@/lib/session-import");
+  const { normalizeContactPhone } = await import("@/lib/sms/phone");
+  let rows;
+  try {
+    rows = (await parseOrderFile(await f.arrayBuffer())).rows;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "檔案無法解析" };
+  }
+
+  const touched = new Set<string>();
+  let histories = 0,
+    duplicates = 0,
+    noContact = 0;
+  for (const r of rows) {
+    if (!r.orderNo || !r.name || !r.product) continue;
+    if (!r.paymentStatus.includes("已付款")) continue;
+    const phone = r.phone ? normalizeContactPhone(r.phone) : null;
+    const email = r.email.toLowerCase().includes("@") ? r.email.toLowerCase() : null;
+    const buyer = await upsertStudent(phone, email, r.name || null);
+    if (!buyer) {
+      noContact++;
+    } else {
+      touched.add(buyer.id);
+      const ok = await addHistoryOnce(
+        buyer.id,
+        r.product,
+        r.orderedAt,
+        "1SHOP",
+        `訂單 ${r.orderNo}｜${r.product}`,
+      );
+      ok ? histories++ : duplicates++;
+    }
+    // 同行者：有電話或信箱才認得出人（沒有就無法建卡，跳過不硬猜）
+    for (const a of r.attendees) {
+      if (a.key === "buyer") continue;
+      const ap = a.phone ? normalizeContactPhone(a.phone) : null;
+      const ae = a.email?.toLowerCase().includes("@") ? a.email.toLowerCase() : null;
+      const rec = await upsertStudent(ap, ae, a.name || null);
+      if (!rec) {
+        noContact++;
+        continue;
+      }
+      touched.add(rec.id);
+      const ok = await addHistoryOnce(
+        rec.id,
+        r.product,
+        r.orderedAt,
+        "1SHOP",
+        `訂單 ${r.orderNo}｜${r.product}｜同行 ${a.name}`,
+      );
+      ok ? histories++ : duplicates++;
+    }
+  }
+  revalidatePath("/admin/students");
+  return {
+    success: "訂單檔匯入完成",
+    students: touched.size,
+    histories,
+    duplicates,
+    noContact,
+  };
+}
+
+/** 場次看板名單一鍵同步：已結束場次的報名者（不含工作人員/延期出去的）
+ *  寫進上課紀錄。防重複鍵 = 場次 id，按幾次都不會重複。 */
+export async function syncSessionHistoriesAction(): Promise<OrderHistoryImportState> {
+  await requireEditor();
+  const sessions = await prisma.courseSession.findMany({
+    where: { eventDate: { not: null } },
+    select: {
+      id: true,
+      title: true,
+      eventDate: true,
+      endDate: true,
+      signups: {
+        where: { deferredToSessionId: null, isStaff: false },
+        select: { name: true, phone: true, email: true },
+      },
+    },
+  });
+  // 只同步已結束的場次——還沒上的課不算「上過」
+  const now = Date.now();
+  const ended = sessions.filter((s) => {
+    const end = s.endDate ?? s.eventDate;
+    return end !== null && end.getTime() < now;
+  });
+
+  const touched = new Set<string>();
+  let histories = 0,
+    duplicates = 0,
+    noContact = 0;
+  for (const s of ended) {
+    for (const g of s.signups) {
+      const email = g.email?.toLowerCase().includes("@") ? g.email.toLowerCase() : null;
+      const rec = await upsertStudent(g.phone ?? null, email, g.name || null);
+      if (!rec) {
+        noContact++;
+        continue;
+      }
+      touched.add(rec.id);
+      const ok = await addHistoryOnce(
+        rec.id,
+        s.title,
+        s.eventDate,
+        "SESSION",
+        `場次 ${s.id}`,
+      );
+      ok ? histories++ : duplicates++;
+    }
+  }
+  revalidatePath("/admin/students");
+  return {
+    success: `已同步 ${ended.length} 個已結束場次`,
+    students: touched.size,
+    histories,
+    duplicates,
+    noContact,
+  };
+}
