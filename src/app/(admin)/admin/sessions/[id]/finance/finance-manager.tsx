@@ -245,6 +245,8 @@ export function FinanceManager({
         result={result}
         initialShares={initialShares}
         sharesSaved={sharesSaved}
+        run={run}
+        pending={pending}
       />
     </div>
   );
@@ -635,17 +637,111 @@ function AddCostForms({ sessionId }: { sessionId: string }) {
   );
 }
 
+/** 外部分潤（毛收 × %，列為支出先扣）：第三段直接呈現與新增，
+ *  金額仍計入「二、支出明細」——只是入口與總覽放在分潤段，不用去支出區翻 */
+function ExternalShareBlock({
+  sessionId,
+  result,
+  run,
+  pending,
+}: {
+  sessionId: string;
+  result: FinanceResult;
+  run: (fn: () => Promise<FinanceFormState>) => void;
+  pending: boolean;
+}) {
+  const [state, action, formPending] = useActionState<FinanceFormState, FormData>(
+    addCostAction.bind(null, sessionId),
+    null,
+  );
+  const rows = result.costRows.filter((c) => c.kind === "EXTERNAL_SHARE");
+  return (
+    <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50/40">
+      <p className="px-3 pt-2 text-sm font-medium text-purple-900">
+        外部分潤（講師／天使長抽成）——毛收 × %，列為支出先扣，不參與下方內部比例分配
+      </p>
+      {rows.length > 0 ? (
+        <table className="mt-1 w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-purple-800/70">
+              <th className="px-3 py-1">對象／項目</th>
+              <th className="px-2 py-1">計算基礎</th>
+              <th className="px-2 py-1 text-right">金額（元）</th>
+              <th className="w-16 px-2 py-1" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={c.id} className="border-t border-purple-100">
+                <td className="px-3 py-1.5">{c.payee ? `${c.payee}｜${c.label}` : c.label}</td>
+                <td className="px-2 py-1.5 text-xs text-gray-500">{c.basisText ?? "—"}</td>
+                <td className="px-2 py-1.5 text-right font-mono">{formatNT(c.amount)}</td>
+                <td className="px-2 py-1.5 text-right">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      if (confirm(`刪除外部分潤「${c.label}」？`))
+                        run(() => deleteCostAction(c.id!));
+                    }}
+                    className="text-xs text-red-500 hover:underline"
+                  >
+                    刪除
+                  </button>
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-purple-200 font-bold">
+              <td className="px-3 py-1.5">外部分潤合計（已含在支出合計）</td>
+              <td />
+              <td className="px-2 py-1.5 text-right font-mono">
+                {formatNT(rows.reduce((n, c) => n + c.amount, 0))}
+              </td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      ) : (
+        <p className="px-3 py-1 text-xs text-gray-500">
+          本場尚未新增外部分潤——有講師／天使長要抽成的，在下面加：
+        </p>
+      )}
+      <form action={action} className="flex flex-wrap items-end gap-2 border-t border-purple-100 px-3 py-2 text-sm">
+        <input type="hidden" name="kind" value="EXTERNAL_SHARE" />
+        <input name="payee" required placeholder="對象姓名（講師／天使長）" className="w-44 rounded-lg border border-gray-300 px-2 py-1.5" />
+        <input name="basisAmount" required inputMode="numeric" placeholder="基準金額（該課程毛收）" className="w-44 rounded-lg border border-gray-300 px-2 py-1.5 text-right" />
+        <label className="flex items-center gap-1">
+          <input name="ratePct" required inputMode="decimal" placeholder="20" className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-right" />
+          %
+        </label>
+        <SubmitButton
+          pendingText="新增中…"
+          className="rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700"
+        >
+          ＋ 新增外部分潤
+        </SubmitButton>
+        {formPending && <span className="text-xs text-gray-400">處理中…</span>}
+        <Feedback state={state} />
+      </form>
+    </div>
+  );
+}
+
 /** 三、分潤計算：比例可調（本場覆寫），即時看到金額 */
 function SharesSection({
   sessionId,
   result,
   initialShares,
   sharesSaved,
+  run,
+  pending: parentPending,
 }: {
   sessionId: string;
   result: FinanceResult;
   initialShares: { name: string; pct: number }[];
   sharesSaved: boolean;
+  run: (fn: () => Promise<FinanceFormState>) => void;
+  pending: boolean;
 }) {
   const [rows, setRows] = useState(initialShares);
   const [pending, startTransition] = useTransition();
@@ -656,13 +752,22 @@ function SharesSection({
   return (
     <section>
       <h2 className="mb-2 rounded-lg bg-[#4472C4] px-3 py-1.5 font-bold text-white">
-        ▌ 三、分潤計算（依毛利比例）
+        ▌ 三、分潤計算
+      </h2>
+      <ExternalShareBlock
+        sessionId={sessionId}
+        result={result}
+        run={run}
+        pending={parentPending}
+      />
+      <p className="mb-1 text-sm font-medium text-gray-700">
+        內部分潤（毛利 × 比例）
         {!sharesSaved && (
-          <span className="ml-2 text-xs font-normal text-blue-100">
-            （目前套用全域預設，儲存後固定為本場設定）
+          <span className="ml-2 text-xs font-normal text-gray-400">
+            目前套用全域預設，儲存後固定為本場設定
           </span>
         )}
-      </h2>
+      </p>
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-[#DCE6F1] text-left">

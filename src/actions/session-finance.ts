@@ -291,21 +291,22 @@ export async function addCostAction(
   if (locked) return { error: locked };
 
   const kind = String(formData.get("kind") ?? "FIXED");
-  const label = String(formData.get("label") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
   const code = String(formData.get("code") ?? "").trim() || null;
   if (!["FIXED", "EXTERNAL_SHARE", "RATE"].includes(kind)) return { error: "類型不正確" };
-  if (!label) return { error: "請填寫費用項目名稱" };
 
   let amount: number;
   let basisText: string | null = null;
   let basisAmount: number | null = null;
   let ratePpm: number | null = null;
   let payee: string | null = null;
+  let label = String(formData.get("label") ?? "").trim();
 
   if (kind === "EXTERNAL_SHARE") {
     // 外部分潤 = 指定金額（毛收）× %，列為支出先扣
     payee = String(formData.get("payee") ?? "").trim() || null;
+    if (!payee) return { error: "請填寫分潤對象姓名" };
+    if (!label) label = `${payee} 分潤`; // 同他 Excel 的「天使長 鄭婕予 分潤」命名
     basisAmount = Math.round(Number(formData.get("basisAmount")));
     const ratePct = Number(formData.get("ratePct"));
     if (!Number.isFinite(basisAmount) || basisAmount <= 0)
@@ -316,6 +317,7 @@ export async function addCostAction(
     amount = roundNT((basisAmount * ratePpm) / 1_000_000);
     basisText = `${basisAmount.toLocaleString("zh-TW")} × ${ratePct}%`;
   } else {
+    if (!label) return { error: "請填寫費用項目名稱" };
     amount = Math.round(Number(formData.get("amount")));
     if (!Number.isFinite(amount) || amount < 0) return { error: "金額須為 0 以上整數" };
     basisText = String(formData.get("basisText") ?? "").trim() || null;
