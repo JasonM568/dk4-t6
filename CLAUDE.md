@@ -49,6 +49,18 @@ Supabase 專案 qubjpayeopvscrgrvrci（hope 站與 course 站共用）
 - **Enrollment**（觀看權限）= 能不能看課程
 - 兩套獨立、互不影響；加名單群組不會開通課程
 
+## 公開課程報名頁（`/event/<signupSlug>`，Phase 1 未接金流）
+
+後台「場次看板 → 📝 報名頁設定」開一頁：DM 主視覺＋詳情長圖（瀏覽器直傳 Storage）、
+課程資訊、報名起訖、名額、繳費說明。EDM 的報名按鈕就指 `/event/<slug>`。
+
+- **待確認 ≠ 正式名單**：訪客送出寫進 `SessionSignupRequest`，**不會**進看板／分組／
+  課前通知。管理員收到款按「確認收款，轉入名單」才複製成 `SessionSignup`
+  （`orderNo` 前綴 `WEB-`，不與 1shop 退款的 deleteMany 相撞）
+- **名額**以「正式名單＋待確認」合計計算，避免超賣；沒設截止時間就以開課日兜底
+- **同行者鐵則在表單層擋**：每位參加者必填本人手機，訂購人不能代填自己的號碼
+- 票種與線上付款（統一金流）、電子發票（ezPay）留 Phase 2／3
+
 ## 課前通知（場次名單一次匯入，兩個模組共用）
 
 訂單匯進**場次看板**後，同一份 `SessionSignup` 同時餵 EDM 與簡訊，名單於**送出當下**解析
@@ -90,6 +102,7 @@ npx tsx --conditions=react-server scripts/test-live-access-db.ts        # 上課
 npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 12 項
 npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單
 npx tsx --conditions=react-server scripts/test-session-notice-db.ts     # 課前通知「未通知名單」11 項
+npx tsx --conditions=react-server scripts/test-session-signup-db.ts     # 公開報名頁 28 項（名額/同行者/轉入名單）
 npx tsx scripts/test-edm-phase2.ts                                      # EDM KPI／CSV／preflight／成效分眾
 npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等（本機 DB）
 ```
@@ -108,6 +121,9 @@ src/lib/email/dispatch.ts     EDM 名單解析與寄送（filterUnsubscribed 是
 src/lib/email/followup.ts     EDM 跟進條件（只從 provider ACCEPTED 母集合解析）
 src/lib/sms/dispatch.ts       簡訊名單解析與發送（對照 email/dispatch）
 src/lib/class-notice.ts       課前通知草稿（場次 → 簡訊／EDM 內容）
+src/lib/session-signup-page.ts 公開報名頁純函式（開放判定／名額／WEB- 訂單號）
+src/actions/session-signup.ts  報名頁設定＋訪客送出＋確認收款轉入名單
+src/app/event/[slug]/         公開課程報名頁（DM 圖＋報名表單）
 src/lib/live-auth.ts          /live 上課碼閘門（HMAC token，與 /board 網域分離）
 src/app/live/                 學員憑上課碼索取 Zoom 連結
 src/actions/student-history.ts 學員記錄卡匯入（upsertStudent：姓名不同＝不同人，絕不併卡）

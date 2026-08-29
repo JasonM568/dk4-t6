@@ -1320,6 +1320,13 @@ export function SessionCard({
                   📱 只通知還沒收到的 {notice.smsPending} 人
                 </Link>
               )}
+              {/* 公開報名頁：DM 圖、課程資訊、名額與待確認報名都在那一頁 */}
+              <Link
+                href={`/admin/sessions/${session.id}/signup-page`}
+                className="inline-block rounded-lg border border-rose-400 px-3 py-1.5 text-sm text-rose-700 transition hover:bg-rose-50"
+              >
+                📝 報名頁設定
+              </Link>
               {/* 收支含分潤金額（內部薪酬）：僅管理員可見；頁面本身也擋 pageGuardFullAdmin */}
               {isAdmin && (
                 <Link

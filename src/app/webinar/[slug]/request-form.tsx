@@ -8,35 +8,7 @@ import {
   type WebinarDeliveryStatus,
   type WebinarRequestState,
 } from "@/actions/webinar";
-
-// 常見信箱網域打錯偵測（防呆第一關：信寄得再好，地址錯了都收不到）
-const DOMAIN_FIXES: Record<string, string> = {
-  "gmial.com": "gmail.com",
-  "gamil.com": "gmail.com",
-  "gmali.com": "gmail.com",
-  "gmaill.com": "gmail.com",
-  "gmail.co": "gmail.com",
-  "gmail.con": "gmail.com",
-  "gmail.comm": "gmail.com",
-  "gmil.com": "gmail.com",
-  "hotmial.com": "hotmail.com",
-  "hotmall.com": "hotmail.com",
-  "hotmail.co": "hotmail.com",
-  "yahooo.com": "yahoo.com",
-  "yahoo.co": "yahoo.com.tw",
-  "yaho.com.tw": "yahoo.com.tw",
-  "outlok.com": "outlook.com",
-  "icloud.co": "icloud.com",
-  "icould.com": "icloud.com",
-};
-
-function suggestFix(email: string): string | null {
-  const at = email.lastIndexOf("@");
-  if (at < 1) return null;
-  const domain = email.slice(at + 1).toLowerCase();
-  const fixed = DOMAIN_FIXES[domain];
-  return fixed ? email.slice(0, at + 1) + fixed : null;
-}
+import { suggestEmailFix } from "@/lib/email-typo";
 
 /** 依信箱網域給對應的找信指引 */
 function searchTips(email: string): string[] {
@@ -72,7 +44,7 @@ export function WebinarRequestForm({
   const [cooldown, setCooldown] = useState(0);
   const [delivery, setDelivery] = useState<WebinarDeliveryStatus>(null);
 
-  const suggestion = suggestFix(email.trim());
+  const suggestion = suggestEmailFix(email.trim());
 
   // 寄出成功後啟動 60 秒重寄倒數（與伺服器端限流一致）；
   // setTimeout 0 延遲一拍，避免 effect 內同步 setState 觸發串聯重渲染（lint 規則）

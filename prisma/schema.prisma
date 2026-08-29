@@ -712,7 +712,28 @@ model CourseSession {
   // null = 依場次名稱自動判斷（deriveFinanceTemplate）；收支頁可人工指定
   financeTemplate String?
 
-  signups SessionSignup[]
+  // ── 公開報名頁（/event/<signupSlug>）Phase 1 ──
+  // 自建報名頁只換「資料來源」：訪客送出後一樣寫進 SessionSignup（orderNo 前綴 WEB-），
+  // 看板／分組／簽到表／課前通知／收支表全部沿用既有流程，不另立一套報名訂單模型。
+  // Phase 1 不接金流：付款方式寫在 signupPayNote（匯款或現場付款），
+  // 送出即成立報名。票種與線上付款留 Phase 2。
+  signupSlug      String?   @unique // 報名頁網址代稱；null = 這場沒開報名頁
+  isSignupOpen    Boolean   @default(false) // 報名頁總開關（關閉時頁面顯示「報名已結束」）
+  dmImage         String?   // DM 主視覺（瀏覽器直傳 Storage 的公開網址，同 Webinar.dmImage）
+  dmImages        String[]  @default([]) // 課程詳情長圖，依序顯示於介紹下方
+  signupIntro     String?   @db.Text // 課程介紹（純文字換行，同 Webinar.description 慣例）
+  venue           String?   // 場地名稱（例：台北市青少年發展處 5F）
+  address         String?   // 地址（前台附 Google 地圖連結）
+  signupOpenAt    DateTime? // 報名開始；null = 立即開放
+  signupCloseAt   DateTime? // 報名截止；null = 不自動截止（仍受 isSignupOpen 與開課日限制）
+  signupQuota     Int?      // 名額上限（比對未延期的 SessionSignup 筆數）；null = 不限額
+  signupPriceNote String?   // 費用說明（Phase 1 純文字，例：早鳥 3800 / 原價 4500）
+  signupPayNote   String?   @db.Text // 付款方式說明（匯款帳號、現場付款注意事項）
+  signupNotice    String?   @db.Text // 注意事項／退費政策
+  signupGroupId   String?   // 報名成功自動加入的 MailGroup；null = 不加名單
+
+  signups        SessionSignup[]
+  signupRequests SessionSignupRequest[]
 
   // 收支與分潤（見下方 SessionOrder 等模型的檔頭註解）
   finanOrders SessionOrder[]
@@ -724,7 +745,47 @@ model CourseSession {
   updatedAt DateTime @updatedAt
 }
 
-// 場次報名（來源：1shop 訂單匯入）。只收金流狀態=已付款的列。
+// 公開報名頁送出的「報名申請」（Phase 1：尚未接金流，收款靠匯款／現場付款）。
+//
+// 為什麼不直接寫 SessionSignup：那張表的既有語意是「已付款、確定要來的人」
+//（1shop 只匯入金流狀態=已付款的列），下游的自動分組、葷素統計、簽到表、
+// 課前通知全都建立在這個前提上。未收款的人直接進去會污染整條線。
+// 管理員在後台確認收款後才「轉入名單」，複製成 SessionSignup 一列。
+//
+// 欄位刻意與 SessionSignup 對齊（一位參加者一列、共用 orderNo、attendeeKey），
+// 轉正時是直接搬，不需要轉換邏輯。Phase 2 接上線上金流後，付款成功的
+// webhook 走同一條轉正路徑，這張表就變成「待付款」的暫存區。
+model SessionSignupRequest {
+  id          String        @id @default(cuid())
+  sessionId   String
+  session     CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  orderNo     String // WEB-xxxx；同一次報名的多位參加者共用
+  attendeeKey String // buyer / companion-1…（同 SessionSignup 慣例）
+
+  name      String
+  email     String?
+  phone     String?
+  meal      String  @default("MEAT") // MEAT 葷 / VEG 素
+  isRetrain Boolean @default(false) // 報名時自稱複訓（舊生）；轉正時寫進 product
+
+  // 訂購人資訊（每列都存一份：後台名單以參加者為單位，但要看得出誰付的錢）
+  buyerName  String
+  buyerEmail String?
+  buyerPhone String?
+  note       String? @db.Text // 訂購人備註，只記在 buyer 那列
+
+  // PENDING 待確認收款 / CONFIRMED 已轉入名單 / CANCELLED 取消（未到款、重複報名）
+  status      String    @default("PENDING")
+  confirmedAt DateTime?
+  signupId    String? // 轉正後對應的 SessionSignup.id（無 FK，名單列可被退款刪除）
+
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, orderNo, attendeeKey])
+  @@index([sessionId, status])
+}
+
+// 場次報名（來源：1shop 訂單匯入／公開報名頁確認收款後轉入）。只收已付款的列。
 model SessionSignup {
   id          String        @id @default(cuid())
   sessionId   String
