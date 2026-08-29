@@ -9,7 +9,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 import { getProfile, getProfilesByEmailsStrict } from "@/lib/supabase/admin";
 import { canPermanentlyDeleteStudent, studentBulkDeleteStatus, studentDeleteConfirmation } from "@/lib/student-deletion";
 import { buildStudentMergePreview } from "@/lib/duplicate-students";
-import { restoreSafetyConflicts, type StudentIdentitySnapshot, type StudentMergeSnapshot } from "@/lib/student-merge-operation";
+import { parseStudentMergePairs, restoreSafetyConflicts, type StudentIdentitySnapshot, type StudentMergeSnapshot } from "@/lib/student-merge-operation";
 
 export type PersonClaimState = { error?: string; success?: string } | null;
 export type BulkStudentDeleteState = {
@@ -167,12 +167,8 @@ export async function bulkPermanentlyDeleteStudentsAction(_prev: BulkStudentDele
   return { deleted, protected: protectedRows, review, failed };
 }
 
-export async function mergeStudentRecordsAction(sourceId: string, targetId: string, _prev: PersonClaimState, fd: FormData): Promise<PersonClaimState> {
-  await requireFullAdmin();
-  const actor = await getAuthUser();
-  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+async function executeStudentMerge(sourceId: string, targetId: string, actorEmail: string | null): Promise<{ error?: string; operationId?: string }> {
   if (sourceId === targetId) return { error: "來源與保留卡不能相同" };
-  if (String(fd.get("confirmation") ?? "") !== "MERGE") return { error: "請勾選確認人工合併" };
   const [source, target] = await Promise.all([
     prisma.studentRecord.findUnique({ where: { id: sourceId }, include: { histories: true, engagements: true } }),
     prisma.studentRecord.findUnique({ where: { id: targetId }, include: { histories: true, engagements: true } }),
@@ -180,7 +176,7 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
   if (!source || !target) return { error: "來源或保留學員卡不存在" };
   const initialPreview = buildStudentMergePreview(source, target);
   if (!initialPreview.canMerge) return { error: `禁止合併：${initialPreview.conflicts.join("、")}` };
-  try { await prisma.$transaction(async (tx) => {
+  try { const operationId = await prisma.$transaction(async (tx) => {
     // transaction 內重讀，避免預覽後新增的子紀錄被來源卡 cascade 刪除卻沒有進快照。
     const [freshSource, freshTarget] = await Promise.all([
       tx.studentRecord.findUnique({ where: { id: sourceId }, include: { histories: true, engagements: true } }),
@@ -199,22 +195,67 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
       claimedUserId: target.claimedUserId || source.claimedUserId, claimedAt: target.claimedAt || source.claimedAt,
       legacyAccessStatus: target.legacyAccessStatus === "UNKNOWN" ? source.legacyAccessStatus : target.legacyAccessStatus,
       legacyNote: [target.legacyNote, source.legacyNote].filter(Boolean).join("\n") || null } });
-    const operation = await tx.studentMergeOperation.create({ data: { sourceStudentId: sourceId, targetStudentId: targetId, actorEmail: actor.email ?? null,
+    const operation = await tx.studentMergeOperation.create({ data: { sourceStudentId: sourceId, targetStudentId: targetId, actorEmail,
       snapshotJson: json({ version: 1, source, targetBefore: target, targetAfterIdentity: identityOf(after),
         movedHistoryIds: moveHistories.map((h) => h.id), movedEngagementIds: moveEngagements.map((e) => e.id),
         duplicateHistoryIds: preview.duplicateHistories.map((h) => h.id), duplicateEngagementIds: preview.duplicateEngagements.map((e) => e.id) } satisfies StudentMergeSnapshot) } });
-    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail: actor.email ?? null, beforeJson: json(source), afterJson: json({ targetId, operationId: operation.id }) } });
-    await tx.studentDataAuditLog.create({ data: { studentId: targetId, action: "STUDENT_MERGE_TARGET", actorEmail: actor.email ?? null,
+    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail, beforeJson: json(source), afterJson: json({ targetId, operationId: operation.id }) } });
+    await tx.studentDataAuditLog.create({ data: { studentId: targetId, action: "STUDENT_MERGE_TARGET", actorEmail,
       beforeJson: json(target), afterJson: json({ ...after, operationId: operation.id, mergedFrom: sourceId, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
         duplicateHistoriesRemoved: preview.duplicateHistories.length, duplicateEngagementsRemoved: preview.duplicateEngagements.length }) } });
-  }); } catch (error) {
+    return operation.id;
+  }); return { operationId }; } catch (error) {
     if (error instanceof Error && error.message === "MERGE_RECORD_MISSING") return { error: "來源或保留學員卡已被其他操作變更" };
     if (error instanceof Error && error.message.startsWith("MERGE_CONFLICT:")) return { error: `禁止合併：${error.message.slice(15)}` };
     throw error;
   }
+}
+
+export async function mergeStudentRecordsAction(sourceId: string, targetId: string, _prev: PersonClaimState, fd: FormData): Promise<PersonClaimState> {
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  if (String(fd.get("confirmation") ?? "") !== "MERGE") return { error: "請勾選確認人工合併" };
+  const result = await executeStudentMerge(sourceId, targetId, actor.email ?? null);
+  if (result.error) return { error: result.error };
   revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${targetId}`); revalidatePath("/admin/students");
   const returnTo = String(fd.get("returnTo") ?? "");
   redirect(returnTo === "/admin/people/duplicates" ? `${returnTo}?merged=1` : `/admin/people/student/${targetId}?merged=1`);
+}
+
+export type BulkStudentMergeState = {
+  error?: string;
+  merged?: { sourceId: string; targetId: string; sourceLabel: string; operationId: string }[];
+  skipped?: { sourceId: string; targetId: string; sourceLabel: string; reason: string }[];
+  failed?: { sourceId: string; targetId: string; sourceLabel: string; reason: string }[];
+} | null;
+
+export async function bulkMergeStudentRecordsAction(_prev: BulkStudentMergeState, fd: FormData): Promise<BulkStudentMergeState> {
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  const rawPairs = fd.getAll("mergePairs").map(String);
+  const parsed = parseStudentMergePairs(rawPairs);
+  if (!parsed.pairs) return { error: parsed.error };
+  if (String(fd.get("confirmation") ?? "").trim().toUpperCase() !== `MERGE ${parsed.pairs.length}`) return { error: `請輸入「MERGE ${parsed.pairs.length}」確認本批操作` };
+  const pairs = parsed.pairs;
+  const labels = new Map((await prisma.studentRecord.findMany({ where: { id: { in: pairs.map((pair) => pair.sourceId) } }, select: { id: true, name: true, email: true, phone: true } }))
+    .map((row) => [row.id, row.name || row.email || row.phone || row.id]));
+  const merged: NonNullable<BulkStudentMergeState>["merged"] = [];
+  const skipped: NonNullable<BulkStudentMergeState>["skipped"] = [];
+  const failed: NonNullable<BulkStudentMergeState>["failed"] = [];
+  for (const pair of pairs) {
+    const sourceLabel = labels.get(pair.sourceId) ?? pair.sourceId;
+    try {
+      const result = await executeStudentMerge(pair.sourceId, pair.targetId, actor.email ?? null);
+      if (result.operationId) merged.push({ sourceId: pair.sourceId, targetId: pair.targetId, sourceLabel, operationId: result.operationId });
+      else skipped.push({ sourceId: pair.sourceId, targetId: pair.targetId, sourceLabel, reason: result.error ?? "執行時不再符合安全條件" });
+    } catch {
+      failed.push({ sourceId: pair.sourceId, targetId: pair.targetId, sourceLabel, reason: "合併失敗，該組資料未變更" });
+    }
+  }
+  revalidatePath("/admin/people"); revalidatePath("/admin/people/duplicates"); revalidatePath("/admin/students");
+  return { merged, skipped, failed };
 }
 
 export async function restoreStudentMergeAction(operationId: string, _prev: PersonClaimState, fd: FormData): Promise<PersonClaimState> {

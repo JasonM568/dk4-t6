@@ -54,3 +54,16 @@ export function restoreSafetyConflicts(input: {
   if (input.sourceIdentityClaimedElsewhere) conflicts.push("來源卡的手機或會員身分已被其他學員卡使用");
   return conflicts;
 }
+
+export function parseStudentMergePairs(values: string[], limit = 20): { pairs?: { sourceId: string; targetId: string }[]; error?: string } {
+  const unique = [...new Set(values.filter(Boolean))];
+  if (!unique.length) return { error: "請至少選擇一組安全候選" };
+  if (unique.length > limit) return { error: `每批最多合併 ${limit} 組，請縮小選取範圍` };
+  const pairs = unique.map((raw) => { const [sourceId, targetId, extra] = raw.split(":"); return { sourceId, targetId, valid: Boolean(sourceId && targetId && !extra && sourceId !== targetId) }; });
+  if (pairs.some((pair) => !pair.valid)) return { error: "批次候選格式不正確，本批沒有執行" };
+  const sourceIds = pairs.map((pair) => pair.sourceId);
+  if (new Set(sourceIds).size !== sourceIds.length) return { error: "同一來源卡不可在一批內重複合併" };
+  const sourceSet = new Set(sourceIds);
+  if (pairs.some((pair) => sourceSet.has(pair.targetId))) return { error: "同一張卡不可同時作為來源與保留卡" };
+  return { pairs: pairs.map(({ sourceId, targetId }) => ({ sourceId, targetId })) };
+}
