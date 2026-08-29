@@ -76,6 +76,9 @@ model StudentRecord {
   name          String?
   legacyAccessStatus String            @default("UNKNOWN") // NONE / ACTIVE / TO_MIGRATE / MIGRATED / UNKNOWN
   legacyNote    String?                @db.Text
+  archivedAt    DateTime?
+  archivedBy    String?
+  archiveReason String?                @db.Text
   claimedUserId String?                @db.Uuid
   claimedAt     DateTime?
   histories     StudentCourseHistory[]
@@ -85,6 +88,7 @@ model StudentRecord {
 
   @@index([email])
   @@index([claimedUserId])
+  @@index([archivedAt])
 }
 
 model StudentCourseHistory {

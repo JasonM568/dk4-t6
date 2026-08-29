@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireEditor } from "@/lib/auth/staff";
+import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
 import { normalizeMobile } from "@/lib/sms/phone";
 
@@ -180,4 +180,53 @@ export async function deleteEngagementAction(studentId: string, engagementId: st
     await tx.studentEngagement.delete({ where: { id: engagementId } });
   });
   refresh(studentId);
+}
+
+export async function archiveStudentRecordAction(
+  studentId: string,
+  _previous: StudentMaintenanceState,
+  fd: FormData,
+): Promise<StudentMaintenanceState> {
+  void _previous;
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  const reason = text(fd, "reason");
+  if (reason.length < 2) return { error: "請填寫封存原因" };
+  const existing = await prisma.studentRecord.findUnique({ where: { id: studentId } });
+  if (!existing) return { error: "查無這位學員" };
+  if (existing.archivedAt) return { success: "這位學員已經封存" };
+  const data = { archivedAt: new Date(), archivedBy: actor.email ?? null, archiveReason: reason };
+  await prisma.$transaction(async (tx) => {
+    const after = await tx.studentRecord.update({ where: { id: studentId }, data });
+    await tx.studentDataAuditLog.create({
+      data: { studentId, action: "STUDENT_ARCHIVE", actorEmail: actor.email ?? null, beforeJson: json(existing), afterJson: json(after) },
+    });
+  });
+  refresh(studentId);
+  return { success: "學員名單已封存；會員帳號、上課紀錄與影片權限均未刪除" };
+}
+
+export async function restoreStudentRecordAction(
+  studentId: string,
+  _previous: StudentMaintenanceState,
+): Promise<StudentMaintenanceState> {
+  void _previous;
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  const existing = await prisma.studentRecord.findUnique({ where: { id: studentId } });
+  if (!existing) return { error: "查無這位學員" };
+  if (!existing.archivedAt) return { success: "這位學員目前沒有被封存" };
+  await prisma.$transaction(async (tx) => {
+    const after = await tx.studentRecord.update({
+      where: { id: studentId },
+      data: { archivedAt: null, archivedBy: null, archiveReason: null },
+    });
+    await tx.studentDataAuditLog.create({
+      data: { studentId, action: "STUDENT_RESTORE", actorEmail: actor.email ?? null, beforeJson: json(existing), afterJson: json(after) },
+    });
+  });
+  refresh(studentId);
+  return { success: "學員已解除封存，重新顯示於一般學員資料庫" };
 }

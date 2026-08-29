@@ -73,6 +73,7 @@
 7. Server Action 權限、輸入驗證、衝突處理與自動化測試。
 8. 潛在接觸紀錄與舊官網狀態。
 9. 提供跨模組唯讀摘要 DTO，供 SPEC-10 顯示帳號、課程履歷與影片權限。
+10. Full Admin 可封存／解除封存學員記錄卡；一般列表預設排除封存資料，另有封存檢視。
 
 ### 2.2 明確不做
 
@@ -85,6 +86,7 @@
 - 不提供稽核快照的一鍵還原。
 - 不因潛在名單參加活動而建立 `Enrollment` 或正式課程履歷。
 - 不在本模組修改新平台影片權限或舊官網帳密。
+- 封存不刪除 `StudentRecord`、histories、engagements 或已認領的會員帳號。
 
 ## 3. 技術環境與約束
 
@@ -245,6 +247,13 @@
 - UI 衍生狀態：有正式 history＝歷史學員；只有 engagement 且無正式 history＝潛在名單。不得寫入永久互斥的 `memberType`。
 - 跨模組拼裝找不到唯一人物時回傳 `AMBIGUOUS`，不得依共用 Email 自動合併。
 
+### T9. 學員名單封存
+
+- 只有 Full Admin 可在學員詳細頁填原因後封存或解除封存；Editor 不顯示按鈕，Server Action 仍須獨立守門。
+- 封存寫入 `archivedAt`、`archivedBy`、`archiveReason` 並建立 `STUDENT_ARCHIVE` audit；解除封存清空三欄並建立 `STUDENT_RESTORE` audit。
+- `/admin/students` 預設只顯示 `archivedAt=null`；提供「已封存」入口與搜尋，封存頁可進詳情解除。
+- 封存不得刪除或修改 Auth、MemberProfile、Enrollment、PendingEnrollment、訂單、上課履歷或接觸紀錄。
+
 ## 8. 驗收標準
 
 | 編號 | 驗收條件 |
@@ -268,6 +277,8 @@
 | AC-17 | 可標示舊官網 ACTIVE／待轉移／已轉移，且不保存舊站密碼、不自動授權新站影片 |
 | AC-18 | 只有 engagement、沒有正式 history 的人可被篩為潛在名單 |
 | AC-19 | 跨模組摘要遇共用 Email 或身分歧義時不自動合併，回傳待人工確認狀態 |
+| AC-20 | Full Admin 封存後一般名單不再顯示，但可在已封存檢視找到並解除；所有歷史、帳號與權限維持不變 |
+| AC-21 | Editor／coach／未登入者無法呼叫封存或解除 Action，兩種操作都有原因、操作者與時間稽核 |
 
 ## 9. 非功能需求、待確認與 Agent 指示
 

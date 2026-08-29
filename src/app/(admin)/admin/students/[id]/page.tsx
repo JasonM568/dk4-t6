@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pageGuardEditor } from "@/lib/auth/staff";
+import { isFullAdmin } from "@/lib/auth/role";
 import { prisma } from "@/lib/db";
-import { EngagementsSection, HistoriesSection, StudentProfileForm } from "./maintenance-forms";
+import { EngagementsSection, HistoriesSection, StudentArchiveControl, StudentProfileForm } from "./maintenance-forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "學員資料維護 — 管理後台" };
@@ -10,7 +11,7 @@ export const metadata = { title: "學員資料維護 — 管理後台" };
 const dateInput = (date: Date | null) => date ? date.toLocaleDateString("sv-SE", { timeZone: "Asia/Taipei" }) : "";
 
 export default async function StudentDetail({ params }: { params: Promise<{ id: string }> }) {
-  await pageGuardEditor();
+  const role = await pageGuardEditor();
   const { id } = await params;
   const student = await prisma.studentRecord.findUnique({
     where: { id },
@@ -30,6 +31,7 @@ export default async function StudentDetail({ params }: { params: Promise<{ id: 
       <StudentProfileForm student={{ id: student.id, name: student.name, phone: student.phone, email: student.email, legacyAccessStatus: student.legacyAccessStatus, legacyNote: student.legacyNote }} />
       <HistoriesSection studentId={student.id} histories={student.histories.map((h) => ({ id: h.id, courseName: h.courseName, attendedAt: dateInput(h.attendedAt), source: h.source, note: h.note }))} />
       <EngagementsSection studentId={student.id} engagements={student.engagements.map((e) => ({ id: e.id, type: e.type, title: e.title, occurredAt: dateInput(e.occurredAt), source: e.source, note: e.note }))} />
+      {isFullAdmin(role) && <StudentArchiveControl studentId={student.id} archive={student.archivedAt ? { archivedAt: student.archivedAt.toISOString(), archivedBy: student.archivedBy, archiveReason: student.archiveReason } : null} />}
       <section className="rounded-xl border border-gray-200 p-5"><h2 className="font-bold">最近異動</h2>{audits.length ? <ul className="mt-3 divide-y text-sm">{audits.map((a) => <li key={a.id} className="flex flex-wrap gap-x-3 py-2"><span className="font-medium">{a.action}</span><span className="text-gray-500">{a.actorEmail ?? "未知操作者"}</span><time className="ml-auto text-gray-400">{a.createdAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</time></li>)}</ul> : <p className="mt-2 text-sm text-gray-400">尚無人工異動紀錄。</p>}</section>
     </div>
   </div>;

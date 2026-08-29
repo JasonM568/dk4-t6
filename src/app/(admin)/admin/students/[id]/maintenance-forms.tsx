@@ -2,10 +2,12 @@
 
 import { useActionState } from "react";
 import {
+  archiveStudentRecordAction,
   createEngagementAction,
   createHistoryAction,
   deleteEngagementAction,
   deleteHistoryAction,
+  restoreStudentRecordAction,
   updateHistoryAction,
   updateStudentAction,
   type StudentMaintenanceState,
@@ -86,5 +88,27 @@ export function EngagementsSection({ studentId, engagements }: { studentId: stri
       <select name="type" className={`bg-white ${input}`} defaultValue="BOOK_CLUB"><option value="BOOK_CLUB">讀冊會</option><option value="FREQUENCY_MAP">頻率意識地圖</option><option value="SEMINAR">講座</option><option value="EVENT">其他活動</option><option value="OTHER">其他</option></select>
       <input name="occurredAt" type="date" className={input} /><input required name="title" className={`${input} sm:col-span-2`} placeholder="活動或問卷名稱" /><input name="note" className={`${input} sm:col-span-2`} placeholder="備註（選填）" />
     </div><button disabled={pending} className="mt-2 rounded bg-amber-700 px-3 py-1.5 text-xs font-medium text-white">{pending ? "新增中…" : "新增其他接觸紀錄"}</button><Result state={state} /></form>
+  </section>;
+}
+
+export function StudentArchiveControl({
+  studentId,
+  archive,
+}: {
+  studentId: string;
+  archive: { archivedAt: string; archivedBy: string | null; archiveReason: string | null } | null;
+}) {
+  const [archiveState, archiveAction, archivePending] = useActionState(archiveStudentRecordAction.bind(null, studentId), null);
+  const [restoreState, restoreAction, restorePending] = useActionState(restoreStudentRecordAction.bind(null, studentId), null);
+  if (archive) return <section className="rounded-xl border border-amber-300 bg-amber-50 p-5">
+    <h2 className="font-bold text-amber-900">此學員名單已封存</h2>
+    <p className="mt-1 text-sm text-amber-800">原因：{archive.archiveReason ?? "未填寫"}</p>
+    <p className="mt-1 text-xs text-amber-700">{new Date(archive.archivedAt).toLocaleString("zh-TW")} · {archive.archivedBy ?? "未知操作者"}</p>
+    <p className="mt-2 text-xs text-gray-600">上課履歷、會員帳號與影片權限都保留不變。</p>
+    <form action={restoreAction}><button disabled={restorePending} className="mt-3 rounded-lg border border-amber-500 bg-white px-4 py-2 text-sm font-medium text-amber-800">{restorePending ? "處理中…" : "解除封存"}</button></form><Result state={restoreState} />
+  </section>;
+  return <section className="rounded-xl border border-gray-200 p-5">
+    <h2 className="font-bold">封存學員名單</h2><p className="mt-1 text-sm text-gray-500">從一般學員資料庫隱藏，可隨時解除；不會刪除任何歷史或帳號。</p>
+    <form action={archiveAction} className="mt-3"><label className="text-sm">封存原因<input required minLength={2} name="reason" placeholder="例如：舊官網測試名單" className="mt-1 block w-full max-w-lg rounded-lg border border-gray-300 px-3 py-2" /></label><button disabled={archivePending} onClick={(event) => { if (!confirm("確定封存這筆學員名單？資料會保留且可復原。")) event.preventDefault(); }} className="mt-3 rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700">{archivePending ? "封存中…" : "封存學員名單"}</button></form><Result state={archiveState} />
   </section>;
 }
