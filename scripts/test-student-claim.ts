@@ -7,6 +7,7 @@
 // 用法：npx tsx scripts/test-student-claim.ts
 
 // tsx 直跑會撞到 server-only 的守衛（它只准 RSC 匯入）→ 攔截 require 給空模組
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Mod = require("module");
 const origLoad = Mod._load;
 Mod._load = function (req: string, ...rest: unknown[]) {
@@ -14,6 +15,7 @@ Mod._load = function (req: string, ...rest: unknown[]) {
 };
 
 import { PrismaClient } from "@prisma/client";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { claimStudentRecord, findStudentByPhone } = require("../src/lib/student-history");
 
 if (!/@localhost[:/]/.test(process.env.DATABASE_URL ?? "")) {
