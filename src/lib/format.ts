@@ -37,7 +37,11 @@ export function enrollmentSource(
 
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   PENDING: "待付款",
+  AWAITING_CONFIRM: "待確認",
   PAID: "已付款",
+  CONFIRMED: "已確認",
+  COMPLETED: "已完成",
+  CANCELLED: "已取消",
   FAILED: "付款失敗",
   EXPIRED: "已逾期",
   REFUNDED: "已退款",
@@ -45,7 +49,11 @@ export const ORDER_STATUS_LABEL: Record<string, string> = {
 
 export const ORDER_STATUS_COLOR: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",
+  AWAITING_CONFIRM: "bg-orange-100 text-orange-700",
   PAID: "bg-green-100 text-green-700",
+  CONFIRMED: "bg-emerald-100 text-emerald-800",
+  COMPLETED: "bg-teal-100 text-teal-800",
+  CANCELLED: "bg-gray-200 text-gray-600",
   FAILED: "bg-red-100 text-red-700",
   EXPIRED: "bg-gray-100 text-gray-600",
   REFUNDED: "bg-blue-100 text-blue-700",

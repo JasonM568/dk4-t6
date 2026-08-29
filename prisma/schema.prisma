@@ -12,9 +12,19 @@ datasource db {
   directUrl = env("DATABASE_URL_UNPOOLED") // …?schema=course（migrate 用，Supabase 必須 5432 direct）
 }
 
+// 訂單狀態＝金流態（機器寫）＋營運態（人寫）共用一個生命週期：
+//   PENDING 待付款 → AWAITING_CONFIRM 待確認（人工收款場景）→ PAID 已付款
+//   → CONFIRMED 已確認 → COMPLETED 已完成；CANCELLED 已取消（人工）
+//   FAILED / EXPIRED / REFUNDED 為金流事件態
+// 鐵則：PAID 只能由金流結算寫入（webhook 或「金流確認補開通」），
+// 後台手動編輯不得直接設 PAID；已結算判斷見 settle.ts 的 SETTLED_STATUSES
 enum OrderStatus {
   PENDING
+  AWAITING_CONFIRM
   PAID
+  CONFIRMED
+  COMPLETED
+  CANCELLED
   FAILED
   EXPIRED
   REFUNDED

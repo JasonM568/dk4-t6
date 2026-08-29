@@ -19,7 +19,12 @@ export type SettleInput = {
 
 export type SettleResult =
   | { ok: true; already: boolean } // already=true 表示先前已結算（冪等路徑）
-  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" };
+  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" };
+
+/** 視同「已結算」的狀態：PAID 之後的營運態（已確認/已完成）都算。
+ *  重送的付款通知打到這些狀態一律走冪等路徑——漏了任何一個，
+ *  管理員把單標成已確認後，下一次重送就會重複累計消費與開通。 */
+const SETTLED_STATUSES = new Set(["PAID", "CONFIRMED", "COMPLETED", "REFUNDED"]);
 
 /** 把訂單標為已付款並開通課程（冪等）。只做 DB transaction，發票另呼叫
  *  issueInvoiceForOrder——外部 API 不能包在 transaction 裡。 */
@@ -35,8 +40,17 @@ export async function settlePaidOrder(input: SettleInput): Promise<SettleResult>
       outcome = { ok: false, reason: "NOT_FOUND" };
       return;
     }
-    if (order.status === "PAID") {
+    if (SETTLED_STATUSES.has(order.status)) {
       outcome = { ok: true, already: true };
+      return;
+    }
+    // 已取消的單收到付款通知：不自動翻盤（可能是取消後學員仍完成付款），
+    // 記錄異常讓管理員人工處理退款
+    if (order.status === "CANCELLED") {
+      console.error("[settle] 已取消訂單收到付款通知，需人工處理退款", {
+        orderNo: input.orderNo,
+      });
+      outcome = { ok: false, reason: "CANCELLED" };
       return;
     }
     // 金額比對：金流商說收了多少就得跟訂單一致，不符即拒絕結算
@@ -96,7 +110,8 @@ export async function settleFailedOrder(
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { orderNo } });
-    if (!order || order.status === "PAID") return; // 已付款的單不因遲到的失敗通知翻盤
+    // 已結算/已取消的單不因遲到的失敗通知翻盤
+    if (!order || SETTLED_STATUSES.has(order.status) || order.status === "CANCELLED") return;
     await tx.order.update({
       where: { id: order.id },
       data: { status: "FAILED", checkoutKey: null },
@@ -128,7 +143,10 @@ export async function issueInvoiceForOrder(orderNo: string): Promise<InvoiceIssu
       include: { items: { include: { course: { select: { title: true } } } } },
     });
     if (!order) return { ok: false, error: "訂單不存在" };
-    if (order.status !== "PAID") return { ok: false, error: "訂單尚未付款，不可開立發票" };
+    // 已確認/已完成也是付款後的狀態，補開發票要放行
+    if (!SETTLED_STATUSES.has(order.status) || order.status === "REFUNDED") {
+      return { ok: false, error: "訂單尚未付款，不可開立發票" };
+    }
     if (order.total <= 0) return { ok: false, error: "金額 0 的訂單不開立發票" };
 
     const existing = await prisma.invoiceRecord.findUnique({ where: { orderId: order.id } });

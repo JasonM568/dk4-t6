@@ -117,6 +117,74 @@ export async function retryInvoiceAction(orderNo: string): Promise<OrderActionSt
   };
 }
 
+/** 手動可設定的狀態白名單。
+ *  PAID 刻意不在內：已付款只能由金流結算寫入（webhook 或「金流確認補開通」），
+ *  手動標已付款會讓帳跟金流商對不起來。REFUNDED 也鎖——退款請在 PAYUNi
+ *  後台執行後再標記（之後可串退款 API）。 */
+const MANUAL_STATUS_LABEL: Record<string, string> = {
+  PENDING: "待付款",
+  AWAITING_CONFIRM: "待確認",
+  CONFIRMED: "已確認",
+  COMPLETED: "已完成",
+  CANCELLED: "已取消",
+};
+
+const MANUAL_STATUSES = [
+  "PENDING",
+  "AWAITING_CONFIRM",
+  "CONFIRMED",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
+
+/** 手動編輯訂單狀態（含手動取消）。
+ *  規則：不可設 PAID/REFUNDED；未付款的單不可標已確認/已完成
+ *  （已確認的語意是「付款後人工核對過」，沒付錢就確認等於白送課）。 */
+export async function updateOrderStatusAction(
+  orderNo: string,
+  newStatus: string,
+): Promise<OrderActionState> {
+  await requireEditor();
+  if (!(MANUAL_STATUSES as readonly string[]).includes(newStatus)) {
+    return { error: "此狀態不可手動設定（已付款/已退款由金流流程寫入）" };
+  }
+  const order = await prisma.order.findUnique({ where: { orderNo } });
+  if (!order) return { error: "訂單不存在" };
+  if (order.status === newStatus) return { success: "狀態未變更" };
+
+  const paidStates = ["PAID", "CONFIRMED", "COMPLETED", "REFUNDED"];
+  const isPaidNow = paidStates.includes(order.status);
+
+  // 沒付款的單不可標成付款後的營運態
+  if (!isPaidNow && (newStatus === "CONFIRMED" || newStatus === "COMPLETED")) {
+    return { error: "此單尚未付款，不可標記為已確認/已完成（請先走金流確認補開通）" };
+  }
+  // 付款後的單不可退回付款前的狀態（會讓重送的通知重複結算）
+  if (isPaidNow && (newStatus === "PENDING" || newStatus === "AWAITING_CONFIRM")) {
+    return { error: "已付款的訂單不可退回待付款/待確認" };
+  }
+  // 已付款訂單取消：允許（退款請另至 PAYUNi 後台執行），給明確提示
+  const cancellingPaid = isPaidNow && newStatus === "CANCELLED";
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      status: newStatus as (typeof MANUAL_STATUSES)[number],
+      // 取消時釋放結帳防重鍵，學員之後可重新下單
+      ...(newStatus === "CANCELLED" ? { checkoutKey: null } : {}),
+    },
+  });
+  console.log("[orders] 手動變更狀態", { orderNo, from: order.status, to: newStatus });
+
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderNo}`);
+  return {
+    success: cancellingPaid
+      ? "已取消。注意：此單已收款，退款請至 PAYUNi 後台執行，發票請至 ezPay 後台作廢"
+      : `狀態已更新為「${MANUAL_STATUS_LABEL[newStatus] ?? newStatus}」`,
+  };
+}
+
 /** 把「已付款訂單」的買家拋進名單群組（EDM 用）。
  *  email 為單位去重；同名群組存在即沿用（同 webinar/場次的慣例）。 */
 export async function saveBuyersToMailGroupAction(
@@ -134,7 +202,11 @@ export async function saveBuyersToMailGroupAction(
       : undefined;
 
   const orders = await prisma.order.findMany({
-    where: { status: "PAID", ...(since ? { paidAt: { gte: since } } : {}) },
+    // 已確認/已完成也是付過款的人，一併納入
+    where: {
+      status: { in: ["PAID", "CONFIRMED", "COMPLETED"] },
+      ...(since ? { paidAt: { gte: since } } : {}),
+    },
     select: { buyerEmail: true },
   });
   const emails = [

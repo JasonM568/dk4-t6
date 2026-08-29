@@ -12,7 +12,7 @@ import { SaveBuyersForm } from "./save-buyers-form";
 export const metadata = { title: "訂單管理" };
 export const dynamic = "force-dynamic";
 
-const STATUS_FILTERS = ["ALL", "PAID", "PENDING", "FAILED", "EXPIRED", "REFUNDED"] as const;
+const STATUS_FILTERS = ["ALL", "PENDING", "AWAITING_CONFIRM", "PAID", "CONFIRMED", "COMPLETED", "CANCELLED", "FAILED", "EXPIRED", "REFUNDED"] as const;
 
 const INVOICE_BADGE: Record<string, { label: string; cls: string }> = {
   ISSUED: { label: "已開立", cls: "bg-green-100 text-green-700" },
@@ -153,7 +153,7 @@ export default async function AdminOrdersPage({
                       >
                         {inv?.invoiceNumber ?? badge.label}
                       </span>
-                    ) : o.status === "PAID" && o.total > 0 ? (
+                    ) : ["PAID", "CONFIRMED", "COMPLETED"].includes(o.status) && o.total > 0 ? (
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
                         未開立
                       </span>
