@@ -49,6 +49,7 @@ function toTaipeiDatetimeLocal(value: string | null | undefined): string {
 export type SignupPageInitial = {
   signupSlug: string | null;
   isSignupOpen: boolean;
+  signupUrl: string | null;
   dmImage: string | null;
   dmImages: string[];
   signupIntro: string | null;
@@ -79,6 +80,7 @@ export function SignupPageForm({
   const [dmImage, setDmImage] = useState(initial.dmImage ?? "");
   const [dmImages, setDmImages] = useState<string[]>(initial.dmImages);
   const [slug, setSlug] = useState(initial.signupSlug ?? "");
+  const [signupUrl, setSignupUrl] = useState(initial.signupUrl ?? "");
   const [imgError, setImgError] = useState("");
   const [uploading, setUploading] = useState<"main" | "detail" | null>(null);
 
@@ -158,6 +160,39 @@ export function SignupPageForm({
             關閉時頁面顯示「未開放報名」，網址仍可訪問
           </span>
         </label>
+      </section>
+
+      {/* ── 報名方式 ── */}
+      <section className="space-y-3 rounded-2xl border border-gray-200 p-5">
+        <h2 className="text-base font-bold">報名方式</h2>
+        <label className="block">
+          <span className="mb-1 block text-xs text-gray-600">
+            外部報名網址（1shop 報名頁）
+          </span>
+          <input
+            name="signupUrl"
+            value={signupUrl}
+            onChange={(e) => setSignupUrl(e.target.value)}
+            placeholder="https://…（留空則使用平台自己的報名表單）"
+            className={INPUT}
+          />
+        </label>
+        {signupUrl ? (
+          <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-900">
+            <strong>目前是「導去 1shop」模式。</strong>
+            這一頁只當落地頁：顯示 DM 圖與課程資訊，報名按鈕直接導到上面的網址。
+            <br />
+            不收表單、不管名額（席次由 1shop 控管），下方的「名額上限」與「繳費方式」不會生效。
+            學員在 1shop 下單後，訂單照舊匯入場次看板。
+          </p>
+        ) : (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+            <strong>目前是「平台報名」模式。</strong>
+            學員在這一頁填表，報名先進「待確認」，你收到款項後按「轉入名單」才成為正式名單。
+            <br />
+            尚未接金流，所以要自己收匯款、自己確認——想省掉這段的話，填上 1shop 報名網址。
+          </p>
+        )}
       </section>
 
       {/* ── DM 圖 ── */}

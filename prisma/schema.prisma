@@ -727,6 +727,10 @@ model CourseSession {
   signupOpenAt    DateTime? // 報名開始；null = 立即開放
   signupCloseAt   DateTime? // 報名截止；null = 不自動截止（仍受 isSignupOpen 與開課日限制）
   signupQuota     Int?      // 名額上限（比對未延期的 SessionSignup 筆數）；null = 不限額
+  // 外部報名網址（1shop）。有值 = 報名頁只當落地頁：顯示 CTA 導出去，
+  // 不收表單、不管名額（席次由 1shop 控管，訂單照舊匯入場次看板）。
+  // 留空 = 用平台自己的報名表單（走 SessionSignupRequest 待確認流程）。
+  signupUrl       String?
   signupPriceNote String?   // 費用說明（Phase 1 純文字，例：早鳥 3800 / 原價 4500）
   signupPayNote   String?   @db.Text // 付款方式說明（匯款帳號、現場付款注意事項）
   signupNotice    String?   @db.Text // 注意事項／退費政策

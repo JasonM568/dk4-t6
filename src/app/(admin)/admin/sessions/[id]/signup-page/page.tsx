@@ -62,7 +62,11 @@ export default async function SessionSignupPageAdmin({
         </p>
       </div>
 
-      <PendingRequests sessionId={id} orders={[...byOrder.values()]} />
+      {/* 導去 1shop 時不會有待確認報名，整塊收起來免得干擾；
+          先前用平台報名收過的資料還在就照常顯示，不會被藏掉 */}
+      {(!session.signupUrl || byOrder.size > 0) && (
+        <PendingRequests sessionId={id} orders={[...byOrder.values()]} />
+      )}
 
       <SignupPageForm
         sessionId={id}
@@ -70,6 +74,7 @@ export default async function SessionSignupPageAdmin({
         initial={{
           signupSlug: session.signupSlug,
           isSignupOpen: session.isSignupOpen,
+          signupUrl: session.signupUrl,
           dmImage: session.dmImage,
           dmImages: session.dmImages,
           signupIntro: session.signupIntro,

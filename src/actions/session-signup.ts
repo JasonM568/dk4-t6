@@ -61,6 +61,12 @@ export async function updateSignupPageAction(
     .map((v) => String(v).trim())
     .filter((v) => /^https?:\/\//.test(v));
 
+  // 外部報名網址（1shop）：有值時報名頁只當落地頁，顯示 CTA 導出去
+  const signupUrl = String(formData.get("signupUrl") ?? "").trim() || null;
+  if (signupUrl && !/^https?:\/\//.test(signupUrl)) {
+    return { error: "報名網址須為 http(s) 開頭的完整網址" };
+  }
+
   const openAt = parseTaipeiDateTime(String(formData.get("signupOpenAt") ?? ""));
   if (openAt === undefined) return { error: "報名開始時間格式錯誤" };
   const closeAt = parseTaipeiDateTime(String(formData.get("signupCloseAt") ?? ""));
@@ -85,6 +91,7 @@ export async function updateSignupPageAction(
       data: {
         signupSlug: slug || null,
         isSignupOpen,
+        signupUrl,
         dmImage,
         dmImages,
         signupIntro: text("signupIntro"),

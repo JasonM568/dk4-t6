@@ -8,6 +8,7 @@ import {
   SIGNUP_REQUEST_STATUS,
 } from "@/lib/session-signup-page";
 import { SessionSignupForm } from "./signup-form";
+import { ExternalSignupCta } from "./external-signup-cta";
 
 // 報名開放與否是時間觸發的（開始／截止／開課日），沒有 admin 動作可 revalidate；
 // 名額也要即時。報名頁流量低，一律動態渲染（同 /webinar/[slug] 的取捨）。
@@ -50,17 +51,26 @@ export default async function EventSignupPage({
   const session = await prisma.courseSession.findUnique({ where: { signupSlug: slug } });
   if (!session) notFound();
 
-  const [confirmed, pending] = await Promise.all([
-    prisma.sessionSignup.count({
-      where: { sessionId: session.id, deferredToSessionId: null },
-    }),
-    prisma.sessionSignupRequest.count({
-      where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
-    }),
-  ]);
+  // 導去 1shop 的模式：席次由對方控管，這一頁不算名額也不查待確認名單
+  const external = session.signupUrl;
+
+  const [confirmed, pending] = external
+    ? [0, 0]
+    : await Promise.all([
+        prisma.sessionSignup.count({
+          where: { sessionId: session.id, deferredToSessionId: null },
+        }),
+        prisma.sessionSignupRequest.count({
+          where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
+        }),
+      ]);
   const taken = confirmed + pending;
-  const state = signupState({ session, taken, now: new Date() });
-  const remaining = remainingSeats(session.signupQuota, taken);
+  const state = signupState({
+    session: external ? { ...session, signupQuota: null } : session,
+    taken,
+    now: new Date(),
+  });
+  const remaining = external ? null : remainingSeats(session.signupQuota, taken);
 
   const dateText = session.eventDate
     ? session.eventDate.toLocaleDateString("zh-TW", DATE_FMT)
@@ -137,7 +147,13 @@ export default async function EventSignupPage({
 
       <section className="mb-8 scroll-mt-6" id="signup">
         <h2 className="mb-3 text-lg font-bold">立即報名</h2>
-        {state.open ? (
+        {state.open && external ? (
+          <ExternalSignupCta
+            slug={slug}
+            title={session.title}
+            url={external}
+          />
+        ) : state.open ? (
           <SessionSignupForm
             slug={slug}
             maxSeats={remaining === null ? undefined : remaining}
@@ -149,7 +165,8 @@ export default async function EventSignupPage({
         )}
       </section>
 
-      {session.signupPayNote && (
+      {/* 導去 1shop 時款項由對方收，這裡不談繳費方式，免得兩邊說法打架 */}
+      {!external && session.signupPayNote && (
         <section className="mb-8">
           <h2 className="mb-3 text-lg font-bold">繳費方式</h2>
           <p className="whitespace-pre-line rounded-2xl border border-amber-200 bg-amber-50/60 px-5 py-4 text-[15px] leading-relaxed text-gray-700">
