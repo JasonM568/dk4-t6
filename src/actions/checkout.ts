@@ -132,8 +132,10 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
       amount: total,
       itemName: course.title,
       tradeDesc: "online-course-order",
-      returnUrl: `${base}/api/payment/ecpay/notify`,
-      resultUrl: `${base}/api/payment/ecpay/return`,
+      // notify/return 路徑跟著 provider 走（ecpay → /api/payment/ecpay/*、
+      // payuni → /api/payment/payuni/*），兩邊回呼格式不同不能混用同一條
+      returnUrl: `${base}/api/payment/${provider.name}/notify`,
+      resultUrl: `${base}/api/payment/${provider.name}/return`,
       clientBackUrl: `${base}/orders/${orderNo}`,
     });
     return { ok: true, action, fields };
