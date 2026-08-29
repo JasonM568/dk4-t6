@@ -87,13 +87,17 @@ Supabase 專案 qubjpayeopvscrgrvrci（hope 站與 course 站共用）
 
 - **Notify 三態**：ATM/超商取號成功（TradeStatus=0）是 pending 不是 failed，
   route 在 `/api/payment/payuni/notify`，與 ECPay route 分開、不可混用
-- 電子發票：ezPay 另行串接（開立時機掛在 notify 付款成功之後）
+- **電子發票 ezPay**（`src/lib/invoice/ezpay.ts`）：付款成功自動開立 B2C
+  （ezPay 會員載具，開錯要作廢去 ezPay 後台）；失敗記 `InvoiceRecord` 可重試
+- **2026-08-29 已 1 元實刷驗證**：付款→開通→開發票全自動。
+  測金流用一般會員 paytest@huangxi.info（admin 看不到購買按鈕）＋
+  測試課程 paytest-1twd（平時下架）
 - ECPay provider 保留（sandbox 測試用），`PAYMENT_PROVIDER=ecpay` 可切回
 
 ## 目前待辦（依優先序）
 
 0. P1–P3 約 25 項安全/邏輯 bug（越權改密碼、結帳冪等、免費課 total=0、open redirect 等）
-1. PAYUNi 1 元實刷驗證 notify 端到端（Jason 刷卡）＋ ezPay 發票串接
+1. 場次報名接金流（票種 → UPP 建單 → 付款成功自動轉入正式名單）
 2. hope 站 Confirm email 回歸測試（開關是專案層級，已影響 hope 站）
 3. 三分頁（量子講師群 / 知識專區 / 講座邀約）補正式內容
 
