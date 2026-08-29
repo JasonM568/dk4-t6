@@ -8,6 +8,16 @@ export interface CreatePaymentInput {
   returnUrl: string; // server-to-server 背景通知（以此為準）
   resultUrl: string; // 使用者付款完成後瀏覽器導回
   clientBackUrl: string; // 結果頁「返回」按鈕落點
+  /** 這筆交易開放的支付工具（PAYUNi 白名單模式；ECPay 忽略此欄）。
+   *  未帶 = 交給金流商後台預設。 */
+  payTools?: {
+    credit: boolean;
+    atm: boolean;
+    cvs: boolean;
+    applePay: boolean;
+    googlePay: boolean;
+    creditInstallments?: string; // "3,6,12"；無值 = 這筆不開分期
+  };
 }
 
 export interface CreatePaymentResult {

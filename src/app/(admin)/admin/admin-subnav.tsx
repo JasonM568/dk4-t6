@@ -33,6 +33,7 @@ const MARKETING_TABS = [
 // 訂單資訊、付款名單拋轉都在這裡；之後場次報名接金流的訂單也歸這
 const ORDERS_TABS = [
   { href: "/admin/orders", label: "訂單總覽" },
+  { href: "/admin/orders/payment-settings", label: "付款設定", adminOnly: true },
   { href: "/admin/orders/invoice-settings", label: "發票設定", adminOnly: true },
 ];
 const SESSION_TABS = [{ href: "/admin/sessions", label: "場次看板" }];

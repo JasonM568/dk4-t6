@@ -7,6 +7,11 @@ import { getPaymentProvider } from "@/lib/payment";
 import { PayuniProvider, payuniQueryTrade } from "@/lib/payment/payuni";
 import { settlePaidOrder, issueInvoiceForOrder } from "@/lib/payment/settle";
 import {
+  getPaymentToolConfig,
+  setPaymentToolConfig,
+  normalizeInstOptions,
+} from "@/lib/payment/pay-config";
+import {
   getInvoicePolicy,
   setInvoicePolicy,
   INVOICE_MODES,
@@ -287,4 +292,43 @@ export async function updateInvoicePolicyAction(
   });
   revalidatePath("/admin/orders/invoice-settings");
   return { success: "發票開立政策已更新" };
+}
+
+/** 更新付款方式設定（僅管理員）。全部關掉時 lib 端保底信用卡。 */
+export async function updatePayConfigAction(
+  _prev: OrderActionState,
+  formData: FormData,
+): Promise<OrderActionState> {
+  await requireFullAdmin();
+  const on = (k: string) => formData.get(k) === "on";
+  const minRaw = Number(String(formData.get("instMinAmount") ?? "0"));
+  if (!Number.isFinite(minRaw) || minRaw < 0) {
+    return { error: "分期門檻請填 0 或正整數（0 = 不設門檻）" };
+  }
+  const instOptions = formData
+    .getAll("instOptions")
+    .map(String)
+    .join(",");
+  await setPaymentToolConfig({
+    credit: on("credit"),
+    atm: on("atm"),
+    cvs: on("cvs"),
+    applePay: on("applePay"),
+    googlePay: on("googlePay"),
+    instEnabled: on("instEnabled"),
+    instOptions: normalizeInstOptions(instOptions),
+    instMinAmount: Math.round(minRaw),
+  });
+  revalidatePath("/admin/orders/payment-settings");
+  const saved = await getPaymentToolConfig();
+  const enabled = [
+    saved.credit && "信用卡",
+    saved.atm && "ATM",
+    saved.cvs && "超商代碼",
+    saved.applePay && "Apple Pay",
+    saved.googlePay && "Google Pay",
+  ].filter(Boolean).join("、");
+  return {
+    success: `已儲存。目前開放：${enabled}${saved.instEnabled ? `；分期 ${saved.instOptions} 期（滿 ${saved.instMinAmount} 元）` : "；分期關閉"}`,
+  };
 }

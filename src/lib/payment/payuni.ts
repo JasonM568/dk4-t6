@@ -94,6 +94,17 @@ export class PayuniProvider implements PaymentProvider {
       ReturnURL: input.resultUrl,
       BackURL: input.clientBackUrl,
     };
+    // 支付工具白名單（UPP 規則：帶了任一工具參數，付款頁就只顯示帶 =1 的項目）。
+    // 只帶開啟的（=1）；關閉的不帶 0——文件語意是「1=啟用」，帶 0 行為未定義
+    if (input.payTools) {
+      const t = input.payTools;
+      if (t.credit) inner.Credit = 1;
+      if (t.atm) inner.ATM = 1;
+      if (t.cvs) inner.CVS = 1;
+      if (t.applePay) inner.ApplePay = 1;
+      if (t.googlePay) inner.GooglePay = 1;
+      if (t.creditInstallments) inner.CreditInst = t.creditInstallments;
+    }
 
     const encryptInfo = payuniEncrypt(
       toQueryString(inner),

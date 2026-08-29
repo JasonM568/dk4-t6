@@ -115,6 +115,32 @@ console.log("\ncreatePayment（UPP 建單欄位）");
   check("Timestamp 為秒級整數", /^\d{10}$/.test(inner.Timestamp ?? ""));
 }
 
+console.log("\ncreatePayment 支付工具白名單（後台付款設定注入）");
+{
+  const dec = (enc: string) =>
+    Object.fromEntries(new URLSearchParams(
+      payuniDecrypt(enc, "12345678901234567890123456789012", "1234567890123456")));
+  const base = {
+    orderNo: "ODTOOLS01", amount: 5000, itemName: "x", tradeDesc: "t",
+    returnUrl: "https://a/n", resultUrl: "https://a/r", clientBackUrl: "https://a/b",
+  };
+  const only2 = dec(provider.createPayment({ ...base,
+    payTools: { credit: true, atm: true, cvs: false, applePay: false, googlePay: false } }).fields.EncryptInfo);
+  check("只開信用卡+ATM → 帶 Credit=1 ATM=1", only2.Credit === "1" && only2.ATM === "1");
+  check("Apple/Google/CVS 不帶（白名單模式下不顯示）",
+    !("ApplePay" in only2) && !("GooglePay" in only2) && !("CVS" in only2));
+  check("未達分期門檻 → 不帶 CreditInst", !("CreditInst" in only2));
+
+  const withInst = dec(provider.createPayment({ ...base,
+    payTools: { credit: true, atm: true, cvs: false, applePay: false, googlePay: false,
+      creditInstallments: "3,6,12" } }).fields.EncryptInfo);
+  check("達門檻 → CreditInst=3,6,12", withInst.CreditInst === "3,6,12");
+
+  const noTools = dec(provider.createPayment(base).fields.EncryptInfo);
+  check("未帶 payTools → 不帶任何工具參數（交給商店後台預設）",
+    !("Credit" in noTools) && !("ATM" in noTools));
+}
+
 console.log("\nverifyCallback（Notify 三態判定）");
 {
   // 模擬 PAYUNi 回呼：用同一組金鑰把內層欄位加密成一包

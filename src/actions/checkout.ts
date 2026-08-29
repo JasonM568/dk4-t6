@@ -7,6 +7,7 @@ import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { isCoursePublicActive } from "@/lib/course-access";
 import { nextOrderNo } from "@/lib/order-no";
+import { getPaymentToolConfig, resolvePayTools } from "@/lib/payment/pay-config";
 
 export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
@@ -155,6 +156,8 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
       returnUrl: `${base}/api/payment/${provider.name}/notify`,
       resultUrl: `${base}/api/payment/${provider.name}/return`,
       clientBackUrl: `${base}/orders/${orderNo}`,
+      // 支付工具依後台「付款設定」；分期門檻以這筆實付金額判斷
+      payTools: resolvePayTools(await getPaymentToolConfig(), total),
     });
     return { ok: true, action, fields };
   } catch (e) {
