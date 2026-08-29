@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment";
 import { PayuniProvider, type PayuniVerifyResult } from "@/lib/payment/payuni";
 import { recalcTier } from "@/lib/membership/tier";
+import { getEzpayConfig, issueInvoice } from "@/lib/invoice/ezpay";
+import { getProfile } from "@/lib/supabase/admin";
 
 // PAYUNi AES 需要 node:crypto，禁用 edge runtime
 export const runtime = "nodejs";
@@ -139,5 +141,91 @@ export async function POST(req: NextRequest) {
     return new Response("server error", { status: 500 });
   }
 
+  // 電子發票（ezPay）：付款成功才開，且在 transaction 之外——外部 API 不能拖住
+  // 開通課程；開票失敗只記 InvoiceRecord.error，不影響訂單，之後可重試。
+  // await 完才回 200：serverless function 回應後就凍結，fire-and-forget 會被砍掉。
+  if (result.tradeState === "paid") {
+    await issueInvoiceForOrder(result.orderNo);
+  }
+
   return new Response("OK");
+}
+
+/** 幫已付款訂單開立電子發票（冪等：已開立過直接略過） */
+async function issueInvoiceForOrder(orderNo: string): Promise<void> {
+  const config = getEzpayConfig();
+  if (!config) return; // 未設定 ezPay = 發票功能未啟用，靜默略過
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { orderNo },
+      include: { items: { include: { course: { select: { title: true } } } } },
+    });
+    // 只開真的付款成功的單；金額 0 不開（免費開通不產生銷售額）
+    if (!order || order.status !== "PAID" || order.total <= 0) return;
+
+    const existing = await prisma.invoiceRecord.findUnique({ where: { orderId: order.id } });
+    if (existing?.status === "ISSUED") return; // 冪等：PAYUNi 重送通知不會重複開票
+
+    const buyerEmail = order.buyerEmail ?? "";
+    if (!buyerEmail) {
+      console.error("[invoice] 訂單缺買受人信箱，無法開立", { orderNo });
+      return;
+    }
+    const profile = await getProfile(order.userId).catch(() => null);
+    const buyerName = profile?.display_name || buyerEmail.split("@")[0];
+    const itemName = order.items[0]?.course.title ?? "線上課程";
+
+    const record = await prisma.invoiceRecord.upsert({
+      where: { orderId: order.id },
+      update: { attempts: { increment: 1 } },
+      create: {
+        orderId: order.id,
+        orderNo,
+        buyerEmail,
+        totalAmt: order.total,
+        attempts: 1,
+      },
+    });
+
+    const res = await issueInvoice(config, {
+      orderNo,
+      buyerName,
+      buyerEmail,
+      itemName,
+      totalAmt: order.total,
+    });
+
+    if (res.ok) {
+      await prisma.invoiceRecord.update({
+        where: { id: record.id },
+        data: {
+          status: "ISSUED",
+          invoiceNumber: res.invoiceNumber,
+          randomNum: res.randomNum,
+          invoiceTransNo: res.invoiceTransNo,
+          issuedAt: new Date(),
+          error: null,
+          raw: JSON.parse(JSON.stringify(res.raw)),
+        },
+      });
+      console.log("[invoice] 開立成功", { orderNo, invoiceNumber: res.invoiceNumber });
+    } else {
+      await prisma.invoiceRecord.update({
+        where: { id: record.id },
+        data: {
+          status: "FAILED",
+          error: res.error,
+          ...(res.raw ? { raw: JSON.parse(JSON.stringify(res.raw)) } : {}),
+        },
+      });
+      console.error("[invoice] 開立失敗（訂單狀態不受影響，可後補）", {
+        orderNo,
+        error: res.error,
+      });
+    }
+  } catch (e) {
+    // 開票的任何例外都不能讓 notify 回非 200（PAYUNi 會一直重送）
+    console.error("[invoice] 開立流程例外", { orderNo, e });
+  }
 }

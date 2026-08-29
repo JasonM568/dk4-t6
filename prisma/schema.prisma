@@ -1105,6 +1105,33 @@ model Payment {
   updatedAt DateTime @updatedAt
 }
 
+// 電子發票開立紀錄（ezPay 加值中心）。
+// 開票掛在金流 notify 的付款成功之後、DB transaction 之外——外部 API 不能拖住
+// 開通課程的 transaction；開票失敗只記錄在這，不影響訂單狀態，後台可重試。
+// 一張訂單最多一張發票（orderId unique），重試走 update 不會重複開立。
+model InvoiceRecord {
+  id      String @id @default(cuid())
+  orderId String @unique
+  orderNo String // 冗餘存一份，後台列表不用 join
+
+  // PENDING 待開立（送出前）/ ISSUED 已開立 / FAILED 失敗（error 有原因，可重試）
+  status        String    @default("PENDING")
+  invoiceNumber String? // 發票號碼（如 UY25000014）
+  randomNum     String? // 4 碼防偽隨機碼（買受人對獎用）
+  invoiceTransNo String? // ezPay 開立序號
+  buyerEmail    String? // 開立當下的買受人信箱（ezPay 會員載具識別）
+  totalAmt      Int // 發票金額（含稅）
+  issuedAt      DateTime?
+  error         String?   @db.Text // 最後一次失敗原因
+  attempts      Int       @default(0)
+  raw           Json? // ezPay 回應存證
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
 // 已購買關係 — 「能不能看課程」的唯一真實來源
 model Enrollment {
   id       String  @id @default(cuid())
