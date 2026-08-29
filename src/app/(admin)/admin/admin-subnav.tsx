@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 // 以後加新功能一律加進對應分組的 TABS，不要再往頂列塞。
 // editorOnly：僅 admin|operator 可見（總教練唯讀，隱藏編輯/操作類子分頁）
 const PLATFORM_TABS = [
+  { href: "/admin/people", label: "學員與名單" },
   { href: "/admin/courses", label: "課程上架" },
   { href: "/admin/categories", label: "課程分類", editorOnly: true },
   { href: "/admin/members", label: "會員列表" },
@@ -40,6 +41,7 @@ const SYSTEM_TABS = [
 ];
 
 const PLATFORM_PREFIXES = [
+  "/admin/people",
   "/admin/courses",
   "/admin/categories",
   "/admin/members",

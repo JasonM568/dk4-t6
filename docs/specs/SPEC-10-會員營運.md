@@ -4,8 +4,8 @@
 
 | 欄位 | 內容 |
 |---|---|
-| 版本／日期 | v0.2 Draft／2026-08-29 |
-| 路由 | `/admin/members`、member detail/import/inactive、`/admin/enrollments` |
+| 版本／日期 | v0.3 Implemented／2026-08-29 |
+| 路由 | `/admin/people`、`/admin/people/[kind]/[id]`、`/admin/members`、member detail/import/inactive、`/admin/enrollments` |
 | 定位 | 跨 Identity、Learning Access、Zones、EDM 的營運協調模組 |
 
 ## 1. 概述
@@ -106,6 +106,15 @@ coach 可查看允許的會員資訊；operator 可新增、匯入、批次開�
 - 修改 `parseRows` 必須回歸手機、Email、密碼辨識，避免電話被當成密碼。
 - 統一入口的大名單查詢必須採批次查詢或資料庫 read model；禁止對每列逐一呼叫 Auth、Enrollment、StudentRecord 造成 N+1。
 - 第一階段不做自動人物合併；待身分衝突預覽、audit 與可復原策略另立 SPEC 後再啟用。
+
+## 10. v0.3 實作補充（統一人物與待辦中心）
+
+- `src/lib/person-roster.ts` 是跨來源唯讀 DTO 與所有快速篩選／待辦旗標的唯一判定處；`src/lib/person-roster-data.ts` 用批次查詢組裝，列表不做逐人查詢。
+- `/admin/people` 同時查找會員、歷史學員與未認領 `PendingEnrollment`，並提供已註冊、未註冊、上過課未註冊、待開通、可能缺權限、有影片、舊站、潛在、身分衝突與封存篩選。
+- 待辦中心第一版內嵌於統一入口頂端，數字可直接下鑽至對應人物清單；人物列一律連至完整資料頁。
+- 人物頁分開顯示基本資料、正式歷史、活動接觸、場次報名、待開通與平台影片權限。場次報名依 normalized Email 提示，明示共用信箱需人工確認。
+- 只有 `claimedUserId` 會合併人物。Email／手機匹配只顯示候選；Full Admin 勾選確認後才可連結，且寫入 `StudentDataAuditLog/STUDENT_CLAIM`。同一會員已有其他學員卡時拒絕連結。
+- 人物頁影片操作沿用 SPEC-06 的 `grantEnrollmentAction`／`revokeEnrollment`，不建立第二套授權資料。
 
 ### 待確認但不阻擋第一階段
 

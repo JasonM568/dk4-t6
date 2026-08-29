@@ -39,7 +39,7 @@
 | 5 | SPEC-03 | 學員資料庫維護 | Draft |
 | 6 | SPEC-08 | 場次報名與看板 | Draft |
 | 7 | SPEC-09 | 場次收支與分潤 | Draft |
-| 8 | SPEC-10 | 會員營運 | Draft |
+| 已完成 | SPEC-10 | 會員營運（統一人物、課程開通、待辦中心第一版） | 已實作 |
 | 9 | SPEC-11 | SMS 簡訊行銷 | Draft |
 | 10 | SPEC-12 | 課程目錄與內容 | Draft |
 | 11 | SPEC-13 | 企業專區 | Draft |

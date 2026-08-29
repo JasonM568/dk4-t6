@@ -474,6 +474,8 @@ export async function grantEnrollmentAction(
   });
 
   revalidatePath(`/admin/members/${userId}`);
+  revalidatePath("/admin/people");
+  revalidatePath(`/admin/people/member/${userId}`);
   return { success: `已開通「${course.title}」` };
 }
 
@@ -484,6 +486,8 @@ export async function revokeEnrollment(userId: string, courseId: string) {
   if (!profile) return;
   await prisma.enrollment.deleteMany({ where: { userId, courseId } });
   revalidatePath(`/admin/members/${userId}`);
+  revalidatePath("/admin/people");
+  revalidatePath(`/admin/people/member/${userId}`);
 }
 
 export type RevokeState = { error?: string; success?: string } | null;
