@@ -89,6 +89,7 @@ pnpm check:actions                    # 檢查 "use server" 檔案的匯出（bu
 npx tsx --conditions=react-server scripts/test-live-access-db.ts        # 上課碼閘門 29 項
 npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 12 項
 npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單
+npx tsx --conditions=react-server scripts/test-session-notice-db.ts     # 課前通知「未通知名單」11 項
 ```
 
 ## 目錄重點
