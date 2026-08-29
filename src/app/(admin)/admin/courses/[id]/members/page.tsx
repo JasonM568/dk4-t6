@@ -7,22 +7,27 @@ import { createGroupFromCourseAction, deletePendingEnrollmentAction } from "@/ac
 import { currentCanEdit } from "@/lib/auth/staff";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { CourseMembersManager } from "./members-manager";
+import { buildCourseRoster } from "@/lib/course-roster";
+import { RosterOverview } from "./roster-overview";
 
 export const metadata = { title: "觀看權限名單 — 管理後台" };
 
 export default async function CourseMembersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ sessionId?: string }>;
 }) {
   const { id } = await params;
+  const { sessionId = "" } = await searchParams;
   const course = await prisma.course.findUnique({
     where: { id },
     select: { id: true, title: true, courseCode: true },
   });
   if (!course) notFound();
 
-  const [enrollments, profiles, canEditNow, mailGroups, pendings] = await Promise.all([
+  const [enrollments, profiles, canEditNow, mailGroups, pendings, sessions, sourceSession] = await Promise.all([
     prisma.enrollment.findMany({
       where: { courseId: id },
       orderBy: { createdAt: "desc" },
@@ -38,6 +43,24 @@ export default async function CourseMembersPage({
       where: { courseId: id, claimedAt: null },
       orderBy: { createdAt: "asc" },
     }),
+    prisma.courseSession.findMany({
+      orderBy: [{ eventDate: "desc" }, { createdAt: "desc" }],
+      select: { id: true, title: true, eventDate: true },
+    }),
+    sessionId
+      ? prisma.courseSession.findUnique({
+          where: { id: sessionId },
+          select: {
+            id: true,
+            title: true,
+            signups: {
+              where: { deferredToSessionId: null, isStaff: false },
+              orderBy: { orderedAt: "asc" },
+              select: { id: true, name: true, email: true },
+            },
+          },
+        })
+      : Promise.resolve(null),
   ]);
   const profById = new Map(profiles.map((p) => [p.id, p]));
 
@@ -47,6 +70,17 @@ export default async function CourseMembersPage({
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
+  const rosterRows = buildCourseRoster({
+    profiles,
+    enrollments,
+    pendings,
+    sourceRows: sourceSession?.signups,
+    sourceLabel: sourceSession ? `場次「${sourceSession.title}」` : undefined,
+  });
+  const initialList = sourceSession?.signups
+    .filter((s) => s.email?.trim())
+    .map((s) => `${s.email!.trim().toLowerCase()},${s.name}`)
+    .join("\n") ?? "";
 
   return (
     <div className="max-w-4xl">
@@ -68,6 +102,14 @@ export default async function CourseMembersPage({
           </>
         )}
       </p>
+
+      {canEditNow && <form className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+        <label className="block text-sm font-medium text-blue-900">從場次名單處理課後影片權限</label>
+        <p className="mt-1 text-xs text-blue-700/70">選定場次後，系統帶入有效報名者（排除工作人員與延期原列），先顯示缺漏與衝突，再由你確認一鍵開通。</p>
+        <div className="mt-2 flex flex-wrap gap-2"><select name="sessionId" defaultValue={sourceSession?.id ?? ""} className="min-w-72 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm"><option value="">— 選擇上課場次 —</option>{sessions.map((s) => <option key={s.id} value={s.id}>{s.title}{s.eventDate ? `（${s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}）` : ""}</option>)}</select><button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white">載入場次名單</button>{sourceSession && <Link href={`/admin/courses/${id}/members`} className="rounded-lg border border-blue-300 px-4 py-2 text-sm text-blue-700">清除場次</Link>}</div>
+      </form>}
+
+      <RosterOverview rows={rosterRows} />
 
       {/* 待註冊名單：批次開通時查無會員的存底。學員用同一 email 註冊（或管理員建帳號）當下自動開通 */}
       {pendings.length > 0 && (
@@ -186,6 +228,8 @@ export default async function CourseMembersPage({
       <CourseMembersManager
         courseId={course.id}
         canEdit={canEditNow}
+        initialList={initialList}
+        sourceLabel={sourceSession?.title ?? null}
         members={enrollments.map((e) => {
           const p = profById.get(e.userId);
           return {

@@ -9,6 +9,8 @@ const STATUS_LABEL: Record<
   exists: { text: "已存在", className: "bg-blue-50 text-blue-700" },
   already: { text: "已有權限", className: "bg-blue-50 text-blue-700" },
   notfound: { text: "查無會員", className: "bg-amber-50 text-amber-700" },
+  pending: { text: "待註冊", className: "bg-amber-50 text-amber-700" },
+  conflict: { text: "身分待確認", className: "bg-purple-50 text-purple-700" },
   invalid: { text: "格式錯誤", className: "bg-amber-50 text-amber-700" },
   error: { text: "失敗", className: "bg-red-50 text-red-700" },
 };

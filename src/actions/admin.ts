@@ -51,6 +51,7 @@ import {
   claimPendingEnrollments,
   markPendingClaimed,
 } from "@/lib/pending-enroll";
+import { findIdentityConflictEmails } from "@/lib/course-roster";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門分三級（定義見 src/lib/auth/staff.ts）：
@@ -1829,7 +1830,9 @@ export type BatchRowResult = {
     | "exists" // 會員已存在
     | "enrolled" // 開通成功
     | "already" // 本來就有權限
-    | "notfound" // 查無會員
+    | "pending" // 尚未註冊，已建立待開通
+    | "notfound" // 舊流程相容：查無會員
+    | "conflict" // 同一 email 對應不同姓名，需人工確認
     | "invalid" // 格式錯誤
     | "error"; // 其他錯誤
   detail?: string;
@@ -2076,6 +2079,9 @@ export async function batchEnrollAction(
   const seen = new Set<string>();
   const succeeded: { email: string; userId: string }[] = []; // 收殘留待開通的認領標記用
 
+  // 同一 Email 對應不同姓名，多半是同行者共用訂購人信箱；不能猜要把影片開給誰。
+  const conflictEmails = findIdentityConflictEmails(rows.filter((row) => EMAIL_RE.test(row.email)));
+
   const validEmails = [...new Set(rows.map((r) => r.email).filter((e) => EMAIL_RE.test(e)))];
   const profileMap = await getProfilesByEmails(validEmails);
 
@@ -2100,6 +2106,15 @@ export async function batchEnrollAction(
       continue;
     }
     seen.add(row.email);
+    if (conflictEmails.has(row.email)) {
+      results.push({
+        email: row.email,
+        name: row.name || undefined,
+        status: "conflict",
+        detail: "同一 Email 對應不同姓名，未開通也未建立待開通，請人工確認正確登入帳號",
+      });
+      continue;
+    }
 
     let userId = profileMap.get(row.email)?.id;
 
@@ -2121,8 +2136,8 @@ export async function batchEnrollAction(
         results.push({
           email: row.email,
           name: row.name || undefined,
-          status: "notfound",
-          detail: "查無會員，已列入待開通：學員註冊後自動開通；急用可在下方一鍵建帳號",
+          status: "pending",
+          detail: "尚未註冊，已建立待開通；學員使用同一 Email 註冊後自動開通",
         });
         continue;
       }
@@ -2209,7 +2224,7 @@ export async function batchEnrollAction(
   const c = (s: BatchRowResult["status"]) => results.filter((r) => r.status === s).length;
   return {
     done: true,
-    summary: `「${course.title}」開通完成：新增帳號並開通 ${c("created")}、開通成功 ${c("enrolled")}、已有權限 ${c("already")}、查無會員 ${c("notfound")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}${groupMsg}`,
+    summary: `「${course.title}」處理完成：新增帳號並開通 ${c("created")}、直接開通 ${c("enrolled")}、已有權限 ${c("already")}、待註冊 ${c("pending")}、身分衝突 ${c("conflict")}、格式錯誤 ${c("invalid")}、失敗 ${c("error")}${groupMsg}`,
     results,
     courseId,
     courseTitle: course.title,

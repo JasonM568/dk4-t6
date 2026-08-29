@@ -24,10 +24,14 @@ export function CourseMembersManager({
   courseId,
   members,
   canEdit = true,
+  initialList = "",
+  sourceLabel = null,
 }: {
   courseId: string;
   members: CourseMemberRow[];
   canEdit?: boolean; // 總教練(唯讀)為 false：只看名單，隱藏新增/移除/勾選
+  initialList?: string;
+  sourceLabel?: string | null;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -56,7 +60,8 @@ export function CourseMembersManager({
   const toggle = (id: string) =>
     setSelected((cur) => {
       const next = new Set(cur);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   const toggleAll = () =>
@@ -77,24 +82,25 @@ export function CourseMembersManager({
       >
         <input type="hidden" name="courseId" value={courseId} />
         <label className="block text-sm font-medium">
-          新增觀看名單（一行一個 email，可「email,姓名」格式）
+          {sourceLabel ? `一鍵處理「${sourceLabel}」課後影片權限` : "新增觀看名單（一行一個 email，可「email,姓名」格式）"}
         </label>
         <textarea
           name="list"
           rows={4}
           required
+          defaultValue={initialList}
           placeholder={"student1@example.com\nstudent2@example.com,王小明"}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
         />
         <p className="text-xs text-gray-400">
-          已開通的會員會自動略過；查無會員的需先到「會員新增」建帳號（或用批次開通頁的一鍵新增並開通）
+          已註冊者直接開通；未註冊者建立待開通，日後以同一 Email 註冊會自動取得影片；同 Email 不同姓名會停止並要求人工確認。
         </p>
         <button
           type="submit"
           disabled={adding}
           className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
         >
-          {adding ? "開通中，請勿關閉頁面…" : "新增到觀看名單"}
+          {adding ? "處理中，請勿關閉頁面…" : sourceLabel ? "確認並一鍵處理" : "新增到觀看名單"}
         </button>
         {addState?.error && (
           <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

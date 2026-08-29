@@ -109,6 +109,8 @@
 - 主操作「加入上課學員並處理影片權限」接受人工貼上或經 SPEC-08 提供的有效場次名單：已註冊者 upsert Enrollment；未註冊且有有效 Email 者 upsert PendingEnrollment；資料不足或歧義者列入 unresolved，不猜測。
 - 完成報告固定回傳：直接開通數、待註冊數、已存在略過數、資料不足數、身分衝突數與逐筆錯誤下載／顯示入口。
 - 從某堂課撤銷觀看權限，只處理 Enrollment；不得刪除其報名、上課履歷、pending 歷史、訂單或人物主檔。
+- 場次頁提供「處理課後影片權限」直達 `/admin/enrollments?sessionId=...`；帶入名單排除 staff 與延期原列，缺 Email 以註解提示且不送入開通。
+- 同一 Email 對應不同非空姓名時結果為 `UNRESOLVED_IDENTITY`／`conflict`，不得建立 Enrollment 或 PendingEnrollment。
 
 ### T5. 測試
 - 涵蓋購買、手動、批次、待認領、撤銷、專區限時、訂閱專區與越權。

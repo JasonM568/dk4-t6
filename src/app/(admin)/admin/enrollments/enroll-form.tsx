@@ -14,9 +14,13 @@ type GroupOption = { id: string; name: string };
 export function EnrollForm({
   courses,
   mailGroups = [],
+  initialList = "",
+  sourceTitle = null,
 }: {
   courses: CourseOption[];
   mailGroups?: GroupOption[];
+  initialList?: string;
+  sourceTitle?: string | null;
 }) {
   const [state, formAction, pending] = useActionState<BatchState, FormData>(
     batchEnrollAction,
@@ -28,7 +32,7 @@ export function EnrollForm({
     FormData
   >(createMissingAndEnrollAction, null);
 
-  const notFound = state?.results?.filter((r) => r.status === "notfound") ?? [];
+  const notFound = state?.results?.filter((r) => r.status === "pending" || r.status === "notfound") ?? [];
   // 還原成名單格式（email,姓名），交給同一套解析邏輯
   const notFoundList = notFound
     .map((r) => (r.name ? `${r.email},${r.name}` : r.email))
@@ -64,6 +68,7 @@ export function EnrollForm({
             name="list"
             rows={10}
             required
+            defaultValue={initialList}
             placeholder={
               "student1@example.com\nstudent2@example.com\n（也可貼「email,姓名」格式，查無會員時姓名會用於建立帳號）"
             }
@@ -124,7 +129,7 @@ export function EnrollForm({
           disabled={pending}
           className="rounded-lg bg-black px-5 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
         >
-          {pending ? "處理中，請勿關閉頁面…" : "批次開通"}
+          {pending ? "處理中，請勿關閉頁面…" : sourceTitle ? `確認並處理「${sourceTitle}」` : "批次開通"}
         </button>
       </form>
 

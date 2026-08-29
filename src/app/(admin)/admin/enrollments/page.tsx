@@ -4,9 +4,10 @@ import { EnrollForm } from "./enroll-form";
 export const metadata = { title: "批次開通 — 管理後台" };
 
 import { pageGuardEditor } from "@/lib/auth/staff";
-export default async function EnrollmentsPage() {
+export default async function EnrollmentsPage({ searchParams }: { searchParams: Promise<{ sessionId?: string }> }) {
   await pageGuardEditor();
-  const [courses, mailGroups] = await Promise.all([
+  const { sessionId = "" } = await searchParams;
+  const [courses, mailGroups, sourceSession] = await Promise.all([
     prisma.course.findMany({
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true },
@@ -15,7 +16,21 @@ export default async function EnrollmentsPage() {
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true },
     }),
+    sessionId ? prisma.courseSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        title: true,
+        signups: {
+          where: { deferredToSessionId: null, isStaff: false },
+          orderBy: { orderedAt: "asc" },
+          select: { id: true, name: true, email: true },
+        },
+      },
+    }) : Promise.resolve(null),
   ]);
+  const initialList = sourceSession?.signups
+    .map((s) => s.email?.trim() ? `${s.email.trim().toLowerCase()},${s.name}` : `# 缺 Email：${s.name}`)
+    .join("\n") ?? "";
 
   return (
     <div className="max-w-3xl">
@@ -28,7 +43,8 @@ export default async function EnrollmentsPage() {
       <p className="mt-1 text-xs text-gray-400">
         企業專區（世華會等）的課程也在這裡開通；「能不能看到專區頁」則到「企業專區」管理會員名單，兩者獨立。
       </p>
-      <EnrollForm courses={courses} mailGroups={mailGroups} />
+      {sourceSession && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">已從場次「<strong>{sourceSession.title}</strong>」帶入 {sourceSession.signups.length} 位有效報名者；缺 Email 者以註解標出，不會送入開通。</div>}
+      <EnrollForm courses={courses} mailGroups={mailGroups} initialList={initialList} sourceTitle={sourceSession?.title ?? null} />
     </div>
   );
 }

@@ -1327,6 +1327,12 @@ export function SessionCard({
               >
                 📝 報名頁設定
               </Link>
+              <Link
+                href={`/admin/enrollments?sessionId=${session.id}`}
+                className="inline-block rounded-lg border border-blue-500 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-800 transition hover:bg-blue-100"
+              >
+                🎬 處理課後影片權限
+              </Link>
               {/* 收支含分潤金額（內部薪酬）：僅管理員可見；頁面本身也擋 pageGuardFullAdmin */}
               {isAdmin && (
                 <Link
