@@ -80,10 +80,20 @@ Supabase 專案 qubjpayeopvscrgrvrci（hope 站與 course 站共用）
 - 後台 RBAC 三級（StaffRole 表）：管理員 / 操作人員 / 總教練
 - 守門邏輯：`src/lib/auth/staff.ts`
 
+## 金流（PAYUNi 統一金流）
+
+正式站 `PAYMENT_PROVIDER=payuni`（2026-08-29 切換，正式商店 key 與 1shop 同一組）。
+規格快照在 `docs/payuni/`；離線驗證 `npx tsx scripts/test-payuni.ts`（官方測試向量）。
+
+- **Notify 三態**：ATM/超商取號成功（TradeStatus=0）是 pending 不是 failed，
+  route 在 `/api/payment/payuni/notify`，與 ECPay route 分開、不可混用
+- 電子發票：ezPay 另行串接（開立時機掛在 notify 付款成功之後）
+- ECPay provider 保留（sandbox 測試用），`PAYMENT_PROVIDER=ecpay` 可切回
+
 ## 目前待辦（依優先序）
 
 0. P1–P3 約 25 項安全/邏輯 bug（越權改密碼、結帳冪等、免費課 total=0、open redirect 等）
-1. ECPay 換正式商店參數（目前仍 sandbox）
+1. PAYUNi 1 元實刷驗證 notify 端到端（Jason 刷卡）＋ ezPay 發票串接
 2. hope 站 Confirm email 回歸測試（開關是專案層級，已影響 hope 站）
 3. 三分頁（量子講師群 / 知識專區 / 講座邀約）補正式內容
 
