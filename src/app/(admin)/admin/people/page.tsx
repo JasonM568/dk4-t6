@@ -16,6 +16,7 @@ const FILTERS: { value: PersonFilter; label: string }[] = [
   { value: "HAS_ACCESS", label: "已有影片" }, { value: "LEGACY", label: "舊官網待處理" },
   { value: "LEAD", label: "潛在名單" }, { value: "IDENTITY_CONFLICT", label: "身分待確認" },
   { value: "SAFE_TO_DELETE", label: "可安全刪除" },
+  { value: "SUSPECTED_TEST", label: "疑似測試名單" },
   { value: "ARCHIVED", label: "已封存" },
 ];
 const TASKS: { filter: PersonFilter; title: string; hint: string; color: string }[] = [

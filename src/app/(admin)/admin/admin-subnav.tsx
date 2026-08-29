@@ -13,6 +13,7 @@ const PLATFORM_TABS = [
   { href: "/admin/members", label: "會員列表" },
   { href: "/admin/students", label: "學員資料庫", editorOnly: true },
   { href: "/admin/students/segments", label: "分眾圈人", editorOnly: true },
+  { href: "/admin/students/legacy-migration", label: "舊站搬遷", adminOnly: true },
   { href: "/admin/members/import", label: "會員新增", editorOnly: true },
   { href: "/admin/enrollments", label: "批次開通", editorOnly: true },
   { href: "/admin/orders", label: "訂單查詢" },

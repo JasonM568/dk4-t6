@@ -159,3 +159,43 @@ export async function bulkPermanentlyDeleteStudentsAction(_prev: BulkStudentDele
   revalidatePath("/admin/people"); revalidatePath("/admin/students"); revalidatePath("/admin/students/segments");
   return { deleted, protected: protectedRows, review, failed };
 }
+
+export async function mergeStudentRecordsAction(sourceId: string, targetId: string, _prev: PersonClaimState, fd: FormData): Promise<PersonClaimState> {
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  if (sourceId === targetId) return { error: "來源與保留卡不能相同" };
+  if (String(fd.get("confirmation") ?? "") !== "MERGE") return { error: "請勾選確認人工合併" };
+  const [source, target] = await Promise.all([
+    prisma.studentRecord.findUnique({ where: { id: sourceId }, include: { histories: true, engagements: true } }),
+    prisma.studentRecord.findUnique({ where: { id: targetId }, include: { histories: true, engagements: true } }),
+  ]);
+  if (!source || !target) return { error: "來源或保留學員卡不存在" };
+  const sameEmail = Boolean(source.email && target.email && source.email.toLowerCase() === target.email.toLowerCase());
+  const samePhone = Boolean(source.phone && target.phone && source.phone === target.phone);
+  if (!sameEmail && !samePhone) return { error: "兩張卡沒有相同 Email 或手機，禁止合併" };
+  if (source.phone && target.phone && source.phone !== target.phone) return { error: "兩張卡手機不同，需先人工整理" };
+  if (source.claimedUserId && target.claimedUserId && source.claimedUserId !== target.claimedUserId) return { error: "兩張卡已連結不同會員帳號，禁止合併" };
+  const historyKey = (h: { courseName: string; attendedAt: Date | null }) => `${h.courseName.trim().toLowerCase()}|${h.attendedAt?.toISOString().slice(0, 10) ?? ""}`;
+  const engagementKey = (e: { type: string; title: string; occurredAt: Date | null }) => `${e.type}|${e.title.trim().toLowerCase()}|${e.occurredAt?.toISOString().slice(0, 10) ?? ""}`;
+  const targetHistoryKeys = new Set(target.histories.map(historyKey));
+  const targetEngagementKeys = new Set(target.engagements.map(engagementKey));
+  const moveHistories = source.histories.filter((h) => !targetHistoryKeys.has(historyKey(h)));
+  const moveEngagements = source.engagements.filter((e) => !targetEngagementKeys.has(engagementKey(e)));
+  await prisma.$transaction(async (tx) => {
+    if (moveHistories.length) await tx.studentCourseHistory.updateMany({ where: { id: { in: moveHistories.map((h) => h.id) } }, data: { studentId: targetId } });
+    if (moveEngagements.length) await tx.studentEngagement.updateMany({ where: { id: { in: moveEngagements.map((e) => e.id) } }, data: { studentId: targetId } });
+    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail: actor.email ?? null, beforeJson: json(source), afterJson: json({ targetId }) } });
+    // 先刪來源卡，才能把來源的 unique phone 安全補到保留卡；已搬走的子紀錄不會被 cascade。
+    await tx.studentRecord.delete({ where: { id: sourceId } });
+    const after = await tx.studentRecord.update({ where: { id: targetId }, data: { name: target.name || source.name, phone: target.phone || source.phone, email: target.email || source.email,
+      claimedUserId: target.claimedUserId || source.claimedUserId, claimedAt: target.claimedAt || source.claimedAt,
+      legacyAccessStatus: target.legacyAccessStatus === "UNKNOWN" ? source.legacyAccessStatus : target.legacyAccessStatus,
+      legacyNote: [target.legacyNote, source.legacyNote].filter(Boolean).join("\n") || null } });
+    await tx.studentDataAuditLog.create({ data: { studentId: targetId, action: "STUDENT_MERGE_TARGET", actorEmail: actor.email ?? null,
+      beforeJson: json(target), afterJson: json({ ...after, mergedFrom: sourceId, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
+        duplicateHistoriesRemoved: source.histories.length - moveHistories.length, duplicateEngagementsRemoved: source.engagements.length - moveEngagements.length }) } });
+  });
+  revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${targetId}`); revalidatePath("/admin/students");
+  redirect(`/admin/people/student/${targetId}?merged=1`);
+}

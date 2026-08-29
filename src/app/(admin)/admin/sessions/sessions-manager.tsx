@@ -1333,6 +1333,7 @@ export function SessionCard({
               >
                 🎬 處理課後影片權限
               </Link>
+              <Link href={`/admin/sessions/${session.id}/history-sync`} className="inline-block rounded-lg border border-violet-400 bg-violet-50 px-3 py-1.5 text-sm font-medium text-violet-800 transition hover:bg-violet-100">📚 同步上課歷史</Link>
               {/* 收支含分潤金額（內部薪酬）：僅管理員可見；頁面本身也擋 pageGuardFullAdmin */}
               {isAdmin && (
                 <Link

@@ -1,5 +1,6 @@
 import type { Profile } from "@/lib/supabase/admin";
 import { studentBulkDeleteStatus } from "@/lib/student-deletion";
+import { detectTestListReasons } from "@/lib/test-list-candidate";
 
 export type PersonFilter =
   | "ALL"
@@ -13,6 +14,7 @@ export type PersonFilter =
   | "LEAD"
   | "IDENTITY_CONFLICT"
   | "SAFE_TO_DELETE"
+  | "SUSPECTED_TEST"
   | "ARCHIVED";
 
 export type PersonFlag = Exclude<PersonFilter, "ALL" | "REGISTERED" | "UNREGISTERED">;
@@ -35,6 +37,7 @@ export type PersonSummary = {
   flags: PersonFlag[];
   candidateUserId: string | null;
   deleteStatus: "ELIGIBLE" | "PROTECTED" | "REVIEW" | "NOT_APPLICABLE";
+  testCandidateReasons: string[];
 };
 
 export type PersonRosterInput = {
@@ -101,7 +104,10 @@ export function buildPersonRoster(input: PersonRosterInput): PersonSummary[] {
     const protectedEnrollmentCount = [...new Set([s.claimedUserId, ...candidates.map((p) => p.id)].filter(Boolean))]
       .reduce((sum, userId) => sum + (enrollmentByUser.get(userId!) ?? 0), 0);
     const deleteStatus = studentBulkDeleteStatus({ enrollmentCount: protectedEnrollmentCount, identityConflict: conflict });
-    rows.push({ ...base, deleteStatus, flags: flagsFor({ ...base, deleteStatus }, conflict) });
+    const testCandidateReasons = detectTestListReasons({ name: s.name, email, historyCount: s.historyCount, engagementCount: s.engagementCount, pendingCount: base.pendingCount, enrollmentCount: protectedEnrollmentCount });
+    const flags = flagsFor({ ...base, deleteStatus, testCandidateReasons }, conflict);
+    if (testCandidateReasons.length) flags.push("SUSPECTED_TEST");
+    rows.push({ ...base, deleteStatus, testCandidateReasons, flags });
     if (email) pendingByEmail.delete(email);
   }
 
@@ -111,7 +117,7 @@ export function buildPersonRoster(input: PersonRosterInput): PersonSummary[] {
     const base = { key: `member:${p.id}`, kind: "member" as const, userId: p.id, studentId: null,
       name: displayName(p), email, phone: phoneByUser.get(p.id) ?? null, registered: true, archived: archivedUsers.has(p.id),
       historyCount: 0, engagementCount: 0, enrollmentCount: enrollmentByUser.get(p.id) ?? 0,
-      pendingCount: pending?.count ?? 0, legacyAccessStatus: "UNKNOWN", candidateUserId: null, deleteStatus: "NOT_APPLICABLE" as const };
+      pendingCount: pending?.count ?? 0, legacyAccessStatus: "UNKNOWN", candidateUserId: null, deleteStatus: "NOT_APPLICABLE" as const, testCandidateReasons: [] };
     rows.push({ ...base, flags: flagsFor(base, Boolean(email && (studentEmails.get(email) ?? 0) > 0)) });
     if (email) pendingByEmail.delete(email);
   }
@@ -120,7 +126,7 @@ export function buildPersonRoster(input: PersonRosterInput): PersonSummary[] {
     const base = { key: `pending:${email}`, kind: "pending" as const, userId: null, studentId: null,
       name: pending.name || email, email, phone: null, registered: false, archived: false,
       historyCount: 0, engagementCount: 0, enrollmentCount: 0, pendingCount: pending.count,
-      legacyAccessStatus: "UNKNOWN", candidateUserId: null, deleteStatus: "NOT_APPLICABLE" as const };
+      legacyAccessStatus: "UNKNOWN", candidateUserId: null, deleteStatus: "NOT_APPLICABLE" as const, testCandidateReasons: [] };
     rows.push({ ...base, flags: flagsFor(base) });
   }
   return rows;
@@ -131,6 +137,7 @@ export function personMatchesFilter(person: PersonSummary, filter: PersonFilter)
   if (filter === "REGISTERED") return person.registered && !person.archived;
   if (filter === "UNREGISTERED") return !person.registered && !person.archived;
   if (filter === "SAFE_TO_DELETE") return person.deleteStatus === "ELIGIBLE";
+  if (filter === "SUSPECTED_TEST") return person.testCandidateReasons.length > 0;
   return person.flags.includes(filter);
 }
 

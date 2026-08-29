@@ -5,11 +5,12 @@ import { getProfile, getProfilesByEmails, getProfilesByIds, type Profile } from 
 import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
 import { isFullAdmin } from "@/lib/auth/role";
 import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
-import { claimStudentToMemberAction, permanentlyDeleteStudentAction } from "@/actions/person-roster";
+import { claimStudentToMemberAction, mergeStudentRecordsAction, permanentlyDeleteStudentAction } from "@/actions/person-roster";
 import { studentDeleteConfirmation } from "@/lib/student-deletion";
 import { EnrollmentEditor } from "../../../members/[id]/enrollment-editor";
 import { ClaimForm } from "./claim-form";
 import { DeleteStudentForm } from "./delete-form";
+import { MergeStudentForm } from "./merge-form";
 
 export const dynamic = "force-dynamic";
 const fmt = (d: Date | null | undefined) => d ? d.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }) : "未記錄";
@@ -55,6 +56,8 @@ export default async function PersonPage({ params }: { params: Promise<{ kind: s
       <div className="rounded-xl border bg-white p-5"><h2 className="font-semibold">目前判讀</h2><ul className="mt-3 space-y-2 text-sm text-gray-600"><li>正式上課紀錄：{student?.histories.length ?? 0} 筆</li><li>平台影片權限：{enrollments.length} 門</li><li>尚待開通：{pending.length} 門</li><li>活動／問卷接觸：{student?.engagements.length ?? 0} 筆</li></ul>{(student?.histories.length ?? 0) > 0 && enrollments.length === 0 && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">有正式上課紀錄，但目前沒有平台影片權限。這是提醒，不代表系統能判定歷史課名與平台課程必然相同，請人工核對後再開通。</p>}</div></section>
 
     {!student?.claimedUserId && (candidates.length > 0 || relatedStudents.length > 0) && <section className="rounded-xl border border-purple-200 bg-white p-5"><h2 className="font-semibold text-purple-900">身分待確認</h2><p className="mt-1 text-sm text-gray-500">以下只因 Email 或手機相符而列為候選，系統尚未合併。共用信箱很常見，請先人工核對。</p>{relatedStudents.length > 0 && <div className="mt-3 text-sm text-purple-800">同 Email 另有 {relatedStudents.length} 張學員卡：{relatedStudents.map((s) => <Link className="ml-2 underline" key={s.id} href={`/admin/people/student/${s.id}`}>{s.name || "未命名"}</Link>)}</div>}{candidates.map((p) => <div key={p.id} className="mt-4 border-t pt-4"><div className="font-medium">候選會員：{profileName(p)} <span className="font-normal text-gray-500">{p.email}</span></div>{student ? fullAdmin ? <ClaimForm action={claimStudentToMemberAction.bind(null, student.id, p.id)} label={`${profileName(p)}（${p.email ?? p.id}）`}/> : <p className="mt-2 text-sm text-gray-500">只有管理員可以確認身分連結。</p> : <Link href={`/admin/people/member/${p.id}`} className="mt-2 inline-block text-sm text-blue-600 hover:underline">查看會員人物頁 →</Link>}</div>)}</section>}
+
+    {student && fullAdmin && relatedStudents.length > 0 && <section className="rounded-xl border border-purple-300 bg-purple-50 p-5"><h2 className="font-semibold text-purple-900">重複人物人工合併</h2><p className="mt-1 text-sm text-gray-600">目前這張卡會被保留。每一筆候選都必須另外確認；手機不同或已連結不同會員時，伺服器會拒絕。</p>{relatedStudents.map((source) => <MergeStudentForm key={source.id} sourceName={source.name || "未命名學員"} action={mergeStudentRecordsAction.bind(null, source.id, student.id)}/>)}</section>}
 
     <section className="rounded-xl border bg-white p-5"><h2 className="mb-4 font-semibold">可觀看課程影片</h2>{userId && grantAction ? <EnrollmentEditor canEdit={canEdit} enrolled={enrollments.map((e) => ({ courseId: e.courseId, title: e.course.title, enrolledAt: e.createdAt.toISOString(), fromOrder: Boolean(e.orderId), source: e.source, orderId: e.orderId }))} available={courses.filter((c) => !enrolledIds.has(c.id))} grantAction={grantAction} revokeActions={revokeActions}/> : <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">尚未連結註冊會員，不能直接開通影片。請先讓學員註冊，或在上方人工確認既有會員身分。</p>}</section>
 
