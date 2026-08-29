@@ -1308,11 +1308,8 @@ export function SessionCard({
                 <th className="px-2 py-1.5">姓名</th>
                 {!isSeminar && <th className="px-2 py-1.5">葷素</th>}
                 {!isSeminar && <th className="px-2 py-1.5">組別</th>}
-                <th className="px-2 py-1.5">手機</th>
-                <th className="px-2 py-1.5">Email</th>
-                <th className="px-2 py-1.5">訂單編號</th>
-                <th className="px-2 py-1.5">產品</th>
-                <th className="px-2 py-1.5">訂單日期</th>
+                <th className="px-2 py-1.5">聯絡（手機／Email）</th>
+                <th className="px-2 py-1.5">產品／訂單</th>
                 {canEdit && <th className="px-2 py-1.5" />}
               </tr>
             </thead>
@@ -1502,22 +1499,25 @@ export function SessionCard({
                         海外·Email
                       </span>
                     )}
-                  </td>
-                  {/* Email：同行者多半沒有（訂單只有訂購人填），顯示用；寄信名單以此為準 */}
-                  <td className="px-2 py-1.5 text-xs text-gray-500">
-                    <span className="block max-w-[13rem] truncate" title={s.email ?? undefined}>
+                    {/* Email 併在手機下方（聯絡資訊一組）：各佔一欄會把表撐出卡片外。
+                        同行者多半沒有（訂單只有訂購人填），顯示用；寄信名單以此為準 */}
+                    <span
+                      className="block max-w-[10rem] truncate font-sans text-gray-400"
+                      title={s.email ?? undefined}
+                    >
                       {s.email ?? "—"}
                     </span>
                   </td>
-                  <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{s.orderNo}</td>
+                  {/* 產品＋訂單資訊併一欄：編號與日期是純參考，各佔一欄會把表撐出卡片外。
+                      產品名經常超長（銷售頁全名），截斷防撐爆表格；游標懸停看全文 */}
                   <td className="px-2 py-1.5 text-xs text-gray-500">
-                    {/* 產品名經常超長（銷售頁全名），截斷防撐爆表格；游標懸停看全文 */}
-                    <span className="block max-w-[14rem] truncate" title={s.product ?? undefined}>
+                    <span className="block max-w-[13rem] truncate" title={s.product ?? undefined}>
                       {s.product ?? "—"}
                     </span>
-                  </td>
-                  <td className="px-2 py-1.5 text-gray-400">
-                    {s.orderedAt ? formatDate(s.orderedAt) : "—"}
+                    <span className="block font-mono text-[11px] text-gray-400">
+                      {s.orderNo}
+                      {s.orderedAt ? `・${formatDate(s.orderedAt)}` : ""}
+                    </span>
                   </td>
                   {canEdit && (
                     <td className="px-2 py-1.5 text-right">

@@ -29,7 +29,8 @@ export default async function AdminSessionsPage() {
   const totalSignups = sessions.reduce((n, s) => n + s.signups.length, 0);
 
   return (
-    <div className="max-w-4xl">
+    // 不設 max-w-4xl：名單表格欄位多，吃滿 layout 的 max-w-6xl 才放得下
+    <div>
       <h1 className="mb-1 text-2xl font-bold">課程場次看板</h1>
       <p className="mb-6 text-sm text-gray-500">
         手動上架場次 → 定期上傳 1shop 訂單檔自動歸類報名 → 看板（/board）憑 4 位碼唯讀查看。
