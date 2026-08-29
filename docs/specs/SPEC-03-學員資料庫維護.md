@@ -171,6 +171,20 @@
 
 約束：稽核表不得對 `StudentRecord` 或 history 設 Cascade FK，否則刪除後會失去稽核資料。`beforeJson`／`afterJson` 不保存任何密碼或金流資料。
 
+### 5.5 新增 `StudentMergeOperation`
+
+每一次人工合併建立一張不可隨學員卡 Cascade 刪除的操作單，作為差異追溯與安全還原的唯一依據。
+
+| 欄位 | 說明 |
+|---|---|
+| `sourceStudentId`／`targetStudentId` | 被刪除的來源卡與保留卡 ID；不設 FK |
+| `actorEmail`／`createdAt` | 合併操作者與時間 |
+| `snapshotJson` | 版本化完整快照：兩卡合併前資料、保留卡合併後身分欄位、搬入與重複略過的 history／engagement ID |
+| `status` | `ACTIVE` 或 `RESTORED`；同一操作只可還原一次 |
+| `restoredAt`／`restoredBy` | 還原時間與操作者 |
+
+快照可保存學員主檔與其課程／活動個資，只限 Full Admin 後台讀取，不得寫入一般應用 log；不得包含密碼、token、訂單或金流資料。
+
 ## 6. 角色與權限
 
 | 操作 | Viewer | Editor | Admin |
@@ -279,6 +293,15 @@
 - 合併表單必須逐項預覽「將搬入」與「重複略過」的課程／活動名稱及日期。預覽與 Server Action 共用 `buildStudentMergePreview`，不得各自實作不同去重規則。
 - 姓名、Email、手機或 claimedUserId 發生明確衝突時，預覽顯示原因且不提供確認按鈕；Server Action 仍須重新計算並拒絕繞過 UI 的請求。
 
+### T12. 合併稽核與安全還原
+
+- 合併、操作單、來源／保留卡 audit、子紀錄搬移與來源卡刪除必須在同一 transaction；任一步失敗不得留下半套狀態。
+- 合併操作單必須保存來源與保留卡完整 before snapshot、保留卡合併後身分欄位，以及搬入／重複略過的課程與活動明細。
+- 人物頁只對 Full Admin 顯示最近 20 筆以該卡為保留卡的合併操作、操作者、時間、搬入／略過數量與還原狀態。
+- 還原必須再次確認，並在單一 transaction：恢復保留卡原身分欄位、以原 ID 重建來源卡、搬回原先移動的子紀錄、依快照重建合併時被去重刪除的來源子紀錄、寫兩端 audit、標記操作單已還原。
+- 還原採 fail closed。來源 ID 已存在、保留卡不存在、保留卡身分欄位在合併後改動、任何搬入子紀錄已被刪除或移到其他卡時，一律拒絕且不做部分還原。
+- 還原不得修改 Auth、MemberProfile、Enrollment、訂單、PendingEnrollment 或場次報名；已還原操作不可再次執行。
+
 ## 8. 驗收標準
 
 | 編號 | 驗收條件 |
@@ -308,6 +331,10 @@
 | AC-23 | 批次超過 50 筆、確認文字錯誤或非 Full Admin 時整批拒絕 |
 | AC-24 | 批次執行時重新查核 Enrollment；受保護與共用 Email 資料不刪除，並出現在結果報告 |
 | AC-25 | 批次成功只刪 StudentRecord 與 cascade 子紀錄，每筆留下 audit，不影響會員與其他模組 |
+| AC-26 | 每次成功合併都有單一操作 ID、操作者、時間、完整快照與搬入／略過明細，且與合併寫入同一 transaction |
+| AC-27 | 未發生後續衝突時，可一次還原來源卡、兩卡欄位及所有搬入／略過子紀錄，並留下還原操作者與兩端 audit |
+| AC-28 | 保留卡或搬入紀錄在合併後被修改、刪除或移動時，還原 fail closed 且資料完全不變 |
+| AC-29 | 非 Full Admin、重複還原或竄改 operationId 均不可還原；Auth、Enrollment、訂單與場次不受合併／還原影響 |
 
 ## 9. 非功能需求、待確認與 Agent 指示
 

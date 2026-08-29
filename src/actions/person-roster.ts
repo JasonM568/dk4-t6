@@ -9,6 +9,7 @@ import { getAuthUser } from "@/lib/supabase/server";
 import { getProfile, getProfilesByEmailsStrict } from "@/lib/supabase/admin";
 import { canPermanentlyDeleteStudent, studentBulkDeleteStatus, studentDeleteConfirmation } from "@/lib/student-deletion";
 import { buildStudentMergePreview } from "@/lib/duplicate-students";
+import { restoreSafetyConflicts, type StudentIdentitySnapshot, type StudentMergeSnapshot } from "@/lib/student-merge-operation";
 
 export type PersonClaimState = { error?: string; success?: string } | null;
 export type BulkStudentDeleteState = {
@@ -19,6 +20,11 @@ export type BulkStudentDeleteState = {
   failed?: { id: string; name: string; reason: string }[];
 } | null;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+const identityOf = (student: StudentIdentitySnapshot): StudentIdentitySnapshot => ({
+  name: student.name, email: student.email, phone: student.phone, claimedUserId: student.claimedUserId, claimedAt: student.claimedAt,
+  legacyAccessStatus: student.legacyAccessStatus, legacyNote: student.legacyNote, archivedAt: student.archivedAt,
+  archivedBy: student.archivedBy, archiveReason: student.archiveReason,
+});
 
 /** 高風險身分連結：只接受管理員在人物頁明確選定的 userId，不做 email 自動認領。 */
 export async function claimStudentToMemberAction(studentId: string, userId: string, _prev: PersonClaimState, fd: FormData): Promise<PersonClaimState> {
@@ -172,24 +178,107 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
     prisma.studentRecord.findUnique({ where: { id: targetId }, include: { histories: true, engagements: true } }),
   ]);
   if (!source || !target) return { error: "來源或保留學員卡不存在" };
-  const preview = buildStudentMergePreview(source, target);
-  if (!preview.canMerge) return { error: `禁止合併：${preview.conflicts.join("、")}` };
-  const { moveHistories, moveEngagements } = preview;
-  await prisma.$transaction(async (tx) => {
+  const initialPreview = buildStudentMergePreview(source, target);
+  if (!initialPreview.canMerge) return { error: `禁止合併：${initialPreview.conflicts.join("、")}` };
+  try { await prisma.$transaction(async (tx) => {
+    // transaction 內重讀，避免預覽後新增的子紀錄被來源卡 cascade 刪除卻沒有進快照。
+    const [freshSource, freshTarget] = await Promise.all([
+      tx.studentRecord.findUnique({ where: { id: sourceId }, include: { histories: true, engagements: true } }),
+      tx.studentRecord.findUnique({ where: { id: targetId }, include: { histories: true, engagements: true } }),
+    ]);
+    if (!freshSource || !freshTarget) throw new Error("MERGE_RECORD_MISSING");
+    const preview = buildStudentMergePreview(freshSource, freshTarget);
+    if (!preview.canMerge) throw new Error(`MERGE_CONFLICT:${preview.conflicts.join("、")}`);
+    const source = freshSource; const target = freshTarget;
+    const { moveHistories, moveEngagements } = preview;
     if (moveHistories.length) await tx.studentCourseHistory.updateMany({ where: { id: { in: moveHistories.map((h) => h.id) } }, data: { studentId: targetId } });
     if (moveEngagements.length) await tx.studentEngagement.updateMany({ where: { id: { in: moveEngagements.map((e) => e.id) } }, data: { studentId: targetId } });
-    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail: actor.email ?? null, beforeJson: json(source), afterJson: json({ targetId }) } });
     // 先刪來源卡，才能把來源的 unique phone 安全補到保留卡；已搬走的子紀錄不會被 cascade。
     await tx.studentRecord.delete({ where: { id: sourceId } });
     const after = await tx.studentRecord.update({ where: { id: targetId }, data: { name: target.name || source.name, phone: target.phone || source.phone, email: target.email || source.email,
       claimedUserId: target.claimedUserId || source.claimedUserId, claimedAt: target.claimedAt || source.claimedAt,
       legacyAccessStatus: target.legacyAccessStatus === "UNKNOWN" ? source.legacyAccessStatus : target.legacyAccessStatus,
       legacyNote: [target.legacyNote, source.legacyNote].filter(Boolean).join("\n") || null } });
+    const operation = await tx.studentMergeOperation.create({ data: { sourceStudentId: sourceId, targetStudentId: targetId, actorEmail: actor.email ?? null,
+      snapshotJson: json({ version: 1, source, targetBefore: target, targetAfterIdentity: identityOf(after),
+        movedHistoryIds: moveHistories.map((h) => h.id), movedEngagementIds: moveEngagements.map((e) => e.id),
+        duplicateHistoryIds: preview.duplicateHistories.map((h) => h.id), duplicateEngagementIds: preview.duplicateEngagements.map((e) => e.id) } satisfies StudentMergeSnapshot) } });
+    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail: actor.email ?? null, beforeJson: json(source), afterJson: json({ targetId, operationId: operation.id }) } });
     await tx.studentDataAuditLog.create({ data: { studentId: targetId, action: "STUDENT_MERGE_TARGET", actorEmail: actor.email ?? null,
-      beforeJson: json(target), afterJson: json({ ...after, mergedFrom: sourceId, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
+      beforeJson: json(target), afterJson: json({ ...after, operationId: operation.id, mergedFrom: sourceId, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
         duplicateHistoriesRemoved: preview.duplicateHistories.length, duplicateEngagementsRemoved: preview.duplicateEngagements.length }) } });
-  });
+  }); } catch (error) {
+    if (error instanceof Error && error.message === "MERGE_RECORD_MISSING") return { error: "來源或保留學員卡已被其他操作變更" };
+    if (error instanceof Error && error.message.startsWith("MERGE_CONFLICT:")) return { error: `禁止合併：${error.message.slice(15)}` };
+    throw error;
+  }
   revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${targetId}`); revalidatePath("/admin/students");
   const returnTo = String(fd.get("returnTo") ?? "");
   redirect(returnTo === "/admin/people/duplicates" ? `${returnTo}?merged=1` : `/admin/people/student/${targetId}?merged=1`);
+}
+
+export async function restoreStudentMergeAction(operationId: string, _prev: PersonClaimState, fd: FormData): Promise<PersonClaimState> {
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  if (String(fd.get("confirmation") ?? "") !== "RESTORE") return { error: "請勾選確認還原合併" };
+  const operation = await prisma.studentMergeOperation.findUnique({ where: { id: operationId } });
+  if (!operation) return { error: "找不到這筆合併操作" };
+  if (operation.status !== "ACTIVE") return { error: "這筆合併已經還原，不能重複操作" };
+  const snapshot = operation.snapshotJson as unknown as StudentMergeSnapshot;
+  if (snapshot.version !== 1 || snapshot.source.id !== operation.sourceStudentId || snapshot.targetBefore.id !== operation.targetStudentId) {
+    return { error: "合併快照格式不正確，為避免資料損壞已停止還原" };
+  }
+  try {
+    await prisma.$transaction(async (tx) => {
+      const freshOperation = await tx.studentMergeOperation.findUnique({ where: { id: operationId } });
+      if (!freshOperation || freshOperation.status !== "ACTIVE") throw new Error("ALREADY_RESTORED");
+      const [sourceExists, currentTarget, movedHistories, movedEngagements, sourceIdentityOwner] = await Promise.all([
+        tx.studentRecord.findUnique({ where: { id: snapshot.source.id }, select: { id: true } }),
+        tx.studentRecord.findUnique({ where: { id: snapshot.targetBefore.id } }),
+        snapshot.movedHistoryIds.length ? tx.studentCourseHistory.findMany({ where: { id: { in: snapshot.movedHistoryIds } }, select: { id: true, studentId: true } }) : [],
+        snapshot.movedEngagementIds.length ? tx.studentEngagement.findMany({ where: { id: { in: snapshot.movedEngagementIds } }, select: { id: true, studentId: true } }) : [],
+        snapshot.source.phone || snapshot.source.claimedUserId ? tx.studentRecord.findFirst({ where: { id: { notIn: [snapshot.source.id, snapshot.targetBefore.id] }, OR: [
+          ...(snapshot.source.phone ? [{ phone: snapshot.source.phone }] : []), ...(snapshot.source.claimedUserId ? [{ claimedUserId: snapshot.source.claimedUserId }] : []),
+        ] }, select: { id: true } }) : null,
+      ]);
+      const historyById = new Map(movedHistories.map((row) => [row.id, row.studentId]));
+      const engagementById = new Map(movedEngagements.map((row) => [row.id, row.studentId]));
+      const conflicts = restoreSafetyConflicts({ sourceExists: Boolean(sourceExists), currentTarget: currentTarget ? identityOf(currentTarget) : null,
+        expectedTarget: snapshot.targetAfterIdentity,
+        missingOrMovedHistoryIds: snapshot.movedHistoryIds.filter((id) => historyById.get(id) !== snapshot.targetBefore.id),
+        missingOrMovedEngagementIds: snapshot.movedEngagementIds.filter((id) => engagementById.get(id) !== snapshot.targetBefore.id),
+        sourceIdentityClaimedElsewhere: Boolean(sourceIdentityOwner) });
+      if (conflicts.length) throw new Error(`RESTORE_CONFLICT:${conflicts.join("、")}`);
+      const before = snapshot.targetBefore;
+      await tx.studentRecord.update({ where: { id: before.id }, data: identityOf(before) });
+      const source = snapshot.source;
+      await tx.studentRecord.create({ data: { id: source.id, name: source.name, email: source.email, phone: source.phone,
+        claimedUserId: source.claimedUserId, claimedAt: source.claimedAt ? new Date(source.claimedAt) : null,
+        legacyAccessStatus: source.legacyAccessStatus, legacyNote: source.legacyNote,
+        archivedAt: source.archivedAt ? new Date(source.archivedAt) : null, archivedBy: source.archivedBy, archiveReason: source.archiveReason,
+        createdAt: new Date(source.createdAt), updatedAt: new Date(source.updatedAt) } });
+      if (snapshot.movedHistoryIds.length) await tx.studentCourseHistory.updateMany({ where: { id: { in: snapshot.movedHistoryIds } }, data: { studentId: source.id } });
+      if (snapshot.movedEngagementIds.length) await tx.studentEngagement.updateMany({ where: { id: { in: snapshot.movedEngagementIds } }, data: { studentId: source.id } });
+      const duplicateHistorySet = new Set(snapshot.duplicateHistoryIds);
+      const duplicateEngagementSet = new Set(snapshot.duplicateEngagementIds);
+      if (duplicateHistorySet.size) await tx.studentCourseHistory.createMany({ data: source.histories.filter((h) => duplicateHistorySet.has(h.id)).map((h) => ({
+        id: h.id, studentId: source.id, courseName: h.courseName, attendedAt: h.attendedAt ? new Date(h.attendedAt) : null,
+        source: h.source, note: h.note, createdAt: new Date(h.createdAt) })) });
+      if (duplicateEngagementSet.size) await tx.studentEngagement.createMany({ data: source.engagements.filter((e) => duplicateEngagementSet.has(e.id)).map((e) => ({
+        id: e.id, studentId: source.id, type: e.type, title: e.title, occurredAt: e.occurredAt ? new Date(e.occurredAt) : null,
+        source: e.source, sourceRef: e.sourceRef, note: e.note, createdAt: new Date(e.createdAt) })) });
+      await tx.studentMergeOperation.update({ where: { id: operationId }, data: { status: "RESTORED", restoredAt: new Date(), restoredBy: actor.email ?? null } });
+      await tx.studentDataAuditLog.createMany({ data: [
+        { studentId: source.id, action: "STUDENT_MERGE_RESTORED_SOURCE", actorEmail: actor.email ?? null, afterJson: json({ operationId, targetId: before.id }) },
+        { studentId: before.id, action: "STUDENT_MERGE_RESTORED_TARGET", actorEmail: actor.email ?? null, afterJson: json({ operationId, sourceId: source.id }) },
+      ] });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "ALREADY_RESTORED") return { error: "這筆合併已經還原，不能重複操作" };
+    if (error instanceof Error && error.message.startsWith("RESTORE_CONFLICT:")) return { error: `禁止還原：${error.message.slice(17)}` };
+    throw error;
+  }
+  revalidatePath("/admin/people"); revalidatePath("/admin/people/duplicates"); revalidatePath(`/admin/people/student/${snapshot.targetBefore.id}`); revalidatePath(`/admin/people/student/${snapshot.source.id}`);
+  redirect(`/admin/people/student/${snapshot.source.id}?restored=1`);
 }

@@ -137,6 +137,22 @@ model StudentDataAuditLog {
   @@index([createdAt])
 }
 
+// 一次人工合併的完整、可還原操作單。刻意不設 StudentRecord FK，來源卡刪除後仍須存在。
+model StudentMergeOperation {
+  id              String   @id @default(cuid())
+  sourceStudentId String
+  targetStudentId String
+  actorEmail      String?
+  snapshotJson    Json
+  status          String   @default("ACTIVE") // ACTIVE / RESTORED
+  restoredAt      DateTime?
+  restoredBy      String?
+  createdAt       DateTime @default(now())
+
+  @@index([targetStudentId, status, createdAt])
+  @@index([sourceStudentId, createdAt])
+}
+
 // 標準課程主檔（課名歸戶的目的地）：歷史紀錄的課名同一門課有六七種寫法
 // （「3/26 AI 變現入門課」「2026.03.26 AI初階課程」…），歸戶後記錄卡才像履歷、
 // 分眾名單（上過 X 未上過 Y）才算得出來。kind/level 值域見 src/lib/student-course.ts

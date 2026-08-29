@@ -5,12 +5,14 @@ import { getProfile, getProfilesByEmails, getProfilesByIds, type Profile } from 
 import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
 import { isFullAdmin } from "@/lib/auth/role";
 import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
-import { claimStudentToMemberAction, mergeStudentRecordsAction, permanentlyDeleteStudentAction } from "@/actions/person-roster";
+import { claimStudentToMemberAction, mergeStudentRecordsAction, permanentlyDeleteStudentAction, restoreStudentMergeAction } from "@/actions/person-roster";
 import { studentDeleteConfirmation } from "@/lib/student-deletion";
 import { EnrollmentEditor } from "../../../members/[id]/enrollment-editor";
 import { ClaimForm } from "./claim-form";
 import { DeleteStudentForm } from "./delete-form";
 import { MergeStudentForm } from "./merge-form";
+import { RestoreMergeForm } from "./restore-merge-form";
+import type { StudentMergeSnapshot } from "@/lib/student-merge-operation";
 
 export const dynamic = "force-dynamic";
 const fmt = (d: Date | null | undefined) => d ? d.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }) : "未記錄";
@@ -35,7 +37,7 @@ export default async function PersonPage({ params }: { params: Promise<{ kind: s
   const candidates = [...candidateMap.values()];
   const protectedUserIds = [...new Set([userId, ...candidates.map((p) => p.id)].filter((v): v is string => Boolean(v)))];
 
-  const [enrollments, pending, signups, relatedStudents, courses, audits, protectedEnrollmentCount] = await Promise.all([
+  const [enrollments, pending, signups, relatedStudents, courses, audits, protectedEnrollmentCount, mergeOperations] = await Promise.all([
     userId ? prisma.enrollment.findMany({ where: { userId }, include: { course: { select: { title: true } } }, orderBy: { createdAt: "desc" } }) : [],
     email ? prisma.pendingEnrollment.findMany({ where: { email: { equals: email, mode: "insensitive" }, claimedAt: null }, include: { course: { select: { title: true } } }, orderBy: { createdAt: "desc" } }) : [],
     email ? prisma.sessionSignup.findMany({ where: { email: { equals: email, mode: "insensitive" } }, include: { session: { select: { title: true, eventDate: true } } }, orderBy: { createdAt: "desc" }, take: 100 }) : [],
@@ -43,6 +45,7 @@ export default async function PersonPage({ params }: { params: Promise<{ kind: s
     prisma.course.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }], select: { id: true, title: true, isPublished: true } }),
     student ? prisma.studentDataAuditLog.findMany({ where: { studentId: student.id }, orderBy: { createdAt: "desc" }, take: 50, select: { id: true, action: true, actorEmail: true, createdAt: true } }) : [],
     protectedUserIds.length ? prisma.enrollment.count({ where: { userId: { in: protectedUserIds } } }) : 0,
+    student ? prisma.studentMergeOperation.findMany({ where: { targetStudentId: student.id }, orderBy: { createdAt: "desc" }, take: 20 }) : [],
   ]);
   if (kind === "pending" && pending.length === 0 && candidates.length === 0 && relatedStudents.length === 0) notFound();
   const title = student?.name || profileName(profile) || pending[0]?.name || email;
@@ -66,6 +69,7 @@ export default async function PersonPage({ params }: { params: Promise<{ kind: s
       <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">讀冊會／問卷／活動</h2><div className="mt-3 space-y-2">{student?.engagements.map((e) => <div key={e.id} className="rounded-lg border p-3 text-sm"><b>{e.title}</b><div className="mt-1 text-xs text-gray-500">{e.type} · {fmt(e.occurredAt)}</div></div>)}{!student?.engagements.length && <p className="text-sm text-gray-400">沒有活動接觸紀錄</p>}</div></section></div>
     <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">場次報名紀錄</h2><p className="mt-1 text-xs text-gray-400">此區依人物 Email 查找；共用信箱時請搭配姓名人工確認。</p><div className="mt-3 space-y-2">{signups.map((s) => <div key={s.id} className="flex flex-wrap justify-between gap-2 rounded-lg border p-3 text-sm"><span><b>{s.session.title}</b> · 報名姓名 {s.name}</span><span className="text-gray-500">{fmt(s.session.eventDate || s.orderedAt)}</span></div>)}{signups.length === 0 && <p className="text-sm text-gray-400">沒有場次報名紀錄</p>}</div></section>
     {student && <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">異動紀錄</h2><div className="mt-3 space-y-2">{audits.map((a) => <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b py-2 text-sm"><span>{a.action}</span><span className="text-gray-500">{a.actorEmail || "系統"} · {a.createdAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</span></div>)}{audits.length === 0 && <p className="text-sm text-gray-400">尚無異動紀錄</p>}</div></section>}
+    {student && fullAdmin && mergeOperations.length > 0 && <section className="rounded-xl border border-amber-300 bg-white p-5"><h2 className="font-semibold">合併操作與還原</h2><p className="mt-1 text-sm text-gray-500">每次合併都保存完整來源／保留卡快照、搬入與略過明細。只有狀態安全時才能還原。</p><div className="mt-4 space-y-4">{mergeOperations.map((operation) => { const snapshot = operation.snapshotJson as unknown as StudentMergeSnapshot; const sourceLabel = snapshot.source.name || snapshot.source.email || snapshot.source.phone || snapshot.source.id; const moved = new Set([...snapshot.movedHistoryIds, ...snapshot.movedEngagementIds]); const details = [...snapshot.source.histories.map((row) => ({ id: row.id, label: `課程｜${row.courseName}（${fmt(row.attendedAt)}）` })), ...snapshot.source.engagements.map((row) => ({ id: row.id, label: `活動｜${row.title}（${fmt(row.occurredAt)}）` }))]; return <div key={operation.id} className="rounded-lg border p-4 text-sm"><div className="flex flex-wrap justify-between gap-2"><b>來源：{sourceLabel}</b><span className={operation.status === "ACTIVE" ? "text-amber-700" : "text-green-700"}>{operation.status === "ACTIVE" ? "可申請還原" : "已還原"}</span></div><div className="mt-2 text-xs text-gray-500">操作 ID：{operation.id} · 合併：{operation.actorEmail || "系統"} · {operation.createdAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div><p className="mt-2 text-gray-600">搬入課程 {snapshot.movedHistoryIds.length}、活動 {snapshot.movedEngagementIds.length}；重複略過課程 {snapshot.duplicateHistoryIds.length}、活動 {snapshot.duplicateEngagementIds.length}</p>{details.length > 0 && <details className="mt-2 rounded bg-gray-50 p-3"><summary className="cursor-pointer font-medium">查看搬入／略過明細</summary><ul className="mt-2 space-y-1 text-xs text-gray-600">{details.map((row) => <li key={row.id}><span className={moved.has(row.id) ? "text-green-700" : "text-gray-500"}>{moved.has(row.id) ? "搬入" : "略過"}</span> · {row.label}</li>)}</ul></details>}{operation.status === "ACTIVE" ? <RestoreMergeForm action={restoreStudentMergeAction.bind(null, operation.id)} sourceLabel={sourceLabel}/> : <p className="mt-2 text-xs text-gray-500">由 {operation.restoredBy || "系統"} 於 {fmt(operation.restoredAt)} 還原</p>}</div>})}</div></section>}
     {student && fullAdmin && <DeleteStudentForm action={permanentlyDeleteStudentAction.bind(null, student.id)} expected={studentDeleteConfirmation(student.name, student.email)} historyCount={student.histories.length} engagementCount={student.engagements.length} blocked={protectedEnrollmentCount > 0}/>}
   </div>;
 }
