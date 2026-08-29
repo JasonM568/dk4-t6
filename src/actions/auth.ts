@@ -71,12 +71,18 @@ function parsePhoneField(raw: unknown): { phone?: string; error?: string } {
 /** 個資同意 checkbox（必勾）＋手機的共同驗證，註冊與補填共用 */
 function parseProfileFields(formData: FormData): {
   phone?: string;
+  name?: string;
   error?: string;
 } {
   if (formData.get("privacyConsent") !== "on") {
     return { error: "請閱讀並勾選同意個人資料蒐集告知事項" };
   }
-  return parsePhoneField(formData.get("phone"));
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "請填寫姓名（訂單與發票需要）" };
+  if (name.length > 50) return { error: "姓名長度過長" };
+  const phone = parsePhoneField(formData.get("phone"));
+  if (phone.error) return phone;
+  return { ...phone, name };
 }
 
 const forgotPasswordSchema = z.object({
@@ -182,12 +188,14 @@ export async function completeProfileAction(
   await prisma.memberProfile.upsert({
     where: { userId: user.id },
     update: {
+      name: fields.name!,
       phone: fields.phone!,
       privacyConsentAt: new Date(),
       privacyConsentVersion: PRIVACY_POLICY_VERSION,
     },
     create: {
       userId: user.id,
+      name: fields.name!,
       phone: fields.phone!,
       privacyConsentAt: new Date(),
       privacyConsentVersion: PRIVACY_POLICY_VERSION,

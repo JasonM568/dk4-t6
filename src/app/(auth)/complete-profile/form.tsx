@@ -11,9 +11,11 @@ import { PRIVACY_CONSENT_LABEL } from "@/lib/privacy";
 export function CompleteProfileForm({
   next,
   defaultPhone,
+  defaultName,
 }: {
   next: string;
   defaultPhone: string;
+  defaultName: string;
 }) {
   const [state, formAction, pending] = useActionState<
     CompleteProfileState,
@@ -29,6 +31,18 @@ export function CompleteProfileForm({
       </p>
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="next" value={next} />
+        <div>
+          <label className="mb-1 block text-sm font-medium">姓名</label>
+          <input
+            name="name"
+            required
+            maxLength={50}
+            placeholder="請填真實姓名"
+            defaultValue={defaultName}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
+          />
+          <p className="mt-1 text-xs text-gray-400">用於訂單與電子發票的買受人資訊</p>
+        </div>
         <div>
           <label className="mb-1 block text-sm font-medium">手機號碼</label>
           <input

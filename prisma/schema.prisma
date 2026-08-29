@@ -64,6 +64,7 @@ model MemberPassword {
 // phone = normalizeMobile 產物（09XXXXXXXX）；個資法履行紀錄要能舉證「何時同意了哪一版條款」
 model MemberProfile {
   userId                String    @id @db.Uuid // auth.users.id，無 FK
+  name                  String? // 訂購人姓名（結帳前必填；QBC profiles 唯讀，姓名自管）
   phone                 String
   // 同意欄位 nullable：1shop 訂單回填只寫 phone（同意必須由會員本人操作，不可代填）。
   // 「補填完成」的定義＝有手機且有同意（見 src/lib/member-profile.ts）

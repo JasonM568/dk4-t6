@@ -8,6 +8,10 @@ import {
   ORDER_STATUS_LABEL,
   ORDER_STATUS_COLOR,
 } from "@/lib/format";
+import { PendingRefresh } from "./pending-refresh";
+
+// 付款導回後這頁就是「結帳完成頁」：狀態要即時，不能吃快取
+export const dynamic = "force-dynamic";
 
 export default async function OrderDetailPage({
   params,
@@ -25,11 +29,73 @@ export default async function OrderDetailPage({
   // 只能看自己的訂單
   if (!order || order.userId !== user.id) notFound();
 
+  // 付款後的三種落點：已付款 → 感謝區塊；待付款＋ATM 取號 → 繳費資訊；
+  // 待付款（信用卡剛付完、通知還在路上）→ 確認中提示＋自動刷新
+  const isPaid = ["PAID", "CONFIRMED", "COMPLETED"].includes(order.status);
+  const raw = (order.payment?.rawCallback ?? {}) as Record<string, string>;
+  const isAtmWaiting =
+    order.status === "PENDING" && typeof raw.PayNo === "string" && raw.PayNo.length > 0;
+  const firstCourse = order.items[0]?.course;
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
       <Link href="/orders" className="text-sm text-gray-500 hover:text-black">
         ← 訂單管理
       </Link>
+
+      {/* ── 結帳完成／感謝區塊 ── */}
+      {isPaid && (
+        <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-6 text-center">
+          <p className="text-2xl">🎉</p>
+          <h2 className="mt-1 text-xl font-bold text-green-900">感謝您的購買！</h2>
+          <p className="mt-1 text-sm text-green-800">
+            付款已完成，課程已自動開通。電子發票將寄送至您的信箱。
+          </p>
+          {firstCourse && (
+            <Link
+              href={`/learn/${firstCourse.slug}`}
+              className="mt-4 inline-block rounded-xl bg-green-700 px-8 py-3 font-bold text-white transition hover:bg-green-800"
+            >
+              前往上課 →
+            </Link>
+          )}
+        </div>
+      )}
+      {isAtmWaiting && (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="text-lg font-bold text-amber-900">🏧 請完成 ATM 轉帳</h2>
+          <p className="mt-1 text-sm text-amber-800">
+            取號成功！請於期限內轉帳，完成後課程將自動開通（無需回報）。
+          </p>
+          <dl className="mt-3 space-y-1 text-sm text-amber-900">
+            {raw.BankType && (
+              <div className="flex gap-2">
+                <dt className="text-amber-700">銀行代碼：</dt>
+                <dd className="font-mono font-bold">{raw.BankType}</dd>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <dt className="text-amber-700">繳費帳號：</dt>
+              <dd className="font-mono font-bold">{raw.PayNo}</dd>
+            </div>
+            {raw.ExpireDate && (
+              <div className="flex gap-2">
+                <dt className="text-amber-700">繳費期限：</dt>
+                <dd>{raw.ExpireDate}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
+      {order.status === "PENDING" && !isAtmWaiting && (
+        <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-6 text-center">
+          <h2 className="text-lg font-bold text-blue-900">付款確認中…</h2>
+          <p className="mt-1 text-sm text-blue-800">
+            正在與金流確認您的付款結果，頁面將自動更新（通常只需幾秒）。
+          </p>
+          <PendingRefresh />
+        </div>
+      )}
 
       <div className="mt-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">訂單明細</h1>

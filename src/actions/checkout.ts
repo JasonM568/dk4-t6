@@ -7,7 +7,6 @@ import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { isCoursePublicActive } from "@/lib/course-access";
 import { nextOrderNo } from "@/lib/order-no";
-import { getProfile } from "@/lib/supabase/admin";
 
 export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
@@ -31,6 +30,19 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
   // 企業專區課程（groupId 有值）不販售，一律視同不存在，堵住拿 courseId 直接下單
   if (!course || !isCoursePublicActive(course) || course.groupId) {
     return { ok: false, error: "課程不存在" };
+  }
+
+  // 結帳前置：訂購人姓名與電話必填（訂單/發票/上課通知都要用）。
+  // 缺料導去補填頁，補完自動帶回課程頁繼續購買
+  const memberProfile = await prisma.memberProfile
+    .findUnique({ where: { userId } })
+    .catch(() => null);
+  if (!memberProfile?.name || !memberProfile.phone) {
+    return {
+      ok: false,
+      error: "請先填寫姓名與手機（訂單與發票需要），填完會自動回到本頁",
+      redirect: `/complete-profile?next=${encodeURIComponent(`/courses/${course.slug}`)}`,
+    };
   }
 
   // 已購買者不可重複購買
@@ -70,14 +82,10 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
     return { ok: false, error: "此課程無法透過金流購買，請聯繫管理員開通觀看權限" };
   }
 
-  // 訂購人快照（姓名/電話）：下單當下抓，之後會員改資料不影響歷史訂單。
-  // 查不到不擋結帳——快照是後台便利，不是下單條件
-  const [profile, memberProfile] = await Promise.all([
-    getProfile(userId).catch(() => null),
-    prisma.memberProfile.findUnique({ where: { userId } }).catch(() => null),
-  ]);
-  const buyerName = profile?.display_name ?? profile?.nickname ?? null;
-  const buyerPhone = memberProfile?.phone ?? null;
+  // 訂購人快照：下單當下抓（結帳閘門已保證姓名/電話存在），
+  // 之後會員改資料不影響歷史訂單
+  const buyerName = memberProfile.name;
+  const buyerPhone = memberProfile.phone;
 
   // 建立訂單 + 明細 + 付款紀錄（PENDING）。
   // 兩把唯一鍵各司其職：checkoutKey 擋「同人同課重複下單」；orderNo（代碼+日期+
