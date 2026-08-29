@@ -720,7 +720,11 @@ model CourseSession {
   signupSlug      String?   @unique // 報名頁網址代稱；null = 這場沒開報名頁
   isSignupOpen    Boolean   @default(false) // 報名頁總開關（關閉時頁面顯示「報名已結束」）
   dmImage         String?   // DM 主視覺（瀏覽器直傳 Storage 的公開網址，同 Webinar.dmImage）
-  dmImages        String[]  @default([]) // 課程詳情長圖，依序顯示於介紹下方
+  // 課程詳情區塊：圖片與影片混排，順序即前台顯示順序（後台可拖曳調整）。
+  // 形狀 [{ type: "image" | "video", url: string }]，解析走 parseDmBlocks（防禦式）。
+  // 用 Json 而非另立一張表：這是一份「整包一起編輯」的有序清單，
+  // 逐列 CRUD 反而更麻煩（同 introImages/dmImages 用陣列的既有慣例）。
+  dmBlocks        Json      @default("[]")
   signupIntro     String?   @db.Text // 課程介紹（純文字換行，同 Webinar.description 慣例）
   venue           String?   // 場地名稱（例：台北市青少年發展處 5F）
   address         String?   // 地址（前台附 Google 地圖連結）

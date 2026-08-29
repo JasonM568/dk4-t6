@@ -22,6 +22,41 @@ export const SIGNUP_REQUEST_STATUS = {
  *  上限存在的理由是防灌單，不是業務限制；要帶更多人請走後台手動新增。 */
 export const MAX_ATTENDEES = 6;
 
+// ───────────────── 課程詳情區塊（圖片／影片混排，順序即顯示順序）─────────────────
+
+export type DmBlock = { type: "image" | "video"; url: string };
+
+/** 後台一次最多幾個區塊。上限是防手滑灌爆頁面，不是業務限制。 */
+export const MAX_DM_BLOCKS = 30;
+
+/** DB 的 Json 欄位型別上是 unknown，且可能是舊格式或被手動改壞——
+ *  一律過這道解析，形狀不對的單一區塊丟掉而不是整頁炸掉。 */
+export function parseDmBlocks(raw: unknown): DmBlock[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DmBlock[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const { type, url } = item as Record<string, unknown>;
+    if (type !== "image" && type !== "video") continue;
+    if (typeof url !== "string" || !/^https?:\/\//.test(url)) continue;
+    out.push({ type, url });
+    if (out.length >= MAX_DM_BLOCKS) break;
+  }
+  return out;
+}
+
+/** 把第 from 個區塊移到第 to 個位置（拖曳與 ↑↓ 共用同一套語意）。
+ *  越界或原地不動一律回原陣列，呼叫端不必先判斷。 */
+export function moveBlock(blocks: DmBlock[], from: number, to: number): DmBlock[] {
+  if (from === to) return blocks;
+  if (from < 0 || from >= blocks.length) return blocks;
+  if (to < 0 || to >= blocks.length) return blocks;
+  const next = [...blocks];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
 export type SignupWindow = {
   session: {
     isSignupOpen: boolean;

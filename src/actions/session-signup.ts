@@ -9,6 +9,8 @@ import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import {
   SIGNUP_SLUG_RE,
   SIGNUP_REQUEST_STATUS,
+  parseDmBlocks,
+  type DmBlock,
   MAX_ATTENDEES,
   attendeeKeyAt,
   makeWebOrderNo,
@@ -56,10 +58,14 @@ export async function updateSignupPageAction(
   // DM 圖：瀏覽器已直傳 Supabase Storage，這裡只收公開網址字串（同課程封面／講座 DM 模式）
   const dmImage = String(formData.get("dmImage") ?? "").trim() || null;
   if (dmImage && !/^https?:\/\//.test(dmImage)) return { error: "DM 圖網址格式錯誤" };
-  const dmImages = formData
-    .getAll("dmImages")
-    .map((v) => String(v).trim())
-    .filter((v) => /^https?:\/\//.test(v));
+  // 詳情區塊：前端把整包有序清單序列化成一個 JSON 欄位送上來（順序就是顯示順序）。
+  // 一律重新解析驗證，不信任前端送的形狀。
+  let dmBlocks: DmBlock[];
+  try {
+    dmBlocks = parseDmBlocks(JSON.parse(String(formData.get("dmBlocks") ?? "[]")));
+  } catch {
+    return { error: "課程詳情區塊資料格式錯誤，請重新整理後再試" };
+  }
 
   // 外部報名網址（1shop）：有值時報名頁只當落地頁，顯示 CTA 導出去
   const signupUrl = String(formData.get("signupUrl") ?? "").trim() || null;
@@ -93,7 +99,7 @@ export async function updateSignupPageAction(
         isSignupOpen,
         signupUrl,
         dmImage,
-        dmImages,
+        dmBlocks,
         signupIntro: text("signupIntro"),
         venue: text("venue"),
         address: text("address"),
@@ -176,7 +182,10 @@ export async function submitSignupAction(
     return { success: "報名已送出，確認信將寄到你的信箱！" };
   }
 
-  const session = await prisma.courseSession.findUnique({ where: { signupSlug: slug } });
+  // 代稱存檔時一律小寫；網址可能帶大寫，比對前正規化（同 /event/[slug] 頁面）
+  const session = await prisma.courseSession.findUnique({
+    where: { signupSlug: slug.toLowerCase() },
+  });
   if (!session) return { error: "找不到這個報名頁" };
 
   const buyerEmail = String(formData.get("buyerEmail") ?? "").trim().toLowerCase();

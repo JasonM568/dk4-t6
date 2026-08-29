@@ -6,7 +6,10 @@ import {
   remainingSeats,
   mapUrl,
   SIGNUP_REQUEST_STATUS,
+  parseDmBlocks,
+  type DmBlock,
 } from "@/lib/session-signup-page";
+import { youTubeEmbedUrl } from "@/lib/video-embed";
 import { SessionSignupForm } from "./signup-form";
 import { ExternalSignupCta } from "./external-signup-cta";
 
@@ -21,7 +24,7 @@ export async function generateMetadata({
 }) {
   const { slug } = await params;
   const session = await prisma.courseSession.findUnique({
-    where: { signupSlug: slug },
+    where: { signupSlug: slug.toLowerCase() }, // 同下方：代稱一律以小寫比對
     select: { title: true, dmImage: true },
   });
   if (!session) return { title: "課程報名" };
@@ -47,7 +50,10 @@ export default async function EventSignupPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  // 代稱存檔時一律小寫，但人手打／複製的網址常帶大寫（Q2-taipei-0919）。
+  // 查詢前正規化，大小寫不同的網址都開得起來，不會讓人看到 404 以為頁面沒建。
+  const slug = rawSlug.toLowerCase();
   const session = await prisma.courseSession.findUnique({ where: { signupSlug: slug } });
   if (!session) notFound();
 
@@ -71,6 +77,8 @@ export default async function EventSignupPage({
     now: new Date(),
   });
   const remaining = external ? null : remainingSeats(session.signupQuota, taken);
+
+  const blocks = parseDmBlocks(session.dmBlocks);
 
   const dateText = session.eventDate
     ? session.eventDate.toLocaleDateString("zh-TW", DATE_FMT)
@@ -136,11 +144,11 @@ export default async function EventSignupPage({
         </section>
       )}
 
-      {session.dmImages.length > 0 && (
+      {/* 課程詳情：圖片與影片依後台排好的順序混排 */}
+      {blocks.length > 0 && (
         <div className="mb-8 space-y-5">
-          {session.dmImages.map((src) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={src} src={src} alt={session.title} className="w-full rounded-2xl" />
+          {blocks.map((b, i) => (
+            <DmBlockView key={`${b.type}-${b.url}-${i}`} block={b} title={session.title} />
           ))}
         </div>
       )}
@@ -184,6 +192,32 @@ export default async function EventSignupPage({
         </section>
       )}
     </main>
+  );
+}
+
+/** 詳情區塊：YouTube 走 nocookie iframe（CSP frame-src 已放行）；
+ *  影片檔直連走 <video>（media-src 只放行 Supabase）；其餘當圖片。 */
+function DmBlockView({ block, title }: { block: DmBlock; title: string }) {
+  if (block.type === "video") {
+    const embed = youTubeEmbedUrl(block.url);
+    return embed ? (
+      <div className="aspect-video overflow-hidden rounded-2xl bg-black">
+        <iframe
+          src={embed}
+          title={title}
+          className="h-full w-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    ) : (
+      // eslint-disable-next-line jsx-a11y/media-has-caption
+      <video src={block.url} controls playsInline className="w-full rounded-2xl bg-black" />
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={block.url} alt={title} className="w-full rounded-2xl" />
   );
 }
 

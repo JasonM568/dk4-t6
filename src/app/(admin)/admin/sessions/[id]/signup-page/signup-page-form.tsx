@@ -5,6 +5,8 @@ import { requestCourseImageUploadUrl } from "@/actions/admin";
 import { updateSignupPageAction, type SignupPageState } from "@/actions/session-signup";
 import { createClient } from "@/lib/supabase/client";
 import { SubmitButton } from "@/components/admin/submit-button";
+import { type DmBlock } from "@/lib/session-signup-page";
+import { DmBlocksEditor } from "./dm-blocks-editor";
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -51,7 +53,7 @@ export type SignupPageInitial = {
   isSignupOpen: boolean;
   signupUrl: string | null;
   dmImage: string | null;
-  dmImages: string[];
+  dmBlocks: DmBlock[];
   signupIntro: string | null;
   venue: string | null;
   address: string | null;
@@ -78,7 +80,7 @@ export function SignupPageForm({
     null,
   );
   const [dmImage, setDmImage] = useState(initial.dmImage ?? "");
-  const [dmImages, setDmImages] = useState<string[]>(initial.dmImages);
+  const [blocks, setBlocks] = useState<DmBlock[]>(initial.dmBlocks);
   const [slug, setSlug] = useState(initial.signupSlug ?? "");
   const [signupUrl, setSignupUrl] = useState(initial.signupUrl ?? "");
   const [imgError, setImgError] = useState("");
@@ -94,18 +96,18 @@ export function SignupPageForm({
     else setImgError(res.error);
   };
 
-  const pickDetail = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  /** 詳情區塊的圖片上傳：回傳成功的網址，區塊順序交給 DmBlocksEditor 管 */
+  const uploadMany = async (files: File[]): Promise<string[]> => {
     setImgError("");
     setUploading("detail");
     const urls: string[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       const res = await uploadSessionImage(file);
       if (res.ok) urls.push(res.url);
       else setImgError(res.error);
     }
     setUploading(null);
-    if (urls.length > 0) setDmImages((prev) => [...prev, ...urls]);
+    return urls;
   };
 
   return (
@@ -126,10 +128,12 @@ export function SignupPageForm({
           <span className="mb-1 block text-xs text-gray-600">
             網址代稱（小寫英數與連字號）
           </span>
+          {/* 存檔時一律轉小寫，所以打字當下就轉——不然畫面顯示的連結會跟實際存的
+              網址對不上，複製出去就是 404（Q2-taipei-0919 事件） */}
           <input
             name="signupSlug"
             value={slug}
-            onChange={(e) => setSlug(e.target.value)}
+            onChange={(e) => setSlug(e.target.value.toLowerCase())}
             placeholder="quantum-2-taipei-0919"
             className={INPUT}
           />
@@ -145,7 +149,7 @@ export function SignupPageForm({
             >
               /event/{slug}
             </a>
-            （EDM 的報名按鈕就填這個網址）
+            （EDM 的報名按鈕就填這個網址；代稱一律小寫）
           </p>
         )}
         <label className="flex items-center gap-2 text-sm">
@@ -234,46 +238,20 @@ export function SignupPageForm({
           </div>
         </div>
 
-        <div className="rounded-lg border border-dashed border-gray-300 p-3">
+        <div>
           <div className="mb-2 text-xs font-medium text-gray-500">
-            詳情長圖（選填，可多張，依序顯示於課程介紹下方）
+            課程詳情（選填）——圖片與影片可混排，順序就是前台顯示的順序，
+            拖曳 ⠿ 或按 ↑↓ 調整。例：第一格放影片、後面接多張圖。
           </div>
-          {dmImages.map((url) => (
-            <input key={url} type="hidden" name="dmImages" value={url} />
-          ))}
-          {dmImages.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-3">
-              {dmImages.map((url) => (
-                <div key={url} className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={url}
-                    alt="詳情圖"
-                    className="max-h-32 rounded-lg border border-gray-200"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setDmImages((prev) => prev.filter((u) => u !== url))}
-                    className="absolute right-1 top-1 rounded-full bg-black/60 px-2 text-xs text-white"
-                    aria-label="移除這張圖"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <input
-            type="file"
-            multiple
-            accept={ALLOWED_IMAGE_TYPES.join(",")}
-            disabled={uploading !== null}
-            onChange={(e) => pickDetail(e.target.files)}
-            className="text-xs"
+          <DmBlocksEditor
+            blocks={blocks}
+            onChange={setBlocks}
+            onUpload={uploadMany}
+            uploading={uploading === "detail"}
           />
         </div>
 
-        {uploading && <p className="text-xs text-gray-500">上傳中…</p>}
+        {uploading === "main" && <p className="text-xs text-gray-500">上傳中…</p>}
         {imgError && <p className="text-xs text-red-600">🖼️ {imgError}</p>}
       </section>
 

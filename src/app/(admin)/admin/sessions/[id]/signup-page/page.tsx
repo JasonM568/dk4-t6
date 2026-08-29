@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireStaff } from "@/lib/auth/staff";
-import { SIGNUP_REQUEST_STATUS } from "@/lib/session-signup-page";
+import { SIGNUP_REQUEST_STATUS, parseDmBlocks } from "@/lib/session-signup-page";
 import { SignupPageForm } from "./signup-page-form";
 import { PendingRequests, type PendingOrder } from "./pending-requests";
 
@@ -76,7 +76,8 @@ export default async function SessionSignupPageAdmin({
           isSignupOpen: session.isSignupOpen,
           signupUrl: session.signupUrl,
           dmImage: session.dmImage,
-          dmImages: session.dmImages,
+          // DB 的 Json 是 unknown，在伺服器端解析一次再往下傳
+          dmBlocks: parseDmBlocks(session.dmBlocks),
           signupIntro: session.signupIntro,
           venue: session.venue,
           address: session.address,

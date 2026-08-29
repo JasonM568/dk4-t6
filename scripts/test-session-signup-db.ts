@@ -15,7 +15,11 @@ import {
   attendeeKeyAt,
   WEB_ORDER_PREFIX,
   SIGNUP_REQUEST_STATUS,
+  parseDmBlocks,
+  MAX_DM_BLOCKS,
+  moveBlock,
 } from "../src/lib/session-signup-page";
+import { youTubeVideoId, youTubeThumbnailUrl } from "../src/lib/video-embed";
 import { isSamePerson } from "../src/lib/session-roster";
 
 // 安全鎖：非本機資料庫一律拒跑（鐵則：絕不對正式站跑寫入測試）
@@ -113,6 +117,75 @@ async function main() {
     check("不含易混字元 I/O", !/[IO]/.test(a.slice(WEB_ORDER_PREFIX.length)));
     check("第一位是 buyer", attendeeKeyAt(0) === "buyer");
     check("第二位是 companion-1", attendeeKeyAt(1) === "companion-1");
+  }
+
+  console.log("\n課程詳情區塊（圖片／影片混排）");
+  {
+    const good = parseDmBlocks([
+      { type: "video", url: "https://youtu.be/abc123xyz" },
+      { type: "image", url: "https://example.com/a.jpg" },
+      { type: "image", url: "https://example.com/b.jpg" },
+    ]);
+    check("合法區塊全數保留且維持順序", good.length === 3 && good[0].type === "video");
+    check("順序即前台顯示順序（影片在第一格）", good[0].url.includes("youtu.be"));
+
+    check("非陣列（null／物件）回空陣列不炸頁", parseDmBlocks(null).length === 0 && parseDmBlocks({}).length === 0);
+    check(
+      "型別不認得的區塊被丟掉，其餘保留",
+      parseDmBlocks([
+        { type: "audio", url: "https://example.com/x.mp3" },
+        { type: "image", url: "https://example.com/ok.jpg" },
+      ]).length === 1,
+    );
+    check(
+      "非 http(s) 網址被擋（javascript: 注入）",
+      parseDmBlocks([{ type: "image", url: "javascript:alert(1)" }]).length === 0,
+    );
+    check(
+      "缺欄位／型別錯的項目被丟掉",
+      parseDmBlocks([{ type: "image" }, { url: "https://a.com/x.jpg" }, "字串", 42]).length === 0,
+    );
+    check(
+      `超過 ${MAX_DM_BLOCKS} 個截斷`,
+      parseDmBlocks(
+        Array.from({ length: MAX_DM_BLOCKS + 5 }, (_, i) => ({
+          type: "image",
+          url: `https://example.com/${i}.jpg`,
+        })),
+      ).length === MAX_DM_BLOCKS,
+    );
+
+    check(
+      "YouTube 各種格式都取得到影片 ID",
+      ["https://www.youtube.com/watch?v=dQw4w9WgXcQ", "https://youtu.be/dQw4w9WgXcQ",
+       "https://www.youtube.com/shorts/dQw4w9WgXcQ", "https://www.youtube.com/live/dQw4w9WgXcQ",
+      ].every((u) => youTubeVideoId(u) === "dQw4w9WgXcQ"),
+    );
+    check("非 YouTube 網址回 null（走影片檔直連）", youTubeVideoId("https://cdn.example.com/a.mp4") === null);
+    check(
+      "YouTube 縮圖走 i.ytimg.com（CSP img-src 已放行）",
+      youTubeThumbnailUrl("https://youtu.be/dQw4w9WgXcQ") ===
+        "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
+    );
+  }
+
+  console.log("\n區塊排序（拖曳與 ↑↓ 共用）");
+  {
+    const b = (n: string): { type: "image"; url: string } => ({
+      type: "image",
+      url: `https://example.com/${n}.jpg`,
+    });
+    const list = [b("1"), b("2"), b("3"), b("4")];
+    const names = (arr: { url: string }[]) =>
+      arr.map((x) => x.url.match(/\/(\w+)\.jpg/)![1]).join("");
+
+    check("往後拖（1 → 第 3 位）", names(moveBlock(list, 0, 2)) === "2314");
+    check("往前拖（4 → 第 1 位）", names(moveBlock(list, 3, 0)) === "4123");
+    check("上移一格等同 move(i, i-1)", names(moveBlock(list, 2, 1)) === "1324");
+    check("下移一格等同 move(i, i+1)", names(moveBlock(list, 1, 2)) === "1324");
+    check("原地不動回原順序", names(moveBlock(list, 1, 1)) === "1234");
+    check("越界不動也不炸", names(moveBlock(list, 0, 9)) === "1234" && names(moveBlock(list, -1, 0)) === "1234");
+    check("不就地修改原陣列（React state 要靠新參考觸發渲染）", names(list) === "1234");
   }
 
   console.log("\n同行者辨識（學員記錄卡併卡的來源）");
