@@ -8,7 +8,7 @@ import { requireFullAdmin } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
 import { getProfile, getProfilesByEmailsStrict } from "@/lib/supabase/admin";
 import { canPermanentlyDeleteStudent, studentBulkDeleteStatus, studentDeleteConfirmation } from "@/lib/student-deletion";
-import { buildStudentMergePreview } from "@/lib/duplicate-students";
+import { buildStudentMergePreview, canOverridePhoneConflict } from "@/lib/duplicate-students";
 import { parseStudentMergePairs, restoreSafetyConflicts, type StudentIdentitySnapshot, type StudentMergeSnapshot } from "@/lib/student-merge-operation";
 
 export type PersonClaimState = { error?: string; success?: string } | null;
@@ -167,7 +167,7 @@ export async function bulkPermanentlyDeleteStudentsAction(_prev: BulkStudentDele
   return { deleted, protected: protectedRows, review, failed };
 }
 
-async function executeStudentMerge(sourceId: string, targetId: string, actorEmail: string | null): Promise<{ error?: string; operationId?: string }> {
+async function executeStudentMerge(sourceId: string, targetId: string, actorEmail: string | null, phoneOverrideReason?: string): Promise<{ error?: string; operationId?: string }> {
   if (sourceId === targetId) return { error: "來源與保留卡不能相同" };
   const [source, target] = await Promise.all([
     prisma.studentRecord.findUnique({ where: { id: sourceId }, include: { histories: true, engagements: true } }),
@@ -175,7 +175,8 @@ async function executeStudentMerge(sourceId: string, targetId: string, actorEmai
   ]);
   if (!source || !target) return { error: "來源或保留學員卡不存在" };
   const initialPreview = buildStudentMergePreview(source, target);
-  if (!initialPreview.canMerge) return { error: `禁止合併：${initialPreview.conflicts.join("、")}` };
+  const initialOverrideAllowed = Boolean(phoneOverrideReason && canOverridePhoneConflict(source, target, initialPreview.conflicts));
+  if (!initialPreview.canMerge && !initialOverrideAllowed) return { error: `禁止合併：${initialPreview.conflicts.join("、")}` };
   try { const operationId = await prisma.$transaction(async (tx) => {
     // transaction 內重讀，避免預覽後新增的子紀錄被來源卡 cascade 刪除卻沒有進快照。
     const [freshSource, freshTarget] = await Promise.all([
@@ -184,7 +185,8 @@ async function executeStudentMerge(sourceId: string, targetId: string, actorEmai
     ]);
     if (!freshSource || !freshTarget) throw new Error("MERGE_RECORD_MISSING");
     const preview = buildStudentMergePreview(freshSource, freshTarget);
-    if (!preview.canMerge) throw new Error(`MERGE_CONFLICT:${preview.conflicts.join("、")}`);
+    const overrideAllowed = Boolean(phoneOverrideReason && canOverridePhoneConflict(freshSource, freshTarget, preview.conflicts));
+    if (!preview.canMerge && !overrideAllowed) throw new Error(`MERGE_CONFLICT:${preview.conflicts.join("、")}`);
     const source = freshSource; const target = freshTarget;
     const { moveHistories, moveEngagements } = preview;
     if (moveHistories.length) await tx.studentCourseHistory.updateMany({ where: { id: { in: moveHistories.map((h) => h.id) } }, data: { studentId: targetId } });
@@ -198,10 +200,12 @@ async function executeStudentMerge(sourceId: string, targetId: string, actorEmai
     const operation = await tx.studentMergeOperation.create({ data: { sourceStudentId: sourceId, targetStudentId: targetId, actorEmail,
       snapshotJson: json({ version: 1, source, targetBefore: target, targetAfterIdentity: identityOf(after),
         movedHistoryIds: moveHistories.map((h) => h.id), movedEngagementIds: moveEngagements.map((e) => e.id),
-        duplicateHistoryIds: preview.duplicateHistories.map((h) => h.id), duplicateEngagementIds: preview.duplicateEngagements.map((e) => e.id) } satisfies StudentMergeSnapshot) } });
-    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail, beforeJson: json(source), afterJson: json({ targetId, operationId: operation.id }) } });
+        duplicateHistoryIds: preview.duplicateHistories.map((h) => h.id), duplicateEngagementIds: preview.duplicateEngagements.map((e) => e.id),
+        ...(overrideAllowed ? { manualReview: { kind: "PHONE_CONFLICT" as const, reason: phoneOverrideReason!, conflicts: preview.conflicts } } : {}) } satisfies StudentMergeSnapshot) } });
+    await tx.studentDataAuditLog.create({ data: { studentId: sourceId, action: "STUDENT_MERGED_INTO", actorEmail, beforeJson: json(source), afterJson: json({ targetId, operationId: operation.id,
+      manualReview: overrideAllowed ? { kind: "PHONE_CONFLICT", reason: phoneOverrideReason, conflicts: preview.conflicts } : null }) } });
     await tx.studentDataAuditLog.create({ data: { studentId: targetId, action: "STUDENT_MERGE_TARGET", actorEmail,
-      beforeJson: json(target), afterJson: json({ ...after, operationId: operation.id, mergedFrom: sourceId, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
+      beforeJson: json(target), afterJson: json({ ...after, operationId: operation.id, mergedFrom: sourceId, manualReview: overrideAllowed ? { kind: "PHONE_CONFLICT", reason: phoneOverrideReason, conflicts: preview.conflicts } : null, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
         duplicateHistoriesRemoved: preview.duplicateHistories.length, duplicateEngagementsRemoved: preview.duplicateEngagements.length }) } });
     return operation.id;
   }); return { operationId }; } catch (error) {
@@ -216,7 +220,10 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
   const actor = await getAuthUser();
   if (!actor) return { error: "登入狀態已失效，請重新登入" };
   if (String(fd.get("confirmation") ?? "") !== "MERGE") return { error: "請勾選確認人工合併" };
-  const result = await executeStudentMerge(sourceId, targetId, actor.email ?? null);
+  const wantsPhoneOverride = String(fd.get("phoneConflictOverride") ?? "") === "CONFIRM";
+  const reviewReason = String(fd.get("reviewReason") ?? "").trim();
+  if (wantsPhoneOverride && reviewReason.length < 4) return { error: "請填寫至少 4 個字的手機差異覆核原因" };
+  const result = await executeStudentMerge(sourceId, targetId, actor.email ?? null, wantsPhoneOverride ? reviewReason : undefined);
   if (result.error) return { error: result.error };
   revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${targetId}`); revalidatePath("/admin/students");
   const returnTo = String(fd.get("returnTo") ?? "");

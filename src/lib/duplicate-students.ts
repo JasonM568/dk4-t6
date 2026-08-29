@@ -23,3 +23,11 @@ export function buildStudentMergePreview(source:MergeStudent,target:MergeStudent
   const moveEngagements=source.engagements.filter(e=>!engagementKeys.has(mergeEngagementKey(e)));const duplicateEngagements=source.engagements.filter(e=>engagementKeys.has(mergeEngagementKey(e)));
   return{canMerge:conflicts.length===0,conflicts,warnings,moveHistories,duplicateHistories,moveEngagements,duplicateEngagements};
 }
+
+export function canOverridePhoneConflict(source: MergeStudent, target: MergeStudent, conflicts: string[]) {
+  return conflicts.length === 1 && conflicts[0] === "手機不同"
+    && Boolean(source.phone && target.phone && source.phone !== target.phone)
+    && Boolean(source.name && target.name && compact(source.name) === compact(target.name))
+    && Boolean(source.email && target.email && source.email.trim().toLowerCase() === target.email.trim().toLowerCase())
+    && !(source.claimedUserId && target.claimedUserId && source.claimedUserId !== target.claimedUserId);
+}

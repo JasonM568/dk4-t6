@@ -22,6 +22,7 @@ export type StudentMergeSnapshot = {
   movedEngagementIds: string[];
   duplicateHistoryIds: string[];
   duplicateEngagementIds: string[];
+  manualReview?: { kind: "PHONE_CONFLICT"; reason: string; conflicts: string[] };
 };
 
 export type StudentIdentitySnapshot = Pick<MergeStudentSnapshot,
