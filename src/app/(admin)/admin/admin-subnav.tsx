@@ -17,7 +17,6 @@ const PLATFORM_TABS = [
   { href: "/admin/students/legacy-migration", label: "舊站搬遷", adminOnly: true },
   { href: "/admin/members/import", label: "會員新增", editorOnly: true },
   { href: "/admin/enrollments", label: "批次開通", editorOnly: true },
-  { href: "/admin/orders", label: "訂單查詢" },
   { href: "/admin/zones", label: "企業專區", editorOnly: true },
   { href: "/admin/subscription", label: "訂閱專區", editorOnly: true },
 ];
@@ -30,6 +29,9 @@ const MARKETING_TABS = [
   { href: "/admin/sms", label: "簡訊發送", editorOnly: true },
   { href: "/admin/sms/optouts", label: "簡訊退訂", editorOnly: true },
 ];
+// 訂單管理：獨立類別（2026-08-29 從課程與會員分出）——金流確認、發票開立、
+// 訂單資訊、付款名單拋轉都在這裡；之後場次報名接金流的訂單也歸這
+const ORDERS_TABS = [{ href: "/admin/orders", label: "訂單總覽" }];
 const SESSION_TABS = [{ href: "/admin/sessions", label: "場次看板" }];
 // 收支結算：獨立類別（2026-08-29 從場次分出）。整組 adminOnly——
 // 分潤金額是內部薪酬，操作人員/總教練連分組都看不到
@@ -49,11 +51,11 @@ const PLATFORM_PREFIXES = [
   "/admin/members",
   "/admin/students",
   "/admin/enrollments",
-  "/admin/orders",
   "/admin/zones",
   "/admin/subscription",
 ];
 const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/corporate", "/admin/sms"];
+const ORDERS_PREFIXES = ["/admin/orders"];
 const SESSION_PREFIXES = ["/admin/sessions"];
 const FINANCE_PREFIXES = ["/admin/finance"];
 const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff"];
@@ -80,6 +82,9 @@ export function AdminSubNav({
   } else if (isUnder(pathname, MARKETING_PREFIXES)) {
     tabs = MARKETING_TABS;
     title = "行銷推播";
+  } else if (isUnder(pathname, ORDERS_PREFIXES)) {
+    tabs = ORDERS_TABS;
+    title = "訂單管理";
   } else if (isUnder(pathname, SESSION_PREFIXES)) {
     tabs = SESSION_TABS;
     title = "場次";

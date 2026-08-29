@@ -47,6 +47,10 @@ export default async function AdminLayout({
               行銷推播
             </Link>
           )}
+          {/* 訂單管理：金流確認、發票開立、名單拋轉——三種角色可看（操作類按鈕由 action 層擋） */}
+          <Link href="/admin/orders" className="text-gray-600 hover:text-black">
+            訂單管理
+          </Link>
           {/* 場次看板：實體開課報名狀況（1shop 訂單匯入），三種角色皆可看 */}
           <Link href="/admin/sessions" className="text-gray-600 hover:text-black">
             場次看板

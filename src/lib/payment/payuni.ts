@@ -160,6 +160,69 @@ export class PayuniProvider implements PaymentProvider {
   }
 }
 
+/** 交易查詢（docs #/7/164）：以商店訂單號向 PAYUNi 查即時狀態。
+ *  用於後台「金流確認」——notify 漏接（網路、當機）時，這是對帳的唯一途徑。
+ *  API URL 由 UPP 網址推導（同網域的 /api/trade/query）。 */
+export async function payuniQueryTrade(
+  config: { merchantId: string; hashKey: string; hashIV: string; apiUrl: string },
+  merTradeNo: string,
+): Promise<
+  | { ok: true; status: string; tradeStatus: string; tradeNo?: string; amount: number; paymentType?: string; raw: Record<string, string> }
+  | { ok: false; error: string }
+> {
+  try {
+    const queryUrl = config.apiUrl.replace(/\/api\/upp$/, "/api/trade/query");
+    const inner = {
+      MerID: config.merchantId,
+      MerTradeNo: merTradeNo,
+      Timestamp: Math.floor(Date.now() / 1000),
+    };
+    const qs = new URLSearchParams(
+      Object.entries(inner).map(([k, v]) => [k, String(v)]),
+    ).toString();
+    const encryptInfo = payuniEncrypt(qs, config.hashKey, config.hashIV);
+
+    const res = await fetch(queryUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "user-agent": "payuni", // 文件要求
+      },
+      body: new URLSearchParams({
+        MerID: config.merchantId,
+        Version: "2.0",
+        EncryptInfo: encryptInfo,
+        HashInfo: payuniHash(encryptInfo, config.hashKey, config.hashIV),
+      }).toString(),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+    const body = (await res.json()) as Record<string, string>;
+    if (!body.EncryptInfo) {
+      return { ok: false, error: `${body.Status ?? "UNKNOWN"}: ${body.Message ?? "查無資料"}` };
+    }
+    // 驗章後解密（同 notify 的防線）
+    const expected = payuniHash(body.EncryptInfo, config.hashKey, config.hashIV);
+    if (body.HashInfo?.toUpperCase() !== expected) {
+      return { ok: false, error: "查詢回應驗章失敗" };
+    }
+    const inner2 = parseQueryString(
+      payuniDecrypt(body.EncryptInfo, config.hashKey, config.hashIV),
+    );
+    return {
+      ok: true,
+      status: inner2.Status ?? "",
+      tradeStatus: inner2.TradeStatus ?? "",
+      tradeNo: inner2.TradeNo,
+      amount: Number(inner2.TradeAmt ?? 0),
+      paymentType: PAYMENT_TYPE_LABEL[inner2.PaymentType ?? ""] ?? inner2.PaymentType,
+      raw: inner2,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "連線失敗" };
+  }
+}
+
 /** PaymentType 代碼 → 可讀標籤（Payment.paymentType 欄位與後台顯示用） */
 const PAYMENT_TYPE_LABEL: Record<string, string> = {
   "1": "Credit",
