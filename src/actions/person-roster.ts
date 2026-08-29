@@ -38,7 +38,7 @@ export async function claimStudentToMemberAction(studentId: string, userId: stri
     const after = await tx.studentRecord.update({ where: { id: studentId }, data: { claimedUserId: userId, claimedAt: new Date() } });
     await tx.studentDataAuditLog.create({ data: { studentId, action: "STUDENT_CLAIM", actorEmail: actor?.email ?? null, beforeJson: json(student), afterJson: json(after) } });
   });
-  revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${studentId}`); revalidatePath(`/admin/members/${userId}`);
+  revalidatePath("/admin/people"); revalidatePath("/admin/people/duplicates"); revalidatePath(`/admin/people/student/${studentId}`); revalidatePath(`/admin/members/${userId}`);
   return { success: `已人工確認連結至 ${profile.email ?? profile.display_name ?? "會員帳號"}` };
 }
 
