@@ -1674,7 +1674,9 @@ export function SessionCard({
                                 fd.set("targetSessionId", target);
                                 startTransition(() => deferDispatch(fd));
                               }}
-                              className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-500 focus:border-black focus:outline-none"
+                              // w-16 鎖寬：select 收合寬度由「最長選項」決定，選項是其他場次
+                              // 的完整標題，不鎖每張卡的表格都會被這顆下拉撐出卡片外
+                              className="w-16 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-500 focus:border-black focus:outline-none"
                             >
                               <option value="">延期…</option>
                               {sessionOptions
