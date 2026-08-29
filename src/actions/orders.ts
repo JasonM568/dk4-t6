@@ -2,10 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireEditor } from "@/lib/auth/staff";
+import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { getPaymentProvider } from "@/lib/payment";
 import { PayuniProvider, payuniQueryTrade } from "@/lib/payment/payuni";
 import { settlePaidOrder, issueInvoiceForOrder } from "@/lib/payment/settle";
+import {
+  getInvoicePolicy,
+  setInvoicePolicy,
+  INVOICE_MODES,
+  INVOICE_TRIGGER_STATUSES,
+  type InvoiceMode,
+  type InvoicePolicy,
+} from "@/lib/invoice/policy";
 
 // 訂單管理後台 actions：金流確認（向 PAYUNi 核對）、補開通、發票重開、
 // 付款名單拋回名單群組。結算走 settle.ts 共用邏輯，與 webhook 行為一致。
@@ -93,13 +101,18 @@ export async function reconcileOrderAction(orderNo: string): Promise<OrderAction
     };
   }
 
-  const invoice = await issueInvoiceForOrder(orderNo);
+  // 發票依政策：完款就開立才自動開；手動/按狀態模式留給後續操作
+  let invoiceNote = "";
+  if (!settled.already && (await getInvoicePolicy()).mode === "AUTO_PAID") {
+    const invoice = await issueInvoiceForOrder(orderNo);
+    invoiceNote = invoice.ok
+      ? `，發票 ${invoice.invoiceNumber} 已開立`
+      : `；發票開立失敗：${invoice.error}`;
+  }
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderNo}`);
   return {
-    success: settled.already
-      ? "此單先前已結算（無需變更）"
-      : `已補開通${invoice.ok ? `，發票 ${invoice.invoiceNumber} 已開立` : `；發票開立失敗：${invoice.error}`}`,
+    success: settled.already ? "此單先前已結算（無需變更）" : `已補開通${invoiceNote}`,
   };
 }
 
@@ -176,12 +189,24 @@ export async function updateOrderStatusAction(
   });
   console.log("[orders] 手動變更狀態", { orderNo, from: order.status, to: newStatus });
 
+  // 按訂單狀態開立：標到觸發狀態時自動開發票（冪等，已開立不重複）
+  let invoiceNote = "";
+  const policy = await getInvoicePolicy();
+  if (policy.mode === "ON_STATUS" && newStatus === policy.triggerStatus) {
+    const invoice = await issueInvoiceForOrder(orderNo);
+    invoiceNote = invoice.ok
+      ? invoice.already
+        ? ""
+        : `；發票 ${invoice.invoiceNumber} 已開立`
+      : `；發票開立失敗：${invoice.error}（可稍後在詳情頁重試）`;
+  }
+
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderNo}`);
   return {
     success: cancellingPaid
       ? "已取消。注意：此單已收款，退款請至 PAYUNi 後台執行，發票請至 ezPay 後台作廢"
-      : `狀態已更新為「${MANUAL_STATUS_LABEL[newStatus] ?? newStatus}」`,
+      : `狀態已更新為「${MANUAL_STATUS_LABEL[newStatus] ?? newStatus}」${invoiceNote}`,
   };
 }
 
@@ -234,4 +259,32 @@ export async function saveBuyersToMailGroupAction(
   return {
     success: `已把 ${emails.length} 位已付款買家存入「${groupName}」（新增 ${count} 位，其餘原本就在名單內）`,
   };
+}
+
+/** 讀取發票開立政策（設定頁初始值用） */
+export async function getInvoicePolicyAction(): Promise<InvoicePolicy> {
+  await requireEditor();
+  return getInvoicePolicy();
+}
+
+/** 更新發票開立政策（僅管理員——開立時機影響稅務申報節奏） */
+export async function updateInvoicePolicyAction(
+  _prev: OrderActionState,
+  formData: FormData,
+): Promise<OrderActionState> {
+  await requireFullAdmin();
+  const mode = String(formData.get("mode") ?? "");
+  const triggerStatus = String(formData.get("triggerStatus") ?? "CONFIRMED");
+  if (!(INVOICE_MODES as readonly string[]).includes(mode)) {
+    return { error: "開立模式不正確" };
+  }
+  if (!(INVOICE_TRIGGER_STATUSES as readonly string[]).includes(triggerStatus)) {
+    return { error: "觸發狀態不正確" };
+  }
+  await setInvoicePolicy({
+    mode: mode as InvoiceMode,
+    triggerStatus: triggerStatus as InvoicePolicy["triggerStatus"],
+  });
+  revalidatePath("/admin/orders/invoice-settings");
+  return { success: "發票開立政策已更新" };
 }

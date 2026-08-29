@@ -104,7 +104,7 @@ export function OrderTools({
             disabled={pending}
             className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm text-white transition hover:bg-amber-700 disabled:opacity-50"
           >
-            🧾 重試開立發票
+            🧾 開立發票
           </button>
         )}
       </div>

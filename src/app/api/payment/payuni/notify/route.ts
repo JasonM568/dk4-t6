@@ -6,6 +6,7 @@ import {
   settleFailedOrder,
   issueInvoiceForOrder,
 } from "@/lib/payment/settle";
+import { getInvoicePolicy } from "@/lib/invoice/policy";
 
 // PAYUNi AES 需要 node:crypto，禁用 edge runtime
 export const runtime = "nodejs";
@@ -80,8 +81,10 @@ export async function POST(req: NextRequest) {
         });
         return new Response("OK");
       }
-      // 發票在 transaction 之外；await 完才回 200——serverless 回應後就凍結
-      if (!settled.already) {
+      // 發票在 transaction 之外；await 完才回 200——serverless 回應後就凍結。
+      // 開立時機依政策：只有「完款就開立」才在這裡自動開，
+      // 手動／按狀態的模式由後台操作觸發
+      if (!settled.already && (await getInvoicePolicy()).mode === "AUTO_PAID") {
         await issueInvoiceForOrder(result.orderNo);
       }
     } else {

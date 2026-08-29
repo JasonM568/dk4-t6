@@ -31,7 +31,10 @@ const MARKETING_TABS = [
 ];
 // 訂單管理：獨立類別（2026-08-29 從課程與會員分出）——金流確認、發票開立、
 // 訂單資訊、付款名單拋轉都在這裡；之後場次報名接金流的訂單也歸這
-const ORDERS_TABS = [{ href: "/admin/orders", label: "訂單總覽" }];
+const ORDERS_TABS = [
+  { href: "/admin/orders", label: "訂單總覽" },
+  { href: "/admin/orders/invoice-settings", label: "發票設定", adminOnly: true },
+];
 const SESSION_TABS = [{ href: "/admin/sessions", label: "場次看板" }];
 // 收支結算：獨立類別（2026-08-29 從場次分出）。整組 adminOnly——
 // 分潤金額是內部薪酬，操作人員/總教練連分組都看不到
