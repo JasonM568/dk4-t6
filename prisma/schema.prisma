@@ -742,8 +742,8 @@ model CourseSession {
   // ── 公開報名頁（/event/<signupSlug>）Phase 1 ──
   // 自建報名頁只換「資料來源」：訪客送出後一樣寫進 SessionSignup（orderNo 前綴 WEB-），
   // 看板／分組／簽到表／課前通知／收支表全部沿用既有流程，不另立一套報名訂單模型。
-  // Phase 1 不接金流：付款方式寫在 signupPayNote（匯款或現場付款），
-  // 送出即成立報名。票種與線上付款留 Phase 2。
+  // 報名方式見 signupPayMode（EXTERNAL 導 1shop／PLATFORM 平台金流／MANUAL 手動收款）。
+  // PLATFORM 走 SessionSignupOrder → PAYUNi 刷卡/ATM，付款成功自動轉入名單並開發票。
   signupSlug      String?   @unique // 報名頁網址代稱；null = 這場沒開報名頁
   isSignupOpen    Boolean   @default(false) // 報名頁總開關（關閉時頁面顯示「報名已結束」）
   dmImage         String?   // DM 主視覺（瀏覽器直傳 Storage 的公開網址，同 Webinar.dmImage）
@@ -766,6 +766,14 @@ model CourseSession {
   signupPayNote   String?   @db.Text // 付款方式說明（匯款帳號、現場付款注意事項）
   signupNotice    String?   @db.Text // 注意事項／退費政策
   signupGroupId   String?   // 報名成功自動加入的 MailGroup；null = 不加名單
+
+  // ── 平台線上金流報名（Phase 2）──
+  // 報名方式 2 選 1（signupPayMode）：EXTERNAL = 導外部連結（1shop，signupUrl）；
+  // PLATFORM = 平台金流（signupPrice，刷卡/ATM，付款成功自動轉入名單＋開發票）；
+  // MANUAL = 內建表單手動收款（既有 SessionSignupRequest 待確認流程）。
+  // 舊資料 migration 依 signupUrl 有無回填 EXTERNAL / MANUAL，行為不變。
+  signupPayMode   String    @default("MANUAL")
+  signupPrice     Int?      // PLATFORM 模式每人單價（NT$）；金額 = signupPrice × 報名人數
 
   signups        SessionSignup[]
   signupRequests SessionSignupRequest[]
@@ -1134,6 +1142,40 @@ model Payment {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 場次線上金流訂單（平台金流報名，CourseSession.signupPayMode = PLATFORM）。
+// 與課程 Order 分開：報名是「訪客免登入」且要的是「進場次名單（SessionSignup）」而非
+// 「開通觀看（Enrollment）」，硬塞進 Order（userId 必填、courseId 導向）會攪亂兩套語意。
+// 付款成功由 /api/payment/<provider>/session-notify 結算：逐位建 SessionSignup、開 ezPay
+// 發票、加名單群組。ATM 取號走 PAYUNi 三態，繳款完成才轉入名單。
+// 軟連結（sessionId 純量、不設 FK，比照 InvoiceRecord.orderId）。
+// 命名避開財務模組既有的 SessionOrder（那是 1shop 收入認列/分潤，與結帳無關）。
+model SessionSignupOrder {
+  id          String      @id @default(cuid())
+  orderNo     String      @unique // 場次訂單編號（與課程 orderNo 前綴區隔）
+  sessionId   String
+  // 訂購人聯絡資訊快照（訪客免登入）
+  buyerEmail  String
+  buyerName   String
+  buyerPhone  String
+  // 參加者名單快照（含同行者）[{name,phone,email,meal,isRetrain}]；付款成功後逐位建 SessionSignup
+  attendees   Json
+  quantity    Int         // 報名人數
+  unitPrice   Int         // 每人單價快照
+  total       Int         // = unitPrice × quantity
+  status      OrderStatus @default(PENDING)
+  // 防重下單：同場次同 email 只允許一筆有效 PENDING（PENDING=`sessionId:buyerEmail`，離開 PENDING 清 null）
+  checkoutKey String?     @unique
+  provider    String
+  tradeNo     String?     // 金流商交易序號
+  paymentType String?     // Credit / ATM…
+  rawCallback Json?       // 完整 callback 存證
+  paidAt      DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([sessionId, status])
 }
 
 // 電子發票開立紀錄（ezPay 加值中心）。

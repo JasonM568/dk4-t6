@@ -52,6 +52,8 @@ export type SignupPageInitial = {
   signupSlug: string | null;
   isSignupOpen: boolean;
   signupUrl: string | null;
+  signupPayMode: string; // EXTERNAL / PLATFORM / MANUAL
+  signupPrice: number | null;
   dmImage: string | null;
   dmBlocks: DmBlock[];
   signupIntro: string | null;
@@ -83,6 +85,8 @@ export function SignupPageForm({
   const [blocks, setBlocks] = useState<DmBlock[]>(initial.dmBlocks);
   const [slug, setSlug] = useState(initial.signupSlug ?? "");
   const [signupUrl, setSignupUrl] = useState(initial.signupUrl ?? "");
+  const [payMode, setPayMode] = useState(initial.signupPayMode || "MANUAL");
+  const [price, setPrice] = useState(initial.signupPrice?.toString() ?? "");
   const [imgError, setImgError] = useState("");
   const [uploading, setUploading] = useState<"main" | "detail" | null>(null);
 
@@ -169,33 +173,67 @@ export function SignupPageForm({
       {/* ── 報名方式 ── */}
       <section className="space-y-3 rounded-2xl border border-gray-200 p-5">
         <h2 className="text-base font-bold">報名方式</h2>
-        <label className="block">
-          <span className="mb-1 block text-xs text-gray-600">
-            外部報名網址（1shop 報名頁）
-          </span>
-          <input
-            name="signupUrl"
-            value={signupUrl}
-            onChange={(e) => setSignupUrl(e.target.value)}
-            placeholder="https://…（留空則使用平台自己的報名表單）"
-            className={INPUT}
-          />
-        </label>
-        {signupUrl ? (
-          <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-900">
-            <strong>目前是「導去 1shop」模式。</strong>
-            這一頁只當落地頁：顯示 DM 圖與課程資訊，報名按鈕直接導到上面的網址。
-            <br />
-            不收表單、不管名額（席次由 1shop 控管），下方的「名額上限」與「繳費方式」不會生效。
-            學員在 1shop 下單後，訂單照舊匯入場次看板。
-          </p>
-        ) : (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-            <strong>目前是「平台報名」模式。</strong>
-            學員在這一頁填表，報名先進「待確認」，你收到款項後按「轉入名單」才成為正式名單。
-            <br />
-            尚未接金流，所以要自己收匯款、自己確認——想省掉這段的話，填上 1shop 報名網址。
-          </p>
+        <input type="hidden" name="signupPayMode" value={payMode} />
+        <div className="space-y-2 text-sm">
+          {[
+            { v: "PLATFORM", t: "平台線上金流（刷卡＋ATM）", d: "學員在這頁填表→線上付款，付款完成自動進正式名單並開立電子發票。" },
+            { v: "EXTERNAL", t: "導去外部報名頁（1shop）", d: "這頁只當落地頁，報名按鈕導去 1shop 填表付款；席次由對方控管。" },
+            { v: "MANUAL", t: "平台表單手動收款", d: "填表後進「待確認」，你收到匯款後按「轉入名單」才成正式名單。" },
+          ].map((o) => (
+            <label
+              key={o.v}
+              className={`flex cursor-pointer gap-2 rounded-lg border px-3 py-2 ${
+                payMode === o.v ? "border-black bg-gray-50" : "border-gray-200"
+              }`}
+            >
+              <input
+                type="radio"
+                name="signupPayModeRadio"
+                checked={payMode === o.v}
+                onChange={() => setPayMode(o.v)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">{o.t}</span>
+                <span className="mt-0.5 block text-xs text-gray-500">{o.d}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {payMode === "PLATFORM" && (
+          <label className="block">
+            <span className="mb-1 block text-xs text-gray-600">
+              每人報名費用（NT$，整數）<span className="text-red-600">*</span>
+            </span>
+            <input
+              type="number"
+              min={1}
+              name="signupPrice"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="例：5880"
+              className={INPUT}
+            />
+            <span className="mt-1 block text-xs text-gray-500">
+              多人報名時金額 = 單價 × 人數。開放刷卡與 ATM 兩種付款。
+            </span>
+          </label>
+        )}
+
+        {payMode === "EXTERNAL" && (
+          <label className="block">
+            <span className="mb-1 block text-xs text-gray-600">
+              外部報名網址（1shop 報名頁）<span className="text-red-600">*</span>
+            </span>
+            <input
+              name="signupUrl"
+              value={signupUrl}
+              onChange={(e) => setSignupUrl(e.target.value)}
+              placeholder="https://…"
+              className={INPUT}
+            />
+          </label>
         )}
       </section>
 

@@ -75,6 +75,8 @@ export default async function SessionSignupPageAdmin({
           signupSlug: session.signupSlug,
           isSignupOpen: session.isSignupOpen,
           signupUrl: session.signupUrl,
+          signupPayMode: session.signupPayMode,
+          signupPrice: session.signupPrice,
           dmImage: session.dmImage,
           // DB 的 Json 是 unknown，在伺服器端解析一次再往下傳
           dmBlocks: parseDmBlocks(session.dmBlocks),

@@ -57,26 +57,33 @@ export default async function EventSignupPage({
   const session = await prisma.courseSession.findUnique({ where: { signupSlug: slug } });
   if (!session) notFound();
 
-  // 導去 1shop 的模式：席次由對方控管，這一頁不算名額也不查待確認名單
-  const external = session.signupUrl;
+  // 報名方式：EXTERNAL 導 1shop（席次對方控管，本頁不算名額）／PLATFORM 平台金流／MANUAL 手動收款
+  const isExternal = session.signupPayMode === "EXTERNAL" && !!session.signupUrl;
+  const isPlatform = session.signupPayMode === "PLATFORM" && !!session.signupPrice;
 
-  const [confirmed, pending] = external
-    ? [0, 0]
-    : await Promise.all([
-        prisma.sessionSignup.count({
-          where: { sessionId: session.id, deferredToSessionId: null },
-        }),
-        prisma.sessionSignupRequest.count({
-          where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
-        }),
-      ]);
-  const taken = confirmed + pending;
+  // 平台/手動模式的名額：已確認名單（未延出）＋待確認申請＋未付款的線上訂單都算佔位，避免超賣
+  let taken = 0;
+  if (!isExternal) {
+    const [confirmed, pendingReq, pendingOrders] = await Promise.all([
+      prisma.sessionSignup.count({
+        where: { sessionId: session.id, deferredToSessionId: null },
+      }),
+      prisma.sessionSignupRequest.count({
+        where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
+      }),
+      prisma.sessionSignupOrder.aggregate({
+        where: { sessionId: session.id, status: "PENDING" },
+        _sum: { quantity: true },
+      }),
+    ]);
+    taken = confirmed + pendingReq + (pendingOrders._sum.quantity ?? 0);
+  }
   const state = signupState({
-    session: external ? { ...session, signupQuota: null } : session,
+    session: isExternal ? { ...session, signupQuota: null } : session,
     taken,
     now: new Date(),
   });
-  const remaining = external ? null : remainingSeats(session.signupQuota, taken);
+  const remaining = isExternal ? null : remainingSeats(session.signupQuota, taken);
 
   const blocks = parseDmBlocks(session.dmBlocks);
 
@@ -159,26 +166,30 @@ export default async function EventSignupPage({
 
       <section className="mb-8 scroll-mt-6" id="signup">
         <h2 className="mb-3 text-lg font-bold">立即報名</h2>
-        {state.open && external ? (
-          <ExternalSignupCta
-            slug={slug}
-            title={session.title}
-            url={external}
-          />
-        ) : state.open ? (
-          <SessionSignupForm
-            slug={slug}
-            maxSeats={remaining === null ? undefined : remaining}
-          />
-        ) : (
+        {!state.open ? (
           <p className="rounded-2xl bg-gray-100 px-5 py-8 text-center text-gray-600">
             {CLOSED_MESSAGE[state.reason]}
           </p>
+        ) : isExternal ? (
+          <ExternalSignupCta slug={slug} title={session.title} url={session.signupUrl!} />
+        ) : isPlatform ? (
+          <SessionSignupForm
+            slug={slug}
+            mode="PAYMENT"
+            unitPrice={session.signupPrice!}
+            maxSeats={remaining === null ? undefined : remaining}
+          />
+        ) : (
+          <SessionSignupForm
+            slug={slug}
+            mode="REQUEST"
+            maxSeats={remaining === null ? undefined : remaining}
+          />
         )}
       </section>
 
-      {/* 導去 1shop 時款項由對方收，這裡不談繳費方式，免得兩邊說法打架 */}
-      {!external && session.signupPayNote && (
+      {/* 繳費方式說明只在「手動收款」模式顯示——導 1shop 由對方收、平台金流線上付，都不需要 */}
+      {!isExternal && !isPlatform && session.signupPayNote && (
         <section className="mb-8">
           <h2 className="mb-3 text-lg font-bold">繳費方式</h2>
           <p className="whitespace-pre-line rounded-2xl border border-amber-200 bg-amber-50/60 px-5 py-4 text-[15px] leading-relaxed text-gray-700">
