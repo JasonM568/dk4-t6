@@ -35,7 +35,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   const count = (f: PersonFilter) => roster.filter((p) => personMatchesFilter(p, f)).length;
   const canBulkDelete = isFullAdmin(await currentStaffRole());
   return <div className="space-y-6">
-    <header><h1 className="text-2xl font-bold">學員與名單</h1><p className="mt-1 text-sm text-gray-500">從同一個入口查會員、歷史學員、待開通與潛在名單；點進人物可看完整歷程。</p></header>
+    <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">學員與名單</h1><p className="mt-1 text-sm text-gray-500">從同一個入口查會員、歷史學員、待開通與潛在名單；點進人物可看完整歷程。</p></div><Link href="/admin/people/duplicates" className="rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-800">查看同名同 Email 重複表 →</Link></header>
     {params.deleted === "1" && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">名單資料已永久刪除；會員登入帳號及其他模組資料均未刪除。</div>}
     <section><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">待辦中心</h2><span className="text-xs text-gray-400">數字是目前需要人工確認的筆數</span></div>
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">{TASKS.map((task) => <Link key={task.filter} href={`/admin/people?filter=${task.filter}`} className={`rounded-xl border p-4 transition hover:-translate-y-0.5 ${task.color}`}><div className="text-2xl font-bold">{count(task.filter)}</div><div className="mt-1 text-sm font-semibold">{task.title}</div><p className="mt-2 text-xs leading-5 text-gray-500">{task.hint}</p></Link>)}</div>

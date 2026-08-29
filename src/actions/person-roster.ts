@@ -197,5 +197,6 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
         duplicateHistoriesRemoved: source.histories.length - moveHistories.length, duplicateEngagementsRemoved: source.engagements.length - moveEngagements.length }) } });
   });
   revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${targetId}`); revalidatePath("/admin/students");
-  redirect(`/admin/people/student/${targetId}?merged=1`);
+  const returnTo = String(fd.get("returnTo") ?? "");
+  redirect(returnTo === "/admin/people/duplicates" ? `${returnTo}?merged=1` : `/admin/people/student/${targetId}?merged=1`);
 }
