@@ -8,6 +8,7 @@ import { requireFullAdmin } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
 import { getProfile, getProfilesByEmailsStrict } from "@/lib/supabase/admin";
 import { canPermanentlyDeleteStudent, studentBulkDeleteStatus, studentDeleteConfirmation } from "@/lib/student-deletion";
+import { buildStudentMergePreview } from "@/lib/duplicate-students";
 
 export type PersonClaimState = { error?: string; success?: string } | null;
 export type BulkStudentDeleteState = {
@@ -171,17 +172,9 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
     prisma.studentRecord.findUnique({ where: { id: targetId }, include: { histories: true, engagements: true } }),
   ]);
   if (!source || !target) return { error: "來源或保留學員卡不存在" };
-  const sameEmail = Boolean(source.email && target.email && source.email.toLowerCase() === target.email.toLowerCase());
-  const samePhone = Boolean(source.phone && target.phone && source.phone === target.phone);
-  if (!sameEmail && !samePhone) return { error: "兩張卡沒有相同 Email 或手機，禁止合併" };
-  if (source.phone && target.phone && source.phone !== target.phone) return { error: "兩張卡手機不同，需先人工整理" };
-  if (source.claimedUserId && target.claimedUserId && source.claimedUserId !== target.claimedUserId) return { error: "兩張卡已連結不同會員帳號，禁止合併" };
-  const historyKey = (h: { courseName: string; attendedAt: Date | null }) => `${h.courseName.trim().toLowerCase()}|${h.attendedAt?.toISOString().slice(0, 10) ?? ""}`;
-  const engagementKey = (e: { type: string; title: string; occurredAt: Date | null }) => `${e.type}|${e.title.trim().toLowerCase()}|${e.occurredAt?.toISOString().slice(0, 10) ?? ""}`;
-  const targetHistoryKeys = new Set(target.histories.map(historyKey));
-  const targetEngagementKeys = new Set(target.engagements.map(engagementKey));
-  const moveHistories = source.histories.filter((h) => !targetHistoryKeys.has(historyKey(h)));
-  const moveEngagements = source.engagements.filter((e) => !targetEngagementKeys.has(engagementKey(e)));
+  const preview = buildStudentMergePreview(source, target);
+  if (!preview.canMerge) return { error: `禁止合併：${preview.conflicts.join("、")}` };
+  const { moveHistories, moveEngagements } = preview;
   await prisma.$transaction(async (tx) => {
     if (moveHistories.length) await tx.studentCourseHistory.updateMany({ where: { id: { in: moveHistories.map((h) => h.id) } }, data: { studentId: targetId } });
     if (moveEngagements.length) await tx.studentEngagement.updateMany({ where: { id: { in: moveEngagements.map((e) => e.id) } }, data: { studentId: targetId } });
@@ -194,7 +187,7 @@ export async function mergeStudentRecordsAction(sourceId: string, targetId: stri
       legacyNote: [target.legacyNote, source.legacyNote].filter(Boolean).join("\n") || null } });
     await tx.studentDataAuditLog.create({ data: { studentId: targetId, action: "STUDENT_MERGE_TARGET", actorEmail: actor.email ?? null,
       beforeJson: json(target), afterJson: json({ ...after, mergedFrom: sourceId, movedHistories: moveHistories.length, movedEngagements: moveEngagements.length,
-        duplicateHistoriesRemoved: source.histories.length - moveHistories.length, duplicateEngagementsRemoved: source.engagements.length - moveEngagements.length }) } });
+        duplicateHistoriesRemoved: preview.duplicateHistories.length, duplicateEngagementsRemoved: preview.duplicateEngagements.length }) } });
   });
   revalidatePath("/admin/people"); revalidatePath(`/admin/people/student/${targetId}`); revalidatePath("/admin/students");
   const returnTo = String(fd.get("returnTo") ?? "");
