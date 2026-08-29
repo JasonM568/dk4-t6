@@ -107,6 +107,12 @@ const courseSchema = z.object({
 }).refine((d) => d.listPrice == null || d.listPrice >= d.price, {
   message: "建議售價要大於或等於優惠價",
   path: ["listPrice"],
+}).refine((d) => d.groupId != null || d.price >= 1, {
+  // 一般（非專區）課程會渲染購買鈕、走金流結帳，但結帳在建單前就擋掉 total<=0，
+  // price=0 的公開課會變成「看得到購買鈕、按了卻被擋」的死路。要免費開放請用專區課
+  // 或由後台手動開通觀看權限。專區課（groupId 有值）不走購買鈕，不受此限。
+  message: "一般課程的優惠價不能是 0（免費課請用專區或後台手動開通）",
+  path: ["price"],
 });
 
 export type CourseFormState = { error?: string } | null;
@@ -258,12 +264,29 @@ export async function moveCourse(courseId: string, direction: "up" | "down") {
   revalidatePath("/");
 }
 
-// 排序相關 action 共用：依指定 id 順序重寫所有 sortOrder
-async function renumberCourses(orderedIds: string[]) {
+/** 排序相關 action 共用：讀（現有課程）＋算新順序＋寫全在單一 Serializable
+ *  transaction 內完成，避免 read-modify-write 競態——兩位管理員同時排序時，
+ *  後寫者不會用過期快照靜默覆蓋前者，DB 會以序列化失敗擋下其一。
+ *  buildOrder 由呼叫端在交易內、拿到當下快照後算出新順序；回傳 null＝放棄本次排序
+ *  （如名單不一致，可能有人同時新增/刪除課程）。 */
+async function reorderCoursesInTx(
+  buildOrder: (current: { id: string }[]) => string[] | null,
+) {
   await prisma.$transaction(
-    orderedIds.map((id, i) =>
-      prisma.course.update({ where: { id }, data: { sortOrder: i } }),
-    ),
+    async (tx) => {
+      const current = await tx.course.findMany({
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+        select: { id: true },
+      });
+      const orderedIds = buildOrder(current);
+      if (!orderedIds) return;
+      await Promise.all(
+        orderedIds.map((id, i) =>
+          tx.course.update({ where: { id }, data: { sortOrder: i } }),
+        ),
+      );
+    },
+    { isolationLevel: "Serializable" },
   );
   revalidatePath("/admin/courses");
   revalidatePath("/courses");
@@ -273,25 +296,23 @@ async function renumberCourses(orderedIds: string[]) {
 /** 課程置頂：移到最前，其餘順序不變 */
 export async function pinCourseToTop(courseId: string) {
   await requireEditor();
-  const courses = await prisma.course.findMany({
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-    select: { id: true },
+  await reorderCoursesInTx((current) => {
+    const rest = current.map((c) => c.id).filter((id) => id !== courseId);
+    if (rest.length === current.length) return null; // id 不存在
+    return [courseId, ...rest];
   });
-  const rest = courses.map((c) => c.id).filter((id) => id !== courseId);
-  if (rest.length === courses.length) return; // id 不存在
-  await renumberCourses([courseId, ...rest]);
 }
 
 /** 拖曳排序：前端傳完整新順序；id 集合必須與現有課程一致才寫入 */
 export async function reorderCoursesAction(orderedIds: string[]) {
   await requireEditor();
-  const courses = await prisma.course.findMany({ select: { id: true } });
-  const valid =
-    courses.length === orderedIds.length &&
-    new Set(orderedIds).size === orderedIds.length &&
-    courses.every((c) => orderedIds.includes(c.id));
-  if (!valid) return; // 名單不一致（可能有人同時新增/刪除課程）→ 放棄這次排序
-  await renumberCourses(orderedIds);
+  await reorderCoursesInTx((current) => {
+    const valid =
+      current.length === orderedIds.length &&
+      new Set(orderedIds).size === orderedIds.length &&
+      current.every((c) => orderedIds.includes(c.id));
+    return valid ? orderedIds : null; // 名單不一致→放棄（交易內比對，關掉 TOCTOU）
+  });
 }
 
 /** 複製課程：連同章節/講義/分類；新課程未上架、slug 加 -copy、課程編號留空 */
@@ -346,15 +367,13 @@ export async function duplicateCourse(courseId: string) {
     },
   });
 
-  // 複本排在原課程正後方
-  const courses = await prisma.course.findMany({
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-    select: { id: true },
+  // 複本排在原課程正後方（讀＋算＋寫在同一交易內，避免與其他排序操作競態）
+  await reorderCoursesInTx((current) => {
+    const rest = current.map((c) => c.id).filter((id) => id !== copy.id);
+    const at = rest.indexOf(courseId);
+    rest.splice(at + 1, 0, copy.id);
+    return rest;
   });
-  const rest = courses.map((c) => c.id).filter((id) => id !== copy.id);
-  const at = rest.indexOf(courseId);
-  rest.splice(at + 1, 0, copy.id);
-  await renumberCourses(rest);
 
   // 直接進複本編輯頁，接著改標題/編號/內容
   redirect(`/admin/courses/${copy.id}`);

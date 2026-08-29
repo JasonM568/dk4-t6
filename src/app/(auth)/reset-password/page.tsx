@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-// 設定新密碼頁。主流程：/auth/confirm 已用 token_hash 建好 session 才會到這裡。
-// 另容錯兩種舊格式（比照 hope 站 reset 頁，保證從 QBC 模板格式過來也能用）：
-//   1. ?code=：PKCE 授權碼 → exchangeCodeForSession
-//   2. #access_token=…&refresh_token=…：implicit flow hash → setSession
+// 設定新密碼頁。唯一入口：/auth/confirm 已用 token_hash 驗過並建好 session 才會到這裡。
+//
+// 這頁刻意「不」自己吃 URL 上的 ?code= 或 #access_token 來建 session：
+// 那等於讓任何人把外來 token 塞進受害者的瀏覽器（session fixation）——受害者以為在
+// 改自己的密碼，實際改到攻擊者帳號、之後所有操作都在攻擊者帳號下。course 站的
+// recovery 一律走 /auth/confirm（見 forgotPasswordAction 的 redirectTo），到這頁時
+// session 已由 server 端 cookie 建好，直接讀 getSession 即可。
 type PageStatus = "checking" | "ready" | "no-session";
 
 export default function ResetPasswordPage() {
@@ -21,26 +24,6 @@ export default function ResetPasswordPage() {
     const supabase = createClient();
 
     async function ensureSession() {
-      // 容錯 1：?code= 格式（PKCE，同瀏覽器開信才會成功）
-      const code = new URLSearchParams(window.location.search).get("code");
-      if (code) {
-        await supabase.auth.exchangeCodeForSession(code);
-        // 失敗不中斷——後面統一用 getSession 判定
-      }
-
-      // 容錯 2：#access_token hash 格式（implicit flow）
-      const hashParams = new URLSearchParams(
-        window.location.hash.replace(/^#/, ""),
-      );
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-      if (accessToken && refreshToken) {
-        await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-      }
-
       const { data } = await supabase.auth.getSession();
       setStatus(data.session ? "ready" : "no-session");
     }

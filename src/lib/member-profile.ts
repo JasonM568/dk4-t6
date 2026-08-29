@@ -2,6 +2,7 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 // 會員補充資料（手機＋個資同意）閘門。
 // 2026-08-15 起手機為必填：新會員在註冊時填，既有會員登入後由
@@ -33,6 +34,6 @@ export async function requireCompleteProfile(
   nextPath?: string,
 ): Promise<void> {
   if (await isProfileComplete(userId)) return;
-  const next = nextPath && /^\/(?!\/)/.test(nextPath) ? nextPath : "";
+  const next = nextPath ? safeNextPath(nextPath, "") : "";
   redirect(next ? `/complete-profile?next=${encodeURIComponent(next)}` : "/complete-profile");
 }

@@ -19,7 +19,11 @@ export type SettleInput = {
 
 export type SettleResult =
   | { ok: true; already: boolean } // already=true 表示先前已結算（冪等路徑）
-  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" };
+  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" | "DUPLICATE_PAID" };
+
+/** 已擁有課程視同「已付款且有效」的狀態（不含 REFUNDED/CANCELLED——那代表不再擁有）。
+ *  用來判定「這筆是不是同一門課的第二次付款」。 */
+const OWNED_STATUSES = ["PAID", "CONFIRMED", "COMPLETED"] as const;
 
 /** 視同「已結算」的狀態：PAID 之後的營運態（已確認/已完成）都算。
  *  重送的付款通知打到這些狀態一律走冪等路徑——漏了任何一個，
@@ -56,6 +60,44 @@ export async function settlePaidOrder(input: SettleInput): Promise<SettleResult>
     // 金額比對：金流商說收了多少就得跟訂單一致，不符即拒絕結算
     if (input.amount !== order.total) {
       outcome = { ok: false, reason: "AMOUNT_MISMATCH" };
+      return;
+    }
+
+    // 防重複收款：該會員是否已有「同課、非本單、仍有效已付款」的訂單？
+    // 典型情境——ATM 取號後這張被 lazy expire、學員又刷卡付了另一張拿到課，
+    // 隔天原 ATM 才入帳打回這裡：金額必然相等、狀態非 SETTLED，會被前面的檢查放行，
+    // 導致同一門課收兩次錢、totalSpent 雙計。退款無法自動化（PAYUNi 後台人工），
+    // 這裡拒絕結算、不重複開通/累計，把重複標記寫進 Payment 留痕並告警等人工退款。
+    const courseIds = order.items.map((i) => i.courseId);
+    const dup = await tx.order.findFirst({
+      where: {
+        userId: order.userId,
+        id: { not: order.id },
+        status: { in: [...OWNED_STATUSES] },
+        items: { some: { courseId: { in: courseIds } } },
+      },
+      select: { orderNo: true },
+    });
+    if (dup) {
+      console.error(
+        "[settle] 重複付款：該會員已有同課的有效已付款訂單，拒絕結算、需人工退款",
+        { orderNo: input.orderNo, existingOrderNo: dup.orderNo, courseIds },
+      );
+      // 留痕：把款項與重複來源寫進 Payment.rawCallback，後台/查詢查得到
+      await tx.payment.update({
+        where: { orderId: order.id },
+        data: {
+          tradeNo: input.tradeNo,
+          paymentType: input.paymentType,
+          notifiedAt: new Date(),
+          rawCallback: {
+            ...(input.raw as Record<string, string>),
+            _duplicatePaymentOf: dup.orderNo,
+            _needsRefund: true,
+          } as Prisma.InputJsonValue,
+        },
+      });
+      outcome = { ok: false, reason: "DUPLICATE_PAID" };
       return;
     }
 

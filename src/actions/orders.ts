@@ -188,8 +188,11 @@ export async function updateOrderStatusAction(
     where: { id: order.id },
     data: {
       status: newStatus as (typeof MANUAL_STATUSES)[number],
-      // 取消時釋放結帳防重鍵，學員之後可重新下單
-      ...(newStatus === "CANCELLED" ? { checkoutKey: null } : {}),
+      // checkoutKey 只在 PENDING 擋併發下單，離開 PENDING 一律釋放。
+      // 只清 CANCELLED 會讓「待確認」的單把 userId:courseId 鍵永久鎖死，
+      // 該學員之後對這門課結帳一律撞 P2002，且錯誤訊息「2 小時後自動失效」是假的
+      // （lazy expire 只掃 PENDING）。
+      ...(newStatus === "PENDING" ? {} : { checkoutKey: null }),
     },
   });
   console.log("[orders] 手動變更狀態", { orderNo, from: order.status, to: newStatus });
