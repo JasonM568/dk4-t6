@@ -144,9 +144,13 @@ export default async function EventSignupPage({
         </section>
       )}
 
-      {/* 課程詳情：圖片與影片依後台排好的順序混排 */}
+      {/* 課程詳情：圖片與影片依後台排好的順序混排。
+          排版比照 1shop（.customize > .img img { display:block; width:100% }）——
+          長 DM 是切成多張圖上傳的，區塊間零間距、圖片零圓角才拼得回一張無縫長圖；
+          手機負 margin 突破容器 padding 滿版貼邊（1shop 的 mobile-padding-0），
+          桌機整包一個圓角框。 */}
       {blocks.length > 0 && (
-        <div className="mb-8 space-y-5">
+        <div className="-mx-5 mb-8 sm:mx-0 sm:overflow-hidden sm:rounded-2xl">
           {blocks.map((b, i) => (
             <DmBlockView key={`${b.type}-${b.url}-${i}`} block={b} title={session.title} />
           ))}
@@ -196,12 +200,13 @@ export default async function EventSignupPage({
 }
 
 /** 詳情區塊：YouTube 走 nocookie iframe（CSP frame-src 已放行）；
- *  影片檔直連走 <video>（media-src 只放行 Supabase）；其餘當圖片。 */
+ *  影片檔直連走 <video>（media-src 只放行 Supabase）；其餘當圖片。
+ *  單一區塊不帶圓角與間距——無縫拼接由外層容器統一管（見上方註解）。 */
 function DmBlockView({ block, title }: { block: DmBlock; title: string }) {
   if (block.type === "video") {
     const embed = youTubeEmbedUrl(block.url);
     return embed ? (
-      <div className="aspect-video overflow-hidden rounded-2xl bg-black">
+      <div className="aspect-video bg-black">
         <iframe
           src={embed}
           title={title}
@@ -212,12 +217,14 @@ function DmBlockView({ block, title }: { block: DmBlock; title: string }) {
       </div>
     ) : (
       // eslint-disable-next-line jsx-a11y/media-has-caption
-      <video src={block.url} controls playsInline className="w-full rounded-2xl bg-black" />
+      <video src={block.url} controls playsInline className="block w-full bg-black" />
     );
   }
   return (
+    // display:block 是關鍵——行內圖片的 baseline 對齊會在每張圖底下留 3~4px 縫，
+    // 這正是 Jason 回報「圖片之間有空白間隙」的元凶（1shop 同樣用 display:block 解）
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={block.url} alt={title} className="w-full rounded-2xl" />
+    <img src={block.url} alt={title} className="block w-full" />
   );
 }
 
