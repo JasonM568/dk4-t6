@@ -7,6 +7,7 @@ import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { isCoursePublicActive } from "@/lib/course-access";
 import { nextOrderNo } from "@/lib/order-no";
+import { getProfile } from "@/lib/supabase/admin";
 
 export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
@@ -69,6 +70,15 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
     return { ok: false, error: "此課程無法透過金流購買，請聯繫管理員開通觀看權限" };
   }
 
+  // 訂購人快照（姓名/電話）：下單當下抓，之後會員改資料不影響歷史訂單。
+  // 查不到不擋結帳——快照是後台便利，不是下單條件
+  const [profile, memberProfile] = await Promise.all([
+    getProfile(userId).catch(() => null),
+    prisma.memberProfile.findUnique({ where: { userId } }).catch(() => null),
+  ]);
+  const buyerName = profile?.display_name ?? profile?.nickname ?? null;
+  const buyerPhone = memberProfile?.phone ?? null;
+
   // 建立訂單 + 明細 + 付款紀錄（PENDING）。
   // 兩把唯一鍵各司其職：checkoutKey 擋「同人同課重複下單」；orderNo（代碼+日期+
   // 當日流水，可預測）擋「併發撞號」——撞號就換下一個流水重試，撞 checkoutKey
@@ -83,7 +93,9 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
           orderNo,
           checkoutKey: `${userId}:${courseId}`,
           userId,
-          buyerEmail: user.email, // 下單當下 email 快照（後台顯示與稽核用）
+          buyerEmail: user.email, // 下單當下快照（後台顯示與稽核用）
+          buyerName,
+          buyerPhone,
           status: "PENDING",
           subtotal,
           discount,

@@ -37,6 +37,8 @@ export default async function AdminOrdersPage({
           OR: [
             { orderNo: { contains: query, mode: "insensitive" } },
             { buyerEmail: { contains: query, mode: "insensitive" } },
+            { buyerName: { contains: query, mode: "insensitive" } },
+            { buyerPhone: { contains: query } },
           ],
         }
       : {}),
@@ -91,7 +93,7 @@ export default async function AdminOrdersPage({
           <input
             name="q"
             defaultValue={query}
-            placeholder="訂單編號或 Email"
+            placeholder="訂單編號/姓名/電話/Email"
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none"
           />
           <button className="rounded-lg border border-gray-400 px-3 py-1.5 text-sm hover:bg-gray-100">
@@ -105,13 +107,14 @@ export default async function AdminOrdersPage({
           <thead className="bg-gray-50 text-left text-gray-500">
             <tr>
               <th className="px-4 py-3">訂單編號</th>
-              <th className="px-4 py-3">會員</th>
+              <th className="px-4 py-3">訂購人</th>
               <th className="px-4 py-3">課程</th>
               <th className="px-4 py-3">金額</th>
               <th className="px-4 py-3">狀態</th>
-              <th className="px-4 py-3">金流</th>
+              <th className="px-4 py-3">付款方式</th>
               <th className="px-4 py-3">發票</th>
-              <th className="px-4 py-3">時間</th>
+              <th className="px-4 py-3">訂購時間</th>
+              <th className="px-4 py-3">付款時間</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -128,8 +131,14 @@ export default async function AdminOrdersPage({
                       {o.orderNo}
                     </Link>
                   </td>
-                  {/* 會員 email 用下單當下的快照欄位（User 關聯已移除） */}
-                  <td className="px-4 py-3">{o.buyerEmail ?? "—"}</td>
+                  {/* 訂購人快照（下單當下的姓名/電話/Email，1shop 樣式疊放） */}
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{o.buyerName ?? "—"}</div>
+                    {o.buyerPhone && (
+                      <div className="text-xs text-gray-500">{o.buyerPhone}</div>
+                    )}
+                    <div className="text-xs text-gray-400">{o.buyerEmail ?? ""}</div>
+                  </td>
                   <td className="px-4 py-3">
                     {o.items.map((it) => it.course.title).join("、")}
                   </td>
@@ -142,8 +151,7 @@ export default async function AdminOrdersPage({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {o.payment?.provider ?? "—"}
-                    {o.payment?.paymentType ? `｜${o.payment.paymentType}` : ""}
+                    {o.payment?.paymentType ?? "—"}
                   </td>
                   <td className="px-4 py-3">
                     {badge ? (
@@ -161,13 +169,16 @@ export default async function AdminOrdersPage({
                       <span className="text-xs text-gray-300">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-400">{formatDate(o.createdAt)}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{formatDate(o.createdAt)}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">
+                    {o.paidAt ? formatDate(o.paidAt) : "—"}
+                  </td>
                 </tr>
               );
             })}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
                   沒有符合條件的訂單
                 </td>
               </tr>

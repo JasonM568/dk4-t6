@@ -1087,7 +1087,11 @@ model Order {
   // 併發下單靠 unique violation 擋，不靠先查再建
   checkoutKey String?     @unique
   userId      String      @db.Uuid // auth.users.id，無 FK
-  buyerEmail  String? // 下單當下 email 快照（後台顯示與稽核用）
+  // 訂購人快照（下單當下抓，對齊 1shop 訂單介面）：會員之後改資料不影響歷史訂單。
+  // name 取自 QBC profiles.display_name、phone 取自 MemberProfile（都可能缺）
+  buyerEmail  String?
+  buyerName   String?
+  buyerPhone  String?
   status      OrderStatus @default(PENDING)
   subtotal    Int // 折扣前總額
   discount    Int         @default(0) // 套用的折扣金額

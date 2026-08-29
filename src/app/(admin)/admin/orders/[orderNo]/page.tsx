@@ -54,7 +54,9 @@ export default async function AdminOrderDetailPage({
       <section className="rounded-2xl border border-gray-200 p-5">
         <h2 className="mb-3 text-base font-bold">訂單資訊</h2>
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <Row label="會員 Email" value={order.buyerEmail ?? "—"} />
+          <Row label="訂購人" value={order.buyerName ?? "—"} />
+          <Row label="電話" value={order.buyerPhone ?? "—"} />
+          <Row label="Email" value={order.buyerEmail ?? "—"} />
           <Row label="訂單金額" value={formatNT(order.total)} />
           <Row
             label="明細"
