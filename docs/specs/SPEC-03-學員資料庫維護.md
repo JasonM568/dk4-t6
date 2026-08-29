@@ -4,12 +4,12 @@
 
 | 欄位 | 內容 |
 |---|---|
-| 文件版本 | v0.2 Draft |
+| 文件版本 | v0.3 Implemented |
 | 建立日期 | 2026-08-29 |
 | 模組 | 學員資料庫 `/admin/students` |
 | 需求來源 | 現行程式、資料模型、CLAUDE.md、2026-08-29 名單分類與課程開通討論 |
 | 實作對象 | Claude／Coding Agent |
-| 狀態 | 待使用者確認後實作 |
+| 狀態 | 已實作安全永久刪除 |
 
 ### 已確認需求
 
@@ -231,6 +231,10 @@
 - 不接受 client 傳入 history 數或認領狀態作為刪除依據。
 - history 更新／刪除時 where 條件同時確認 `id` 與 `studentId`，避免跨學員 IDOR。
 - 永久刪除後不得主動修改任何其他模組資料。
+- 永久刪除只開放 Full Admin。若 `claimedUserId` 或同 Email 候選會員存在任何 `Enrollment`，伺服器必須即時拒絕刪除並建議改用封存；前端隱藏或停用按鈕不能取代此檢查。
+- 已註冊但沒有 `Enrollment` 時，可刪除 `StudentRecord` 名單卡，但必須保留 Supabase Auth/profile、MemberProfile、訂單、場次報名、PendingEnrollment 與其他模組資料。
+- 刪除前需顯示將一併 cascade 的正式課程歷史與活動接觸筆數，要求刪除原因，並輸入姓名；無姓名時改輸入 Email，再無 Email 才輸入 `DELETE`。
+- 成功刪除前先建立 `StudentDataAuditLog/STUDENT_PERMANENT_DELETE`，保存必要快照、關聯筆數與刪除原因，不保存密碼或 Auth 憑證。
 - 現有匯入與同步流程的測試必須回歸通過。
 
 ### T7. 文件與測試

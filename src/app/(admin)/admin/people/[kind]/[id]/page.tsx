@@ -5,9 +5,11 @@ import { getProfile, getProfilesByEmails, getProfilesByIds, type Profile } from 
 import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
 import { isFullAdmin } from "@/lib/auth/role";
 import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
-import { claimStudentToMemberAction } from "@/actions/person-roster";
+import { claimStudentToMemberAction, permanentlyDeleteStudentAction } from "@/actions/person-roster";
+import { studentDeleteConfirmation } from "@/lib/student-deletion";
 import { EnrollmentEditor } from "../../../members/[id]/enrollment-editor";
 import { ClaimForm } from "./claim-form";
+import { DeleteStudentForm } from "./delete-form";
 
 export const dynamic = "force-dynamic";
 const fmt = (d: Date | null | undefined) => d ? d.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }) : "未記錄";
@@ -30,14 +32,16 @@ export default async function PersonPage({ params }: { params: Promise<{ kind: s
   const phoneProfiles = await getProfilesByIds(phoneMatches.map((m) => m.userId));
   const candidateMap = new Map([...emailMatches, ...phoneProfiles].map((p) => [p.id, p]));
   const candidates = [...candidateMap.values()];
+  const protectedUserIds = [...new Set([userId, ...candidates.map((p) => p.id)].filter((v): v is string => Boolean(v)))];
 
-  const [enrollments, pending, signups, relatedStudents, courses, audits] = await Promise.all([
+  const [enrollments, pending, signups, relatedStudents, courses, audits, protectedEnrollmentCount] = await Promise.all([
     userId ? prisma.enrollment.findMany({ where: { userId }, include: { course: { select: { title: true } } }, orderBy: { createdAt: "desc" } }) : [],
     email ? prisma.pendingEnrollment.findMany({ where: { email: { equals: email, mode: "insensitive" }, claimedAt: null }, include: { course: { select: { title: true } } }, orderBy: { createdAt: "desc" } }) : [],
     email ? prisma.sessionSignup.findMany({ where: { email: { equals: email, mode: "insensitive" } }, include: { session: { select: { title: true, eventDate: true } } }, orderBy: { createdAt: "desc" }, take: 100 }) : [],
     email ? prisma.studentRecord.findMany({ where: { email: { equals: email, mode: "insensitive" }, ...(student ? { id: { not: student.id } } : {}) }, select: { id: true, name: true, claimedUserId: true, archivedAt: true } }) : [],
     prisma.course.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }], select: { id: true, title: true, isPublished: true } }),
     student ? prisma.studentDataAuditLog.findMany({ where: { studentId: student.id }, orderBy: { createdAt: "desc" }, take: 50, select: { id: true, action: true, actorEmail: true, createdAt: true } }) : [],
+    protectedUserIds.length ? prisma.enrollment.count({ where: { userId: { in: protectedUserIds } } }) : 0,
   ]);
   if (kind === "pending" && pending.length === 0 && candidates.length === 0 && relatedStudents.length === 0) notFound();
   const title = student?.name || profileName(profile) || pending[0]?.name || email;
@@ -59,5 +63,6 @@ export default async function PersonPage({ params }: { params: Promise<{ kind: s
       <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">讀冊會／問卷／活動</h2><div className="mt-3 space-y-2">{student?.engagements.map((e) => <div key={e.id} className="rounded-lg border p-3 text-sm"><b>{e.title}</b><div className="mt-1 text-xs text-gray-500">{e.type} · {fmt(e.occurredAt)}</div></div>)}{!student?.engagements.length && <p className="text-sm text-gray-400">沒有活動接觸紀錄</p>}</div></section></div>
     <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">場次報名紀錄</h2><p className="mt-1 text-xs text-gray-400">此區依人物 Email 查找；共用信箱時請搭配姓名人工確認。</p><div className="mt-3 space-y-2">{signups.map((s) => <div key={s.id} className="flex flex-wrap justify-between gap-2 rounded-lg border p-3 text-sm"><span><b>{s.session.title}</b> · 報名姓名 {s.name}</span><span className="text-gray-500">{fmt(s.session.eventDate || s.orderedAt)}</span></div>)}{signups.length === 0 && <p className="text-sm text-gray-400">沒有場次報名紀錄</p>}</div></section>
     {student && <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">異動紀錄</h2><div className="mt-3 space-y-2">{audits.map((a) => <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b py-2 text-sm"><span>{a.action}</span><span className="text-gray-500">{a.actorEmail || "系統"} · {a.createdAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</span></div>)}{audits.length === 0 && <p className="text-sm text-gray-400">尚無異動紀錄</p>}</div></section>}
+    {student && fullAdmin && <DeleteStudentForm action={permanentlyDeleteStudentAction.bind(null, student.id)} expected={studentDeleteConfirmation(student.name, student.email)} historyCount={student.histories.length} engagementCount={student.engagements.length} blocked={protectedEnrollmentCount > 0}/>}
   </div>;
 }
