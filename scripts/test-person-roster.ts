@@ -13,6 +13,7 @@ const rows = buildPersonRoster({
     { id: "s-claimed", claimedUserId: "u-claimed", name: "已認領", email: "claimed@example.com", phone: null, archivedAt: null, legacyAccessStatus: "NONE", historyCount: 2, engagementCount: 0 },
     { id: "s-shared-a", claimedUserId: null, name: "甲", email: "shared@example.com", phone: null, archivedAt: null, legacyAccessStatus: "ACTIVE", historyCount: 1, engagementCount: 0 },
     { id: "s-shared-b", claimedUserId: null, name: "乙", email: "shared@example.com", phone: null, archivedAt: null, legacyAccessStatus: "UNKNOWN", historyCount: 0, engagementCount: 1 },
+    { id: "s-safe", claimedUserId: null, name: "測試名單", email: "safe@example.com", phone: null, archivedAt: null, legacyAccessStatus: "NONE", historyCount: 0, engagementCount: 0 },
   ],
   enrollmentCounts: [{ userId: "u-claimed", count: 1 }, { userId: "u-video", count: 2 }],
   pending: [{ email: "pending@example.com", name: "待註冊", count: 1 }],
@@ -29,4 +30,9 @@ assert.ok(rows.find((r) => r.kind === "pending")?.flags.includes("PENDING_REGIST
 assert.ok(personMatchesFilter(rows.find((r) => r.userId === "u-video")!, "HAS_ACCESS"));
 assert.ok(personMatchesFilter(rows.find((r) => r.userId === "u-archived")!, "ARCHIVED"));
 assert.ok(!personMatchesFilter(rows.find((r) => r.userId === "u-archived")!, "ALL"), "一般列表需排除封存會員");
+assert.equal(rows.find((r) => r.studentId === "s-claimed")?.deleteStatus, "PROTECTED", "已認領且有影片必須禁止批次刪除");
+assert.equal(rows.find((r) => r.studentId === "s-shared-a")?.deleteStatus, "REVIEW", "共用 Email 必須改為人工確認");
+assert.equal(personMatchesFilter(rows.find((r) => r.studentId === "s-shared-a")!, "SAFE_TO_DELETE"), false);
+assert.equal(rows.find((r) => r.studentId === "s-safe")?.deleteStatus, "ELIGIBLE");
+assert.ok(personMatchesFilter(rows.find((r) => r.studentId === "s-safe")!, "SAFE_TO_DELETE"));
 console.log("✓ person roster identity, filters and task flags passed");

@@ -114,6 +114,21 @@ export async function getProfilesByEmails(
   return map;
 }
 
+/** 破壞性操作專用：任何一批查詢失敗就 throw，禁止把「查不到」誤當成「沒有會員」。 */
+export async function getProfilesByEmailsStrict(emails: string[]): Promise<Map<string, Profile>> {
+  const supabase = createAdminClient();
+  const map = new Map<string, Profile>();
+  const normalized = [...new Set(emails.map((e) => e.toLowerCase()))];
+  for (let i = 0; i < normalized.length; i += 200) {
+    const chunk = normalized.slice(i, i + 200);
+    const orFilter = chunk.map((e) => `email.ilike.${e.replace(/[,()]/g, "")}`).join(",");
+    const { data, error } = await supabase.from("profiles").select("id, email, display_name, nickname, role").or(orFilter);
+    if (error) throw new Error(`PROFILE_SAFETY_CHECK_FAILED:${error.message}`);
+    for (const profile of (data ?? []) as Profile[]) if (profile.email) map.set(profile.email.toLowerCase(), profile);
+  }
+  return map;
+}
+
 export type CreateMemberResult =
   | { ok: true; userId: string }
   // B7：email 已存在時，盡量帶上既有 auth user id，

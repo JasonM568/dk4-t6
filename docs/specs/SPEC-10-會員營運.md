@@ -116,6 +116,7 @@ coach 可查看允許的會員資訊；operator 可新增、匯入、批次開�
 - 只有 `claimedUserId` 會合併人物。Email／手機匹配只顯示候選；Full Admin 勾選確認後才可連結，且寫入 `StudentDataAuditLog/STUDENT_CLAIM`。同一會員已有其他學員卡時拒絕連結。
 - 人物頁影片操作沿用 SPEC-06 的 `grantEnrollmentAction`／`revokeEnrollment`，不建立第二套授權資料。
 - 人物頁提供 Full Admin 專用的名單永久刪除區。已註冊且有 Enrollment（含未認領但同 Email 候選會員）時必須阻擋；其餘只刪 SPEC-03 的 StudentRecord 卡片，絕不刪會員登入帳號。
+- 統一入口提供「可安全刪除」快速篩選與最多 50 筆的批次預覽。預覽／結果皆分開顯示可刪、權限保護、身分待確認與失敗，實際刪除規則與稽核由 SPEC-03 service 負責。
 
 ### 待確認但不阻擋第一階段
 

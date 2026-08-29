@@ -80,7 +80,7 @@
 - 不刪除或編輯 Supabase `auth.users`／`public.profiles`。
 - 不刪除 `Enrollment`、`PendingEnrollment`、訂單、付款、場次報名或 EDM 歷史。
 - 不把兩位學員合併成一位；合併需另立 SPEC。
-- 不批次刪除學員。
+- 不批次刪除會員帳號、Enrollment 或其他模組資料；批次操作只限安全合格的 `StudentRecord` 名單卡。
 - 不以 Email 改為唯一識別鍵。
 - 不允許使用者自行修改學員歷史。
 - 不提供稽核快照的一鍵還原。
@@ -213,7 +213,7 @@
 
 - 刪除區塊使用紅色危險樣式，與一般編輯按鈕分開。
 - 刪除前顯示：姓名、手機、Email、history 筆數、是否已認領會員。
-- 使用者需輸入姓名；姓名空白時輸入手機；兩者皆空白時輸入 `DELETE`。
+- 使用者需輸入姓名；姓名空白時輸入 Email；兩者皆空白時輸入 `DELETE`。
 - Server Action 必須重新查詢資料並核對確認文字，不能只依前端確認結果。
 - 在單一 transaction 先寫入完整 before snapshot，再刪除 `StudentRecord`。
 - 刪除後導回 `/admin/students?deleted=1`。
@@ -258,6 +258,17 @@
 - `/admin/students` 預設只顯示 `archivedAt=null`；提供「已封存」入口與搜尋，封存頁可進詳情解除。
 - 封存不得刪除或修改 Auth、MemberProfile、Enrollment、PendingEnrollment、訂單、上課履歷或接觸紀錄。
 
+### T10. 安全篩選與批次永久刪除
+
+- `/admin/people` 提供「可安全刪除」篩選；資格只能由 read model 統一判定，不由 UI 猜測。
+- Full Admin 可勾選學員卡，每批最多 50 筆；會員列與只有 PendingEnrollment 的列不可勾選，因為它們不是 StudentRecord。
+- 執行前預覽分為：`ELIGIBLE` 可刪除、`PROTECTED` 有 Enrollment 禁止、`REVIEW` 共用 Email／身分衝突需逐筆人工確認。
+- 管理員需填整批原因並輸入 `DELETE N`；N 是本次送出的總選取筆數，不是預估可刪筆數。
+- Server Action 必須重新載入 StudentRecord、同 Email profile、Enrollment 與重複 Email 狀態，不接受 client 傳入的資格。
+- Supabase profile 安全查核採 fail closed：任何查詢失敗時整批停止，不得把外部服務錯誤解讀為「沒有註冊會員」。
+- 每筆可刪資料各自使用 transaction：先寫 `STUDENT_PERMANENT_DELETE_BULK` audit，再刪 StudentRecord；執行前新增加 Enrollment 時必須略過。
+- 結果報告需分別列出成功、權限保護略過、待人工確認與失敗；單筆失敗不得讓其他安全資料的結果不透明。
+
 ## 8. 驗收標準
 
 | 編號 | 驗收條件 |
@@ -283,6 +294,10 @@
 | AC-19 | 跨模組摘要遇共用 Email 或身分歧義時不自動合併，回傳待人工確認狀態 |
 | AC-20 | Full Admin 封存後一般名單不再顯示，但可在已封存檢視找到並解除；所有歷史、帳號與權限維持不變 |
 | AC-21 | Editor／coach／未登入者無法呼叫封存或解除 Action，兩種操作都有原因、操作者與時間稽核 |
+| AC-22 | 「可安全刪除」只包含有 StudentRecord、無 Enrollment 且無身分衝突的資料 |
+| AC-23 | 批次超過 50 筆、確認文字錯誤或非 Full Admin 時整批拒絕 |
+| AC-24 | 批次執行時重新查核 Enrollment；受保護與共用 Email 資料不刪除，並出現在結果報告 |
+| AC-25 | 批次成功只刪 StudentRecord 與 cascade 子紀錄，每筆留下 audit，不影響會員與其他模組 |
 
 ## 9. 非功能需求、待確認與 Agent 指示
 

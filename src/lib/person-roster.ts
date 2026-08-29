@@ -1,4 +1,5 @@
 import type { Profile } from "@/lib/supabase/admin";
+import { studentBulkDeleteStatus } from "@/lib/student-deletion";
 
 export type PersonFilter =
   | "ALL"
@@ -11,6 +12,7 @@ export type PersonFilter =
   | "LEGACY"
   | "LEAD"
   | "IDENTITY_CONFLICT"
+  | "SAFE_TO_DELETE"
   | "ARCHIVED";
 
 export type PersonFlag = Exclude<PersonFilter, "ALL" | "REGISTERED" | "UNREGISTERED">;
@@ -32,6 +34,7 @@ export type PersonSummary = {
   legacyAccessStatus: string;
   flags: PersonFlag[];
   candidateUserId: string | null;
+  deleteStatus: "ELIGIBLE" | "PROTECTED" | "REVIEW" | "NOT_APPLICABLE";
 };
 
 export type PersonRosterInput = {
@@ -95,7 +98,10 @@ export function buildPersonRoster(input: PersonRosterInput): PersonSummary[] {
       candidateUserId: candidates.length === 1 ? candidates[0].id : null,
     };
     const conflict = candidates.length > 1 || Boolean(email && (studentEmails.get(email) ?? 0) > 1);
-    rows.push({ ...base, flags: flagsFor(base, conflict) });
+    const protectedEnrollmentCount = [...new Set([s.claimedUserId, ...candidates.map((p) => p.id)].filter(Boolean))]
+      .reduce((sum, userId) => sum + (enrollmentByUser.get(userId!) ?? 0), 0);
+    const deleteStatus = studentBulkDeleteStatus({ enrollmentCount: protectedEnrollmentCount, identityConflict: conflict });
+    rows.push({ ...base, deleteStatus, flags: flagsFor({ ...base, deleteStatus }, conflict) });
     if (email) pendingByEmail.delete(email);
   }
 
@@ -105,7 +111,7 @@ export function buildPersonRoster(input: PersonRosterInput): PersonSummary[] {
     const base = { key: `member:${p.id}`, kind: "member" as const, userId: p.id, studentId: null,
       name: displayName(p), email, phone: phoneByUser.get(p.id) ?? null, registered: true, archived: archivedUsers.has(p.id),
       historyCount: 0, engagementCount: 0, enrollmentCount: enrollmentByUser.get(p.id) ?? 0,
-      pendingCount: pending?.count ?? 0, legacyAccessStatus: "UNKNOWN", candidateUserId: null };
+      pendingCount: pending?.count ?? 0, legacyAccessStatus: "UNKNOWN", candidateUserId: null, deleteStatus: "NOT_APPLICABLE" as const };
     rows.push({ ...base, flags: flagsFor(base, Boolean(email && (studentEmails.get(email) ?? 0) > 0)) });
     if (email) pendingByEmail.delete(email);
   }
@@ -114,7 +120,7 @@ export function buildPersonRoster(input: PersonRosterInput): PersonSummary[] {
     const base = { key: `pending:${email}`, kind: "pending" as const, userId: null, studentId: null,
       name: pending.name || email, email, phone: null, registered: false, archived: false,
       historyCount: 0, engagementCount: 0, enrollmentCount: 0, pendingCount: pending.count,
-      legacyAccessStatus: "UNKNOWN", candidateUserId: null };
+      legacyAccessStatus: "UNKNOWN", candidateUserId: null, deleteStatus: "NOT_APPLICABLE" as const };
     rows.push({ ...base, flags: flagsFor(base) });
   }
   return rows;
@@ -124,6 +130,7 @@ export function personMatchesFilter(person: PersonSummary, filter: PersonFilter)
   if (filter === "ALL") return !person.archived;
   if (filter === "REGISTERED") return person.registered && !person.archived;
   if (filter === "UNREGISTERED") return !person.registered && !person.archived;
+  if (filter === "SAFE_TO_DELETE") return person.deleteStatus === "ELIGIBLE";
   return person.flags.includes(filter);
 }
 

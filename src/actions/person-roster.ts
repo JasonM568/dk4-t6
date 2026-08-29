@@ -6,10 +6,17 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireFullAdmin } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
-import { getProfile, getProfilesByEmails } from "@/lib/supabase/admin";
-import { canPermanentlyDeleteStudent, studentDeleteConfirmation } from "@/lib/student-deletion";
+import { getProfile, getProfilesByEmailsStrict } from "@/lib/supabase/admin";
+import { canPermanentlyDeleteStudent, studentBulkDeleteStatus, studentDeleteConfirmation } from "@/lib/student-deletion";
 
 export type PersonClaimState = { error?: string; success?: string } | null;
+export type BulkStudentDeleteState = {
+  error?: string;
+  deleted?: { id: string; name: string }[];
+  protected?: { id: string; name: string; reason: string }[];
+  review?: { id: string; name: string; reason: string }[];
+  failed?: { id: string; name: string; reason: string }[];
+} | null;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
 /** 高風險身分連結：只接受管理員在人物頁明確選定的 userId，不做 email 自動認領。 */
@@ -52,7 +59,9 @@ export async function permanentlyDeleteStudentAction(studentId: string, _prev: P
   if (confirmation.toLowerCase() !== expected.toLowerCase()) return { error: `請輸入「${expected}」確認永久刪除` };
 
   // 未認領但 Email 已對到會員時也納入保護；Email 不用來合併人物，只用來阻止危險刪除。
-  const emailProfiles = student.email ? [...(await getProfilesByEmails([student.email])).values()] : [];
+  let emailProfiles;
+  try { emailProfiles = student.email ? [...(await getProfilesByEmailsStrict([student.email])).values()] : []; }
+  catch { return { error: "會員與影片權限查核暫時失敗，為避免誤刪，本次沒有刪除任何資料" }; }
   const protectedUserIds = [...new Set([student.claimedUserId, ...emailProfiles.map((p) => p.id)].filter((v): v is string => Boolean(v)))];
   try {
     await prisma.$transaction(async (tx) => {
@@ -78,4 +87,75 @@ export async function permanentlyDeleteStudentAction(studentId: string, _prev: P
   }
   revalidatePath("/admin/people"); revalidatePath("/admin/students"); revalidatePath("/admin/students/segments");
   redirect("/admin/people?deleted=1");
+}
+
+export async function bulkPermanentlyDeleteStudentsAction(_prev: BulkStudentDeleteState, fd: FormData): Promise<BulkStudentDeleteState> {
+  await requireFullAdmin();
+  const actor = await getAuthUser();
+  if (!actor) return { error: "登入狀態已失效，請重新登入" };
+  const studentIds = [...new Set(fd.getAll("studentIds").map(String).filter(Boolean))];
+  const reason = String(fd.get("reason") ?? "").trim();
+  if (studentIds.length === 0) return { error: "請至少選擇一筆學員名單" };
+  if (studentIds.length > 50) return { error: "每批最多 50 筆，請縮小選取範圍" };
+  if (reason.length < 2) return { error: "請填寫這批名單的刪除原因" };
+  if (String(fd.get("confirmation") ?? "").trim().toUpperCase() !== `DELETE ${studentIds.length}`) {
+    return { error: `請輸入「DELETE ${studentIds.length}」確認本批操作` };
+  }
+  const students = await prisma.studentRecord.findMany({
+    where: { id: { in: studentIds } },
+    include: { histories: true, engagements: true },
+  });
+  const labels = new Map(students.map((s) => [s.id, s.name || s.email || s.phone || s.id]));
+  const missing = studentIds.filter((id) => !labels.has(id));
+  const emails = [...new Set(students.map((s) => s.email?.trim().toLowerCase()).filter((v): v is string => Boolean(v)))];
+  let profilesByEmail;
+  let sameEmailStudents;
+  try {
+    [profilesByEmail, sameEmailStudents] = await Promise.all([
+      getProfilesByEmailsStrict(emails),
+      emails.length ? prisma.studentRecord.findMany({ where: { email: { in: emails, mode: "insensitive" } }, select: { email: true } }) : [],
+    ]);
+  } catch {
+    return { error: "會員與影片權限查核暫時失敗，為避免誤刪，本批沒有刪除任何資料" };
+  }
+  const emailCounts = new Map<string, number>();
+  for (const row of sameEmailStudents) { const key = row.email?.toLowerCase(); if (key) emailCounts.set(key, (emailCounts.get(key) ?? 0) + 1); }
+  const userIds = [...new Set(students.flatMap((s) => [s.claimedUserId, s.email ? profilesByEmail.get(s.email.toLowerCase())?.id : null]).filter((v): v is string => Boolean(v)))];
+  const enrollmentGroups = userIds.length ? await prisma.enrollment.groupBy({ by: ["userId"], where: { userId: { in: userIds } }, _count: { _all: true } }) : [];
+  const enrollmentByUser = new Map(enrollmentGroups.map((r) => [r.userId, r._count._all]));
+  const deleted: NonNullable<BulkStudentDeleteState>["deleted"] = [];
+  const protectedRows: NonNullable<BulkStudentDeleteState>["protected"] = [];
+  const review: NonNullable<BulkStudentDeleteState>["review"] = [];
+  const failed: NonNullable<BulkStudentDeleteState>["failed"] = missing.map((id) => ({ id, name: id, reason: "資料不存在或已刪除" }));
+
+  for (const student of students) {
+    const name = labels.get(student.id)!;
+    const email = student.email?.toLowerCase() ?? null;
+    const candidateId = email ? profilesByEmail.get(email)?.id : null;
+    const protectedIds = [...new Set([student.claimedUserId, candidateId].filter((v): v is string => Boolean(v)))];
+    const status = studentBulkDeleteStatus({ enrollmentCount: protectedIds.reduce((sum, id) => sum + (enrollmentByUser.get(id) ?? 0), 0), identityConflict: Boolean(email && (emailCounts.get(email) ?? 0) > 1) });
+    if (status === "PROTECTED") {
+      protectedRows.push({ id: student.id, name, reason: "已註冊且有課程觀看權限" }); continue;
+    }
+    if (status === "REVIEW") {
+      review.push({ id: student.id, name, reason: "同 Email 有多張學員卡，需逐筆人工確認" }); continue;
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const freshEnrollmentCount = protectedIds.length ? await tx.enrollment.count({ where: { userId: { in: protectedIds } } }) : 0;
+        if (freshEnrollmentCount > 0) throw new Error("PROTECTED_BY_ENROLLMENT");
+        await tx.studentDataAuditLog.create({ data: { studentId: student.id, action: "STUDENT_PERMANENT_DELETE_BULK", actorEmail: actor.email ?? null,
+          beforeJson: json({ student: { id: student.id, name: student.name, email: student.email, phone: student.phone, claimedUserId: student.claimedUserId,
+            legacyAccessStatus: student.legacyAccessStatus, archivedAt: student.archivedAt }, historyCount: student.histories.length,
+            engagementCount: student.engagements.length, reason }) } });
+        await tx.studentRecord.delete({ where: { id: student.id } });
+      });
+      deleted.push({ id: student.id, name });
+    } catch (error) {
+      if (error instanceof Error && error.message === "PROTECTED_BY_ENROLLMENT") protectedRows.push({ id: student.id, name, reason: "執行前新增加影片權限，已自動略過" });
+      else failed.push({ id: student.id, name, reason: "刪除失敗，資料未變更" });
+    }
+  }
+  revalidatePath("/admin/people"); revalidatePath("/admin/students"); revalidatePath("/admin/students/segments");
+  return { deleted, protected: protectedRows, review, failed };
 }
