@@ -203,12 +203,17 @@ export default async function BroadcastPage({
     <div className="max-w-3xl">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Email群發（電子報）</h1>
-        <Link
-          href="/admin/broadcast/groups"
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
-        >
-          📋 名單群組（{groups.length}）
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/admin/broadcast/analytics" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50">📊 成效</Link>
+          <Link href="/admin/broadcast/health" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50">🩺 名單健康</Link>
+          <Link href="/admin/broadcast/templates" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50">📄 範本</Link>
+          <Link
+            href="/admin/broadcast/groups"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            📋 名單群組（{groups.length}）
+          </Link>
+        </div>
       </div>
       <p className="mb-6 text-sm text-gray-500">
         寄送 EDM 給全部會員、名單群組或手動貼入的名單。

@@ -16,6 +16,8 @@
 | `MailGroupMember` | 群組成員 | `email`、`name?`、`@@unique([groupId, email])` |
 | `MailUnsubscribe` | 退訂／退信抑制名單 | `email @id`、`source`（USER／BOUNCE／COMPLAINT） |
 | `BroadcastEvent` | 成效事件 | `@@unique([broadcastId, email, type])`，type = DELIVERED/OPENED/CLICKED/BOUNCED/COMPLAINED |
+| `BroadcastLinkEvent` | 逐人逐 URL 點擊彙總 | `clickCount`、首次／最後點擊；URL 以 SHA-256 建唯一索引 |
+| `WebhookReceipt` | webhook 重送冪等收據 | `svixId @unique`，不保存 payload |
 | `MailTemplate` | 常用範本 | 只存內容，不存發送對象 |
 
 **重要設計慣例：`EmailBroadcast` 上沒有任何外鍵。** `groupId`、`groupIds`、`sessionIds`、`courseId`、`sourceBroadcastId`、`resendOfId` 全是「軟連結」——指向的東西被刪掉時不會連動刪除群發紀錄，只是查不到而已。`EmailBroadcastRecipient.broadcastId` 也刻意不設 FK。這是刻意的：歷史紀錄要能永久保留，不該因為刪掉一個群組或來源資料就消失。
@@ -155,12 +157,21 @@ PENDING（已解析，尚未取得 provider 結果）
 | `src/lib/email/broadcast.ts` | 實際打 Resend API、HTML 組版、變數替換 |
 | `src/lib/email/audience.ts` | `broadcastGroupIds()` 與預覽型別（**非** server-only，client component 可 import 型別） |
 | `src/lib/email/followup.ts` | 跟進條件常數與 ACCEPTED 母集合純函式（獨立成檔是因為 `"use server"` 檔不能 export 常數） |
+| `src/lib/email/message-type.ts` | MARKETING／NOTICE audience 守門純函式 |
+| `src/lib/email/analytics.ts` | 送達／點擊／開信等 KPI 計算（分母固定 ACCEPTED） |
+| `src/lib/email/link-event.ts` | 合法 URL 檢查、Svix 冪等與逐連結點擊累加 |
+| `src/lib/email/preflight.ts` | 寄送前錯誤與警告純函式 |
+| `src/lib/email/health.ts` | 名單健康統計、篩選與資料列 |
+| `src/lib/email/performance-segment.ts` | 依成效條件解析 ACCEPTED 靜態名單 |
 | `src/lib/email/unsubscribe.ts` | 退訂連結的 HMAC token |
 | `src/actions/admin.ts` | 所有 server action；`resolveBroadcastAudience()` 是表單→`audienceData` 的轉換點 |
 | `src/app/(admin)/admin/broadcast/broadcast-form.tsx` | 群發表單（client，`useActionState`），新增/編輯共用 |
 | `src/app/(admin)/admin/broadcast/[id]/page.tsx` | 群發明細：成效、收件名單快照、失敗名單、建立跟進信 |
 | `src/app/api/cron/broadcast/route.ts` | 排程寄送入口 |
 | `src/app/api/webhooks/resend/route.ts` | 成效事件與退信回寫 |
+| `src/app/(admin)/admin/broadcast/analytics/` | 7／30／90 天成效儀表板 |
+| `src/app/(admin)/admin/broadcast/health/` | 名單健康、搜尋與只讀治理 |
+| `src/app/(admin)/admin/broadcast/templates/` | 獨立範本管理 |
 | `scripts/test-edm-delivery.ts` | mock Resend：部分成功、429 重試、5xx 用盡、跟進名單口徑 |
 
 ---
@@ -181,9 +192,11 @@ PENDING（已解析，尚未取得 provider 結果）
 ```bash
 npx tsx scripts/test-edm-render.ts
 npx tsx --conditions=react-server scripts/test-edm-delivery.ts
+npx tsx scripts/test-edm-phase2.ts
 
 # 會寫資料庫，只能對 localhost / 127.0.0.1 執行；腳本本身有安全鎖
 npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts
+npx tsx --conditions=react-server scripts/test-edm-link-db.ts
 
 pnpm check:actions
 npx tsc --noEmit

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { recordBroadcastLinkClick } from "@/lib/email/link-event";
 
 // Resend Webhook（svix 格式）：email.delivered/opened/clicked/bounced/complained
 // → BroadcastEvent 事件回流（唯一鍵天然去重）；退信/投訴自動加入退訂名單。
@@ -95,7 +96,12 @@ export async function POST(request: NextRequest) {
 
   let event: {
     type?: string;
-    data?: { to?: unknown; tags?: unknown; bounce?: { message?: string } };
+    data?: {
+      to?: unknown;
+      tags?: unknown;
+      bounce?: { message?: string };
+      click?: { link?: unknown; timestamp?: unknown };
+    };
   };
   try {
     event = JSON.parse(payload);
@@ -120,6 +126,20 @@ export async function POST(request: NextRequest) {
     await prisma.broadcastEvent.createMany({
       data: [{ broadcastId, email, type }],
       skipDuplicates: true, // 唯一鍵 (broadcastId,email,type) → webhook 重送冪等
+    });
+  }
+
+  // Resend 官方 email.clicked payload：data.click.link / timestamp。
+  // IP 與 user agent 刻意不保存。Svix 同一 id 的重送以 WebhookReceipt 冪等擋下；
+  // receipt 與 link upsert 放同一交易，避免「先寫 receipt、後寫事件失敗」造成永久漏記。
+  if (type === "CLICKED" && broadcastId) {
+    await recordBroadcastLinkClick({
+      svixId,
+      eventType: event.type ?? "email.clicked",
+      broadcastId,
+      email,
+      link: event.data?.click?.link,
+      timestamp: event.data?.click?.timestamp,
     });
   }
 

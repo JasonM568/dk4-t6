@@ -275,6 +275,33 @@ model BroadcastEvent {
   @@index([broadcastId])
 }
 
+// EDM 逐連結點擊彙總：同一封信／收件人／URL 一列，保留首次、最後與次數。
+// 不保存 Resend click payload 的 IP / user agent（分析不需要，遵守資料最小化）。
+model BroadcastLinkEvent {
+  id             String   @id @default(cuid())
+  broadcastId    String
+  email          String
+  url            String   @db.Text
+  urlHash        String
+  firstClickedAt DateTime
+  lastClickedAt  DateTime
+  clickCount     Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([broadcastId, email, urlHash])
+  @@index([broadcastId, lastClickedAt])
+}
+
+// Webhook 技術收據：防止 Svix 以同一 svix-id 重送時重複累加 clickCount。
+// 只存識別碼與事件型別，不保存原始 payload。
+model WebhookReceipt {
+  id        String   @id @default(cuid())
+  svixId    String   @unique
+  eventType String
+  createdAt DateTime @default(now())
+}
+
 // EDM 範本：常用信件內容存檔，群發表單一鍵帶入後小幅修改再寄
 // 只存內容（主旨/內文/關聯課程），發送對象每次寄送時自行選擇
 model MailTemplate {

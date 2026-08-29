@@ -12,6 +12,9 @@ import {
   RecipientStatusTable,
   type RecipientStatusRow,
 } from "./recipient-status-table";
+import { resolveFollowUpEmails } from "@/lib/email/followup";
+import { createPerformanceGroupAction } from "@/actions/broadcast-segments";
+import { PERFORMANCE_FILTER_LABEL, PERFORMANCE_FILTERS } from "@/lib/email/performance-segment";
 
 export const metadata = { title: "寄送內容 — Email群發" };
 
@@ -41,12 +44,14 @@ export default async function BroadcastDetailPage({
   if (!record) notFound();
 
   // 成效統計（Resend webhook 回流；唯一人數）
-  const eventGroups = await prisma.broadcastEvent.groupBy({
-    by: ["type"],
+  const events = await prisma.broadcastEvent.findMany({
     where: { broadcastId: id },
-    _count: true,
+    select: { email: true, type: true },
   });
-  const stats = Object.fromEntries(eventGroups.map((g) => [g.type, g._count]));
+  const stats = events.reduce<Record<string, number>>((counts, event) => {
+    counts[event.type] = (counts[event.type] ?? 0) + 1;
+    return counts;
+  }, {});
   const pct = (n: number) =>
     record.sentCount > 0 ? `（${Math.round((n / record.sentCount) * 100)}%）` : "";
 
@@ -99,18 +104,23 @@ export default async function BroadcastDetailPage({
   const acceptedCount = hasRecipientResults
     ? recipientResults.filter((r) => r.status === "ACCEPTED").length
     : record.recipients.length;
+  const linkStats = await prisma.broadcastLinkEvent.groupBy({
+    by: ["url"],
+    where: { broadcastId: id },
+    _count: { email: true },
+    _sum: { clickCount: true },
+    _min: { firstClickedAt: true },
+    _max: { lastClickedAt: true },
+    orderBy: { _count: { email: "desc" } },
+  });
 
   // 逐人投遞狀態：新紀錄以 provider 結果為母集合；舊紀錄只有事件回流時才推導，
   // 避免把完全沒有 webhook 的老寄送全部誤標成「尚未送達」。
-  const hasEvents = eventGroups.length > 0;
+  const hasEvents = events.length > 0;
   let bouncedList: { email: string; reason: string | null }[] = [];
   let pendingList: string[] = [];
   let recipientRows: RecipientStatusRow[] = [];
   if ((hasRecipientResults || hasEvents) && (recipientResults.length > 0 || record.recipients.length > 0)) {
-    const events = await prisma.broadcastEvent.findMany({
-      where: { broadcastId: id },
-      select: { email: true, type: true },
-    });
     // 有任何事件（送達/開信/點擊）都代表信已到；退信另列
     const bouncedSet = new Set(
       events.filter((e) => e.type === "BOUNCED").map((e) => e.email),
@@ -198,14 +208,22 @@ export default async function BroadcastDetailPage({
 
       <div className="mb-4 mt-2 flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">{record.subject}</h1>
-        {isEditable && (
-          <Link
-            href={`/admin/broadcast/${record.id}/edit`}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50"
-          >
-            ✏️ 編輯
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {record.status === "SENT" && (
+            <>
+              <a href={`/api/admin/broadcast/${record.id}/recipients.csv`} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium hover:bg-gray-50">匯出逐人 CSV</a>
+              <a href={`/api/admin/broadcast/${record.id}/links.csv`} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium hover:bg-gray-50">匯出連結 CSV</a>
+            </>
+          )}
+          {isEditable && (
+            <Link
+              href={`/admin/broadcast/${record.id}/edit`}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            >
+              ✏️ 編輯
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* 寄送資訊 */}
@@ -349,6 +367,31 @@ export default async function BroadcastDetailPage({
         </div>
       )}
 
+      {stats.CLICKED > 0 && (
+        <div className="mb-6 rounded-xl border border-indigo-200 p-4">
+          <h2 className="mb-2 text-sm font-bold text-indigo-800">🔗 逐連結點擊</h2>
+          {linkStats.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-[720px] w-full text-xs">
+                <thead className="text-left text-gray-400"><tr><th className="py-2 pr-3">網址</th><th className="px-3 py-2 text-right">唯一人數</th><th className="px-3 py-2 text-right">總點擊</th><th className="pl-3 py-2">最後點擊</th></tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {linkStats.map((link) => (
+                    <tr key={link.url}>
+                      <td className="max-w-md truncate py-2 pr-3 text-indigo-600" title={link.url}>{link.url}</td>
+                      <td className="px-3 py-2 text-right">{link._count.email}</td>
+                      <td className="px-3 py-2 text-right">{link._sum.clickCount ?? 0}</td>
+                      <td className="pl-3 py-2 text-gray-500">{link._max.lastClickedAt?.toLocaleString("zh-TW", TPE) ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">這是舊寄送資料：只知道是否點擊，沒有逐連結 URL 明細。</p>
+          )}
+        </div>
+      )}
+
       {/* 建立跟進信：對此群發的開信/未開信/點擊名單再寄一封（名單於寄出當下解析） */}
       {record.status === "SENT" && record.sentCount > 0 && (
         <div className="mb-6 rounded-xl border border-cyan-200 bg-cyan-50/50 p-4">
@@ -360,25 +403,60 @@ export default async function BroadcastDetailPage({
           <div className="flex flex-wrap gap-2 text-sm">
             {(
               [
-                { filter: "OPENED", label: "開信者", count: stats.OPENED ?? 0 },
+                {
+                  filter: "OPENED",
+                  label: "開信者",
+                  count: resolveFollowUpEmails(
+                    "OPENED",
+                    hasRecipientResults
+                      ? recipientResults
+                          .filter((r) => r.status === "ACCEPTED")
+                          .map((r) => r.email)
+                      : record.recipients,
+                    events,
+                  ).length,
+                },
                 {
                   filter: "NOT_OPENED",
                   label: "未開信者",
                   count:
                     acceptedCount > 0
-                      ? Math.max(
-                          0,
-                          acceptedCount -
-                            (stats.OPENED ?? 0) -
-                            (stats.BOUNCED ?? 0),
-                        )
+                      ? resolveFollowUpEmails(
+                          "NOT_OPENED",
+                          hasRecipientResults
+                            ? recipientResults
+                                .filter((r) => r.status === "ACCEPTED")
+                                .map((r) => r.email)
+                            : record.recipients,
+                          events,
+                        ).length
                       : null, // 舊紀錄無名單快照 → 不提供未開信者跟進
                 },
-                { filter: "CLICKED", label: "點擊者", count: stats.CLICKED ?? 0 },
+                {
+                  filter: "CLICKED",
+                  label: "點擊者",
+                  count: resolveFollowUpEmails(
+                    "CLICKED",
+                    hasRecipientResults
+                      ? recipientResults
+                          .filter((r) => r.status === "ACCEPTED")
+                          .map((r) => r.email)
+                      : record.recipients,
+                    events,
+                  ).length,
+                },
                 {
                   filter: "OPENED_NOT_CLICKED",
                   label: "開信未點擊",
-                  count: Math.max(0, (stats.OPENED ?? 0) - (stats.CLICKED ?? 0)),
+                  count: resolveFollowUpEmails(
+                    "OPENED_NOT_CLICKED",
+                    hasRecipientResults
+                      ? recipientResults
+                          .filter((r) => r.status === "ACCEPTED")
+                          .map((r) => r.email)
+                      : record.recipients,
+                    events,
+                  ).length,
                 },
               ] as const
             ).map((opt) =>
@@ -402,6 +480,21 @@ export default async function BroadcastDetailPage({
             )}
           </div>
         </div>
+      )}
+
+      {record.status === "SENT" && acceptedCount > 0 && (
+        <form action={createPerformanceGroupAction} className="mb-6 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+          <h2 className="mb-1 text-sm font-bold text-violet-800">🎯 將成效名單存成群組</h2>
+          <p className="mb-3 text-xs text-violet-700">保存的是現在的靜態快照；日後寄行銷信仍會再次排除退訂、退信與檢舉。</p>
+          <input type="hidden" name="broadcastId" value={record.id} />
+          <div className="flex flex-wrap gap-2">
+            <select name="filter" className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm">
+              {PERFORMANCE_FILTERS.map((filter) => <option key={filter} value={filter}>{PERFORMANCE_FILTER_LABEL[filter]}</option>)}
+            </select>
+            <input required name="groupName" defaultValue={`${record.subject}－成效名單`} className="min-w-64 flex-1 rounded-lg border border-violet-200 px-3 py-2 text-sm" />
+            <button className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white">建立／併入群組</button>
+          </div>
+        </form>
       )}
 
       {/* 失敗名單＋補寄 */}
@@ -499,6 +592,11 @@ export default async function BroadcastDetailPage({
             收件名單與逐人狀態（{recipientRows.length}）
           </summary>
           <RecipientStatusTable rows={recipientRows} />
+          {!hasRecipientResults && (
+            <p className="mt-2 text-xs text-amber-700">
+              舊寄送紀錄，無逐筆 API 結果；狀態僅由當時保存的收件名單與 webhook 事件推導。
+            </p>
+          )}
         </details>
       ) : (
         record.recipients.length > 0 && (

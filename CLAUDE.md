@@ -90,6 +90,8 @@ npx tsx --conditions=react-server scripts/test-live-access-db.ts        # 上課
 npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 12 項
 npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單
 npx tsx --conditions=react-server scripts/test-session-notice-db.ts     # 課前通知「未通知名單」11 項
+npx tsx scripts/test-edm-phase2.ts                                      # EDM KPI／CSV／preflight／成效分眾
+npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等（本機 DB）
 ```
 
 ## 目錄重點

@@ -8,6 +8,7 @@
  * 測完會刪掉自己建的場次、報名與退訂列。 */
 import { prisma } from "../src/lib/db";
 import { previewSessionAudience } from "../src/lib/email/dispatch";
+import { resolveFollowUpEmails } from "../src/lib/email/followup";
 
 // 安全鎖：非本機資料庫一律拒跑（鐵則：絕不對正式站跑寫入測試）
 const url = process.env.DATABASE_URL ?? "";
@@ -36,9 +37,14 @@ const EMAILS = {
   complained: `${TAG}-spam@example.com`, // 檢舉垃圾信
 };
 
-async function cleanup(sessionId?: string) {
+async function cleanup(sessionId?: string, broadcastId?: string) {
   if (sessionId)
     await prisma.courseSession.deleteMany({ where: { id: sessionId } }); // cascade 連報名
+  if (broadcastId) {
+    await prisma.broadcastEvent.deleteMany({ where: { broadcastId } });
+    await prisma.emailBroadcastRecipient.deleteMany({ where: { broadcastId } });
+    await prisma.emailBroadcast.deleteMany({ where: { id: broadcastId } });
+  }
   await prisma.mailUnsubscribe.deleteMany({
     where: { email: { in: Object.values(EMAILS) } },
   });
@@ -46,6 +52,7 @@ async function cleanup(sessionId?: string) {
 
 async function main() {
   await cleanup();
+  let broadcastId: string | undefined;
 
   const session = await prisma.courseSession.create({
     data: { title: `${TAG} 場次`, keywords: [TAG] },
@@ -106,8 +113,71 @@ async function main() {
       `實際 ${after.sendableCount}`,
     );
     await prisma.courseSession.deleteMany({ where: { id: target.id } });
+
+    console.log("\n跟進信只使用 provider ACCEPTED 母集合");
+    const broadcast = await prisma.emailBroadcast.create({
+      data: {
+        subject: `${TAG} followup`,
+        body: "test",
+        status: "SENT",
+        sentCount: 2,
+        failedCount: 1,
+        recipients: [EMAILS.clean, EMAILS.userUnsub],
+      },
+    });
+    broadcastId = broadcast.id;
+    await prisma.emailBroadcastRecipient.createMany({
+      data: [
+        {
+          broadcastId,
+          email: EMAILS.clean,
+          status: "ACCEPTED",
+          providerMessageId: "test-clean",
+        },
+        {
+          broadcastId,
+          email: EMAILS.userUnsub,
+          status: "ACCEPTED",
+          providerMessageId: "test-user",
+        },
+        {
+          broadcastId,
+          email: EMAILS.bounced,
+          status: "FAILED",
+          failureReason: "mock provider failure",
+        },
+      ],
+    });
+    await prisma.broadcastEvent.createMany({
+      data: [
+        { broadcastId, email: EMAILS.clean, type: "OPENED" },
+        // 即使 FAILED 地址出現異常事件，也不得進跟進名單。
+        { broadcastId, email: EMAILS.bounced, type: "OPENED" },
+      ],
+    });
+    await prisma.broadcastEvent.createMany({
+      data: [{ broadcastId, email: EMAILS.clean, type: "OPENED" }],
+      skipDuplicates: true,
+    });
+    const [recipientRows, followupEvents] = await Promise.all([
+      prisma.emailBroadcastRecipient.findMany({
+        where: { broadcastId },
+        select: { email: true, status: true },
+      }),
+      prisma.broadcastEvent.findMany({
+        where: { broadcastId },
+        select: { email: true, type: true },
+      }),
+    ]);
+    const accepted = recipientRows
+      .filter((row) => row.status === "ACCEPTED")
+      .map((row) => row.email);
+    check("逐人結果保存 2 ACCEPTED／1 FAILED", accepted.length === 2 && recipientRows.filter((row) => row.status === "FAILED").length === 1);
+    check("webhook 同事件重送維持一筆", followupEvents.filter((event) => event.email === EMAILS.clean && event.type === "OPENED").length === 1);
+    check("OPENED 跟進排除 FAILED", resolveFollowUpEmails("OPENED", accepted, followupEvents).join(",") === EMAILS.clean);
+    check("NOT_OPENED 只剩另一位 ACCEPTED", resolveFollowUpEmails("NOT_OPENED", accepted, followupEvents).join(",") === EMAILS.userUnsub);
   } finally {
-    await cleanup(session.id);
+    await cleanup(session.id, broadcastId);
   }
 
   console.log(`\n通過 ${pass}、失敗 ${fail}`);

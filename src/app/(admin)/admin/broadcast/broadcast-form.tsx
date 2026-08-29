@@ -17,6 +17,7 @@ import type {
 import { SubmitButton } from "@/components/admin/submit-button";
 import { createClient } from "@/lib/supabase/client";
 import { applyMergeTags, buildContentHtml } from "@/lib/email/render-content";
+import { inspectBroadcastDraft } from "@/lib/email/preflight";
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -191,6 +192,8 @@ export function BroadcastForm({
   // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
   // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
   const [bodyText, setBodyText] = useState(defaultValues?.body ?? "");
+  const [subjectText, setSubjectText] = useState(defaultValues?.subject ?? "");
+  const preflight = inspectBroadcastDraft({ subject: subjectText, body: bodyText });
   const [showPreview, setShowPreview] = useState(initialPreview);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgError, setImgError] = useState("");
@@ -289,6 +292,7 @@ export function BroadcastForm({
             name="subject"
             required
             defaultValue={defaultValues?.subject}
+            onChange={(e) => setSubjectText(e.target.value)}
             placeholder="例：新課程上架｜內在豐盛工作坊開放報名"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
           />
@@ -398,6 +402,17 @@ export function BroadcastForm({
           />
           {imgError && (
             <p className="mt-1 text-xs text-red-600">🖼️ {imgError}</p>
+          )}
+          {(preflight.errors.length > 0 || preflight.warnings.length > 0) && (
+            <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
+              <p className="mb-1 font-medium text-gray-700">寄送前檢查</p>
+              {preflight.errors.map((message) => (
+                <p key={message} className="text-red-700">● {message}</p>
+              ))}
+              {preflight.warnings.map((message) => (
+                <p key={message} className="text-amber-700">△ {message}</p>
+              ))}
+            </div>
           )}
           {showPreview && (
             <div className="mt-2 overflow-hidden rounded-xl border border-amber-300">

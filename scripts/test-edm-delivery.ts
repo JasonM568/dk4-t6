@@ -4,6 +4,7 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { resolveFollowUpEmails } from "../src/lib/email/followup";
+import { resolveMessageType } from "../src/lib/email/message-type";
 
 let pass = 0;
 let fail = 0;
@@ -63,10 +64,16 @@ async function main() {
   process.env.RESEND_API_KEY = "test-only";
   process.env.EMAIL_FROM = "Test <test@example.com>";
   // URL 在 broadcast 模組載入時固定，因此必須在設定 env 後 dynamic import。
-  const { sendBroadcast } = await import("../src/lib/email/broadcast");
+  const { buildBroadcastHtml, sendBroadcast } = await import("../src/lib/email/broadcast");
   const recipients = ["a@example.com", "b@example.com", "c@example.com"].map(
     (email) => ({ email }),
   );
+
+  console.log("\n行銷／履約通知預覽文案");
+  const marketingHtml = buildBroadcastHtml("內容", null, "https://x.test/u", "MARKETING");
+  const noticeHtml = buildBroadcastHtml("內容", null, "https://x.test/u", "NOTICE");
+  check("MARKETING 顯示一般退訂文案", marketingHtml.includes("不想再收到這類信件？") && !marketingHtml.includes("上課通知仍會寄送"));
+  check("NOTICE 說明退訂不影響上課通知", noticeHtml.includes("上課通知仍會寄送") && noticeHtml.includes("取消訂閱"));
 
   console.log("\n部分成功逐筆結果");
   const partial = await sendBroadcast(recipients, "partial", () => "<p>x</p>");
@@ -101,6 +108,14 @@ async function main() {
   check("CLICKED 排除 FAILED", resolveFollowUpEmails("CLICKED", accepted, events).join(",") === "clicked@example.com");
   check("OPENED_NOT_CLICKED 正確", resolveFollowUpEmails("OPENED_NOT_CLICKED", accepted, events).join(",") === "opened@example.com");
   check("NOT_OPENED 扣除開信與退信", resolveFollowUpEmails("NOT_OPENED", accepted, events).join(",") === "quiet@example.com");
+
+  console.log("\n履約通知 audience 守門");
+  check("ALL 不得標 NOTICE", !!resolveMessageType("all", true, true).error);
+  check("GROUP 不得標 NOTICE", !!resolveMessageType("group", true, true).error);
+  check("FOLLOWUP 不得標 NOTICE", !!resolveMessageType("followup", true, true).error);
+  check("SESSION 未確認不得寄", !!resolveMessageType("session", true, false).error);
+  check("SESSION 確認後為 NOTICE", resolveMessageType("session", true, true).messageType === "NOTICE");
+  check("未要求履約通知維持 MARKETING", resolveMessageType("all", false, false).messageType === "MARKETING");
 
   console.log(fail === 0 ? `\n全部通過（${pass} 項）` : `\n${fail} 項失敗（${pass} 項通過）`);
   process.exitCode = fail === 0 ? 0 : 1;

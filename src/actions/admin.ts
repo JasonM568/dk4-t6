@@ -34,6 +34,8 @@ import {
   type SessionAudiencePreview,
 } from "@/lib/email/audience";
 import { FOLLOWUP_FILTER_LABEL, isFollowUpFilter } from "@/lib/email/followup";
+import { resolveMessageType } from "@/lib/email/message-type";
+import { inspectBroadcastDraft } from "@/lib/email/preflight";
 import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
@@ -743,36 +745,22 @@ type BroadcastAudience = {
   };
 };
 
-/** 可以標成「履約通知」的發送對象。
- *
- *  刻意排除 all（全部會員）、group（名單群組）與 followup：那三種是電子報血統，
- *  對它們開放 NOTICE 等於給了一條「勾一個框就繞過整份退訂名單群發全站」的路。
- *  履約通知的前提是「這批人是誰、為什麼該收」講得出來——場次報名者（付了錢要來上課）、
- *  手動貼的名單與勾選的會員（逐筆看過）才符合。 */
-const NOTICE_ALLOWED_AUDIENCES = new Set(["session", "manual", "members"]);
-
-/** 依表單決定這封信是履約通知還是行銷推播，並擋掉不合法的組合。
- *  回傳 error 時一律不寄——寧可擋下來讓人改，也不要靜默降級成 MARKETING
- *  （靜默降級會讓管理員以為課前通知寄出去了，實際上退訂的人沒收到）。 */
-function resolveMessageType(
+async function validateCodeCoverage(
+  body: string,
   audience: string,
-  wantsNotice: boolean,
-  noticeAck: boolean,
-): { messageType: string; error?: string } {
-  if (!wantsNotice) return { messageType: "MARKETING" };
-  if (!NOTICE_ALLOWED_AUDIENCES.has(audience))
-    return {
-      messageType: "MARKETING",
-      error:
-        "「履約通知」只能用於場次報名者／手動名單／選取會員——" +
-        "全部會員與名單群組屬於電子報，必須尊重退訂名單",
-    };
-  if (!noticeAck)
-    return {
-      messageType: "MARKETING",
-      error: "請勾選確認這是與已報名學員的履約通知（上課提醒／異動通知）",
-    };
-  return { messageType: "NOTICE" };
+  sessionIds: string[],
+  messageType: string,
+): Promise<string | null> {
+  if (!body.includes("{code}")) return null;
+  if (audience !== "session") return "內文使用了 {code}，發送對象必須選擇「場次報名者」";
+  const preview = await previewSessionAudience(
+    sessionIds,
+    messageType === "NOTICE" ? "NOTICE" : "MARKETING",
+  );
+  if (preview.sendableCount > preview.withCodeCount) {
+    return `內文使用了 {code}，但可寄 ${preview.sendableCount} 人中只有 ${preview.withCodeCount} 人的場次已設定上課碼`;
+  }
+  return null;
 }
 
 /** 解析群發表單的發送對象（sendBroadcastAction / updateBroadcastAction 共用）。
@@ -1068,6 +1056,10 @@ export async function sendBroadcastAction(
     noticeAckBy:
       notice.messageType === "NOTICE" ? (admin?.email ?? null) : null,
   };
+  if (mode !== "draft" && mode !== "template") {
+    const preflight = inspectBroadcastDraft({ subject, body });
+    if (preflight.errors.length > 0) return { error: preflight.errors.join("；") };
+  }
 
   // 存成範本：只存內容，不寄信、不留群發紀錄
   if (mode === "template") {
@@ -1165,6 +1157,8 @@ export async function sendBroadcastAction(
   const { audienceData } = resolved;
   const audienceLabel = audienceData.audienceLabel;
   const manualRows = audienceData.manualRows;
+  const codeError = await validateCodeCoverage(body, audience, sessionIds, notice.messageType);
+  if (codeError) return { error: codeError };
 
   // 排程模式：datetime-local 值無時區，固定以台灣時間解讀
   if (scheduledAtRaw) {
@@ -1301,6 +1295,10 @@ export async function updateBroadcastAction(
     noticeAckBy:
       notice.messageType === "NOTICE" ? (admin?.email ?? null) : null,
   };
+  if (mode !== "draft" && mode !== "template") {
+    const preflight = inspectBroadcastDraft({ subject, body });
+    if (preflight.errors.length > 0) return { error: preflight.errors.join("；") };
+  }
 
   // 存成範本：只存內容，不動這筆草稿/排程紀錄
   if (mode === "template") {
@@ -1392,6 +1390,8 @@ export async function updateBroadcastAction(
   );
   if (resolved.error) return { error: resolved.error };
   const { audienceData } = resolved;
+  const codeError = await validateCodeCoverage(body, audience, sessionIds, notice.messageType);
+  if (codeError) return { error: codeError };
 
   // 轉排程
   if (scheduledAtRaw) {
