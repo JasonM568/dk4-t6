@@ -21,7 +21,14 @@ export const runtime = "nodejs";
  * 回應：PAYUNi 收到 HTTP 200 即停止重送。
  */
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
+  // 公開端點會被掃描器亂打：非 form body 的請求 formData() 會 throw，
+  // 要回 400 而不是 500（500 會讓監控以為程式壞了）
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return new Response("bad request", { status: 400 });
+  }
   const payload: Record<string, string> = {};
   form.forEach((value, key) => {
     payload[key] = String(value);

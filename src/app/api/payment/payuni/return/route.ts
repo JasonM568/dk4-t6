@@ -8,7 +8,14 @@ import { PayuniProvider } from "@/lib/payment/payuni";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
+  // 前景導回頁：body 解析失敗就導去我的課程，不能讓使用者看到 500
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    const base = process.env.NEXT_PUBLIC_BASE_URL ?? new URL(req.url).origin;
+    return Response.redirect(`${base}/my-courses`, 303);
+  }
   const payload: Record<string, string> = {};
   form.forEach((value, key) => {
     payload[key] = String(value);
