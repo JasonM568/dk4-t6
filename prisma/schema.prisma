@@ -97,6 +97,32 @@ model StudentCourseHistory {
   @@index([studentId])
 }
 
+// 標準課程主檔（課名歸戶的目的地）：歷史紀錄的課名同一門課有六七種寫法
+// （「3/26 AI 變現入門課」「2026.03.26 AI初階課程」…），歸戶後記錄卡才像履歷、
+// 分眾名單（上過 X 未上過 Y）才算得出來。kind/level 值域見 src/lib/student-course.ts
+model CanonicalCourse {
+  id        String               @id // 可讀 slug（qm-basic、ai-basic…），種子與分眾查詢直接引用
+  name      String               @unique
+  kind      String               @default("COURSE") // COURSE / SUBSCRIPTION / SEMINAR / EVENT / PRODUCT / OTHER
+  level     String? // BASIC / ADVANCED；非課程為 null
+  sortOrder Int                  @default(0)
+  aliases   StudentCourseAlias[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+// 課名原文 → 標準課程。完整原文比對、不做模糊比對（同 FinancePlanAlias 的理由：避免誤套）；
+// 新場次產生的新課名會落在「未歸戶」清單，由後台指派一次即長期受用。
+model StudentCourseAlias {
+  rawName   String          @id
+  courseId  String
+  course    CanonicalCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  updatedBy String?
+  updatedAt DateTime        @updatedAt
+
+  @@index([courseId])
+}
+
 // 看板登入共享限流（跨 serverless instance）：key = "ip:<addr>" 或 "global"
 model BoardLoginThrottle {
   key         String    @id

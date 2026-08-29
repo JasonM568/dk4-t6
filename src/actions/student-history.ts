@@ -225,3 +225,39 @@ export async function syncSessionHistoriesAction(): Promise<OrderHistoryImportSt
     noContact,
   };
 }
+
+// ---- 課名歸戶（標準課程主檔 + 課名別名） ----
+
+const canonPaths = () => {
+  revalidatePath("/admin/students/courses");
+  revalidatePath("/admin/students");
+};
+
+/** 建立或更新標準課程。id 有值 = 更新；空 = 新建（slug 用亂數） */
+export async function saveCanonicalCourseAction(fd: FormData): Promise<void> {
+  await requireEditor();
+  const id = String(fd.get("id") ?? "").trim();
+  const name = String(fd.get("name") ?? "").trim();
+  const kind = String(fd.get("kind") ?? "COURSE");
+  const level = String(fd.get("level") ?? "").trim() || null;
+  if (!name) return;
+  if (id) await prisma.canonicalCourse.update({ where: { id }, data: { name, kind, level } });
+  else await prisma.canonicalCourse.create({ data: { id: crypto.randomUUID().slice(0, 8), name, kind, level, sortOrder: 999 } });
+  canonPaths();
+}
+
+/** 指派（或改派）課名到標準課程；courseId 空值 = 取消歸戶 */
+export async function assignCourseAliasAction(fd: FormData): Promise<void> {
+  const role = await requireEditor();
+  const rawName = String(fd.get("rawName") ?? "");
+  const courseId = String(fd.get("courseId") ?? "").trim();
+  if (!rawName) return;
+  if (!courseId) await prisma.studentCourseAlias.deleteMany({ where: { rawName } });
+  else
+    await prisma.studentCourseAlias.upsert({
+      where: { rawName },
+      update: { courseId, updatedBy: role },
+      create: { rawName, courseId, updatedBy: role },
+    });
+  canonPaths();
+}
