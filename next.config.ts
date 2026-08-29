@@ -26,6 +26,8 @@ const REPORT_ONLY_CSP = [
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https://${SUPABASE_HOST} https://www.googletagmanager.com https://*.google-analytics.com https://www.facebook.com https://i.ytimg.com`,
   "font-src 'self' data:",
+  // 自訂頁短影片：YouTube 走 frame-src；影片檔直連（Supabase）走 media-src
+  `media-src 'self' https://${SUPABASE_HOST}`,
   "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://docs.google.com https://www.canva.com https://www.googletagmanager.com",
   `connect-src 'self' https://${SUPABASE_HOST} https://*.google-analytics.com https://analytics.google.com https://www.googletagmanager.com https://connect.facebook.net https://www.facebook.com`,
   // 結帳表單 POST 到 ECPay（正式/沙箱）

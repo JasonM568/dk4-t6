@@ -16,6 +16,7 @@ export type CustomPageRow = {
   title: string;
   content: string;
   images: string[];
+  videoUrl: string | null;
   isPublished: boolean;
   showInNav: boolean;
 };
@@ -91,6 +92,12 @@ function PageFields({ initial }: { initial?: CustomPageRow }) {
           顯示於導覽列
         </label>
       </div>
+      <input
+        name="videoUrl"
+        defaultValue={initial?.videoUrl ?? ""}
+        placeholder="影片網址（選填）：貼 YouTube 連結（含 Shorts）或影片檔網址，顯示在標題下方——短影片行銷頁用，看過的人會被 Pixel 記成受眾"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
+      />
       <textarea
         name="content"
         rows={8}

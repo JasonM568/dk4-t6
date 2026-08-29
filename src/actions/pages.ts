@@ -15,17 +15,20 @@ function parsePageForm(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const content = String(formData.get("content") ?? "").trim();
   const images = formData.getAll("images").map(String).filter(Boolean);
+  const videoUrl = String(formData.get("videoUrl") ?? "").trim();
   const isPublished = formData.get("isPublished") === "on";
   const showInNav = formData.get("showInNav") === "on";
 
   if (!SLUG_RE.test(slug))
     return { error: "網址代稱只能用小寫英數與連字號（例：about-us）" as const };
   if (!title) return { error: "請填寫頁面標題" as const };
-  if (!content && images.length === 0)
-    return { error: "內文與圖片至少要有一項" as const };
+  if (!content && images.length === 0 && !videoUrl)
+    return { error: "內文、圖片、影片至少要有一項" as const };
   if (images.some((u) => !/^https?:\/\//.test(u)))
     return { error: "圖片網址格式錯誤" as const };
-  return { slug, title, content, images, isPublished, showInNav };
+  if (videoUrl && !/^https?:\/\//.test(videoUrl))
+    return { error: "影片網址格式錯誤（貼 YouTube 連結或 https 開頭的影片檔網址）" as const };
+  return { slug, title, content, images, videoUrl: videoUrl || null, isPublished, showInNav };
 }
 
 export async function createCustomPageAction(

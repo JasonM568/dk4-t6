@@ -61,7 +61,8 @@ export default async function AdminSettingsPage() {
       <section className="mt-10">
         <h2 className="mb-1 text-lg font-bold">自訂分頁</h2>
         <p className="mb-4 text-sm text-gray-500">
-          自建前台頁面（網址 /p/代稱），可放文字與圖片；「顯示於導覽列」開啟後出現在頂端導覽。
+          自建前台頁面（網址 /p/代稱），可放文字、圖片與影片；「顯示於導覽列」開啟後出現在頂端導覽。
+          <strong>短影片行銷頁</strong>：填影片網址、關掉「顯示於導覽列」，EDM 放頁面連結導流——看過的人 Pixel 會記成受眾（ViewContent），FB 廣告可直接圈這群人再行銷。
           內文語法與 EDM 相同：空行分段、網址自動連結、[按鈕文字](網址) 變紅色按鈕。
         </p>
         <div className="mb-4 space-y-3">
@@ -74,6 +75,7 @@ export default async function AdminSettingsPage() {
                 title: p.title,
                 content: p.content,
                 images: p.images,
+                videoUrl: p.videoUrl,
                 isPublished: p.isPublished,
                 showInNav: p.showInNav,
               }}

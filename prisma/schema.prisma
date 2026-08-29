@@ -499,6 +499,9 @@ model CustomPage {
   title       String
   content     String   @db.Text
   images      String[] @default([]) // 內文下方依序顯示
+  // 短影片行銷頁：YouTube 連結（嵌入播放）或影片檔直連網址，顯示在標題下方；
+  // 有影片的頁面會發 Pixel ViewContent，供 FB 廣告圈「看過影片的人」受眾
+  videoUrl    String?
   isPublished Boolean  @default(true)
   showInNav   Boolean  @default(true)
   sortOrder   Int      @default(0)
