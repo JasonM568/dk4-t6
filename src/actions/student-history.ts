@@ -1,6 +1,8 @@
 "use server";
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { hasSegmentCondition, parseSegmentFilter, querySegment } from "@/lib/student-segment";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { decodeCsvBuffer } from "@/lib/csv";
@@ -244,6 +246,30 @@ export async function saveCanonicalCourseAction(fd: FormData): Promise<void> {
   if (id) await prisma.canonicalCourse.update({ where: { id }, data: { name, kind, level } });
   else await prisma.canonicalCourse.create({ data: { id: crypto.randomUUID().slice(0, 8), name, kind, level, sortOrder: 999 } });
   canonPaths();
+}
+
+/** 分眾圈人 → 名單群組快照：條件命中的學員（有合法 Email 者）存成 MailGroup，
+ *  之後寄 EDM 走既有群發流程（含退訂過濾）。同名群組 = 併入（skipDuplicates 去重） */
+export async function createStudentSegmentGroupAction(fd: FormData): Promise<void> {
+  await requireEditor();
+  const groupName = String(fd.get("groupName") ?? "").trim();
+  if (!groupName) return;
+  const filter = parseSegmentFilter((k) => fd.getAll(k).map(String));
+  if (!hasSegmentCondition(filter)) return;
+  const students = await querySegment(filter);
+  const seen = new Set<string>();
+  const rows = students
+    .map((s) => ({ email: (s.email ?? "").trim().toLowerCase(), name: s.name?.trim() || null }))
+    .filter((r) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))
+    .filter((r) => !seen.has(r.email) && seen.add(r.email));
+  const group = await prisma.mailGroup.upsert({ where: { name: groupName }, update: {}, create: { name: groupName } });
+  if (rows.length)
+    await prisma.mailGroupMember.createMany({
+      data: rows.map((r) => ({ ...r, groupId: group.id })),
+      skipDuplicates: true,
+    });
+  revalidatePath("/admin/broadcast/groups");
+  redirect(`/admin/broadcast/groups/${group.id}`);
 }
 
 /** 指派（或改派）課名到標準課程；courseId 空值 = 取消歸戶 */
