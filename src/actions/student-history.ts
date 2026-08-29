@@ -21,16 +21,10 @@ export async function importStudentHistory(_p:StudentImportState,fd:FormData):Pr
     const email=val(row,headers,"email").toLowerCase();
     const name=val(row,headers,"name");
     if(!phone&&!email.includes("@"))continue; // 兩個識別欄位都沒有就跳過
-    let record;
-    if(phone){
-      record=await prisma.studentRecord.upsert({where:{phone},update:{name:name||undefined,email:email||undefined},create:{phone,name:name||null,email:email||null}});
-    }else{
-      noPhone++;
-      const found=await prisma.studentRecord.findFirst({where:{email}});
-      record=found
-        ?await prisma.studentRecord.update({where:{id:found.id},data:{name:name||undefined}})
-        :await prisma.studentRecord.create({data:{email,name:name||null}});
-    }
+    if(!phone)noPhone++;
+    // 與訂單匯入同一個安全漏斗：姓名不同絕不併卡/覆蓋（見 upsertStudent）
+    const record=await upsertStudent(phone,email.includes("@")?email:null,name||null);
+    if(!record)continue;
     imported++;
     const course=val(row,headers,"course");
     if(course){
@@ -43,26 +37,53 @@ export async function importStudentHistory(_p:StudentImportState,fd:FormData):Pr
   return{success:"匯入完成",imported,histories,noPhone};
 }
 
-/** 依手機（優先）或 email 找/建學員檔；姓名/信箱只補空不覆蓋（匯入資料品質參差） */
+/** 空白與大小寫不影響同名判定；任一方沒填姓名視為相容（可補空） */
+const sameStudentName = (a: string | null | undefined, b: string | null | undefined) => {
+  const na = (a ?? "").replace(/\s+/g, "").toLowerCase();
+  const nb = (b ?? "").replace(/\s+/g, "").toLowerCase();
+  return !na || !nb || na === nb;
+};
+
+/** 依手機（優先）→ email 找/建學員檔。
+ *  鐵則：姓名不同＝不同人，絕不併卡、絕不覆蓋姓名——訂購人常幫同行者填
+ *  自己的電話/信箱（一個信箱兩個姓名），舊版直接併卡還覆蓋姓名，
+ *  同行者的紀錄會黏到訂購人卡上（2026-08-29 徐裕森/潘月時案）。
+ *  姓名/信箱一律只補空；撞到別人的手機 → 退回信箱路徑（新卡不帶那支手機）；
+ *  同信箱不同姓名 → 各自一張卡（夫妻共用信箱模式），重匯時按姓名找回同一張（冪等）。 */
 async function upsertStudent(
   phone: string | null,
   email: string | null,
   name: string | null,
 ): Promise<{ id: string } | null> {
   if (phone) {
-    return prisma.studentRecord.upsert({
+    const byPhone = await prisma.studentRecord.findUnique({
       where: { phone },
-      update: { name: name || undefined, email: email || undefined },
-      create: { phone, name, email },
-      select: { id: true },
+      select: { id: true, name: true, email: true },
     });
+    if (!byPhone)
+      return prisma.studentRecord.create({ data: { phone, name, email }, select: { id: true } });
+    if (sameStudentName(byPhone.name, name)) {
+      const fill: { name?: string; email?: string } = {};
+      if (!byPhone.name && name) fill.name = name;
+      if (!byPhone.email && email) fill.email = email;
+      if (Object.keys(fill).length)
+        await prisma.studentRecord.update({ where: { id: byPhone.id }, data: fill });
+      return { id: byPhone.id };
+    }
+    // 同號不同名：這支手機是別人的（同行者填了訂購人的號碼），改走信箱路徑
   }
   if (email) {
-    const found = await prisma.studentRecord.findFirst({
+    const candidates = await prisma.studentRecord.findMany({
       where: { email },
-      select: { id: true },
+      select: { id: true, name: true },
+      orderBy: { createdAt: "asc" },
     });
-    if (found) return found;
+    const hit = candidates.find((c) => sameStudentName(c.name, name));
+    if (hit) {
+      if (!hit.name && name)
+        await prisma.studentRecord.update({ where: { id: hit.id }, data: { name } });
+      return { id: hit.id };
+    }
     return prisma.studentRecord.create({ data: { email, name }, select: { id: true } });
   }
   return null;

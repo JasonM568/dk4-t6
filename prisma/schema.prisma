@@ -235,6 +235,26 @@ model EmailBroadcast {
   createdAt DateTime @default(now())
 }
 
+// EDM 逐收件人 provider 接受結果。
+// broadcastId 刻意維持軟連結、不設 FK：EmailBroadcast 與其他歷史指向欄位都採同一慣例，
+// 避免日後清理單一資料時 cascade 破壞寄送稽核紀錄。
+// status：PENDING（已解析、尚未取得結果）/ ACCEPTED（Resend 回傳 message id）/ FAILED。
+// DELIVERED / OPENED / CLICKED / BOUNCED / COMPLAINED 仍由 BroadcastEvent 表示。
+model EmailBroadcastRecipient {
+  id                String   @id @default(cuid())
+  broadcastId       String
+  email             String
+  name              String?
+  status            String   @default("PENDING")
+  providerMessageId String?
+  failureReason     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([broadcastId, email])
+  @@index([broadcastId, status])
+}
+
 // 電子報退訂名單：寄送前統一過濾（resolveRecipients），測試信不過濾
 model MailUnsubscribe {
   email     String   @id // 存入前一律 toLowerCase().trim()

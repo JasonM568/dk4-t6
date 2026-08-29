@@ -120,10 +120,16 @@ export function buildBroadcastHtml(
 }
 
 export type FailedRecipient = { email: string; name?: string; reason: string };
+export type AcceptedRecipient = {
+  email: string;
+  name?: string;
+  providerMessageId: string;
+};
 export type SendResult = {
   sent: number;
   failed: number;
   error?: string;
+  acceptedRecipients: AcceptedRecipient[];
   failedRecipients: FailedRecipient[];
 };
 
@@ -202,6 +208,7 @@ export async function sendBroadcast(
       sent: 0,
       failed: recipients.length,
       error: reason,
+      acceptedRecipients: [],
       failedRecipients: recipients.map((r) => ({
         email: r.email,
         ...(r.name ? { name: r.name } : {}),
@@ -213,6 +220,7 @@ export async function sendBroadcast(
   let sent = 0;
   let failed = 0;
   let firstError: string | undefined;
+  const acceptedRecipients: AcceptedRecipient[] = [];
   const failedRecipients: FailedRecipient[] = [];
   const failChunk = (chunk: Recipient[], reason: string) => {
     failed += chunk.length;
@@ -301,6 +309,11 @@ export async function sendBroadcast(
       const item = items[j];
       if (item && item.id && !item.error) {
         sent += 1;
+        acceptedRecipients.push({
+          email: chunk[j].email,
+          ...(chunk[j].name ? { name: chunk[j].name } : {}),
+          providerMessageId: item.id,
+        });
       } else {
         const errText =
           item && item.error
@@ -321,5 +334,11 @@ export async function sendBroadcast(
     }
   }
 
-  return { sent, failed, error: firstError, failedRecipients };
+  return {
+    sent,
+    failed,
+    error: firstError,
+    acceptedRecipients,
+    failedRecipients,
+  };
 }

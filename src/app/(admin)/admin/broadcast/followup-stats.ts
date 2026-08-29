@@ -3,6 +3,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import {
   FOLLOWUP_FILTER_LABEL,
+  resolveFollowUpEmails,
   type FollowUpFilter,
 } from "@/lib/email/followup";
 import type { BroadcastFollowUp } from "./broadcast-form";
@@ -12,32 +13,28 @@ export async function buildFollowUpProp(
   sourceId: string,
   filter: FollowUpFilter,
 ): Promise<BroadcastFollowUp> {
-  const [source, events] = await Promise.all([
+  const [source, events, recipientResults] = await Promise.all([
     prisma.emailBroadcast.findUnique({
       where: { id: sourceId },
       select: { subject: true, recipients: true },
     }),
-    prisma.broadcastEvent.groupBy({
-      by: ["type"],
+    prisma.broadcastEvent.findMany({
       where: {
         broadcastId: sourceId,
         type: { in: ["OPENED", "CLICKED", "BOUNCED"] },
       },
-      _count: true,
+      select: { email: true, type: true },
+    }),
+    prisma.emailBroadcastRecipient.findMany({
+      where: { broadcastId: sourceId },
+      select: { email: true, status: true },
     }),
   ]);
-  const count = (t: string) => events.find((e) => e.type === t)?._count ?? 0;
-  const estimatedCount =
-    filter === "OPENED"
-      ? count("OPENED")
-      : filter === "CLICKED"
-        ? count("CLICKED")
-        : filter === "OPENED_NOT_CLICKED"
-          ? Math.max(0, count("OPENED") - count("CLICKED"))
-          : Math.max(
-              0,
-              (source?.recipients.length ?? 0) - count("OPENED") - count("BOUNCED"),
-            );
+  const acceptedEmails =
+    recipientResults.length > 0
+      ? recipientResults.filter((r) => r.status === "ACCEPTED").map((r) => r.email)
+      : (source?.recipients ?? []);
+  const estimatedCount = resolveFollowUpEmails(filter, acceptedEmails, events).length;
   return {
     sourceId,
     sourceSubject: source?.subject ?? "（來源已不存在）",

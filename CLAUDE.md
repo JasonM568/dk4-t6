@@ -88,6 +88,7 @@ pnpm check:actions                    # 檢查 "use server" 檔案的匯出（bu
 # 以下會寫入資料庫，只能對本機 localhost 跑
 npx tsx --conditions=react-server scripts/test-live-access-db.ts        # 上課碼閘門 29 項
 npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 12 項
+npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單
 ```
 
 ## 目錄重點
@@ -101,6 +102,7 @@ src/lib/supabase/admin.ts     service key，server-only
 src/proxy.ts                  路由保護（Next 16 middleware）
 src/actions/                  Server Actions（checkout / auth / admin）
 src/lib/email/dispatch.ts     EDM 名單解析與寄送（filterUnsubscribed 是退訂分流的唯一漏斗）
+src/lib/email/followup.ts     EDM 跟進條件（只從 provider ACCEPTED 母集合解析）
 src/lib/sms/dispatch.ts       簡訊名單解析與發送（對照 email/dispatch）
 src/lib/class-notice.ts       課前通知草稿（場次 → 簡訊／EDM 內容）
 src/lib/live-auth.ts          /live 上課碼閘門（HMAC token，與 /board 網域分離）

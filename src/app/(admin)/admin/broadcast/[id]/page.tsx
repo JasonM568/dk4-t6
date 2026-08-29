@@ -71,6 +71,7 @@ export default async function BroadcastDetailPage({
     applyMergeTags(record.body, sampleRecipient),
     course,
     `${base}/unsubscribe`,
+    record.messageType,
   );
   const badge = STATUS_BADGE[record.status] ?? STATUS_BADGE.SENT;
   const isScheduled = record.status === "SCHEDULED" || record.status === "DRAFT";
@@ -85,14 +86,27 @@ export default async function BroadcastDetailPage({
     failedList.length > 0 &&
     (record.status === "SENT" || record.status === "FAILED");
 
-  // 逐人投遞狀態：退信名單（含原因）、「寄出但尚未回報送達」名單，
-  // 與逐人狀態表（每人取最高階事件：點擊 > 開信 > 送達；退信為終態）。
-  // 只有 webhook 有回流事件的寄送才算（老寄送沒事件，全列未送達會誤導）
+  const recipientResults = await prisma.emailBroadcastRecipient.findMany({
+    where: { broadcastId: id },
+    orderBy: { createdAt: "asc" },
+    select: {
+      email: true,
+      status: true,
+      failureReason: true,
+    },
+  });
+  const hasRecipientResults = recipientResults.length > 0;
+  const acceptedCount = hasRecipientResults
+    ? recipientResults.filter((r) => r.status === "ACCEPTED").length
+    : record.recipients.length;
+
+  // 逐人投遞狀態：新紀錄以 provider 結果為母集合；舊紀錄只有事件回流時才推導，
+  // 避免把完全沒有 webhook 的老寄送全部誤標成「尚未送達」。
   const hasEvents = eventGroups.length > 0;
   let bouncedList: { email: string; reason: string | null }[] = [];
   let pendingList: string[] = [];
   let recipientRows: RecipientStatusRow[] = [];
-  if (hasEvents && record.recipients.length > 0) {
+  if ((hasRecipientResults || hasEvents) && (recipientResults.length > 0 || record.recipients.length > 0)) {
     const events = await prisma.broadcastEvent.findMany({
       where: { broadcastId: id },
       select: { email: true, type: true },
@@ -100,6 +114,9 @@ export default async function BroadcastDetailPage({
     // 有任何事件（送達/開信/點擊）都代表信已到；退信另列
     const bouncedSet = new Set(
       events.filter((e) => e.type === "BOUNCED").map((e) => e.email),
+    );
+    const complainedSet = new Set(
+      events.filter((e) => e.type === "COMPLAINED").map((e) => e.email),
     );
     const receivedSet = new Set(
       events
@@ -117,8 +134,14 @@ export default async function BroadcastDetailPage({
       email,
       reason: reasonMap.get(email) ?? null,
     }));
-    pendingList = record.recipients.filter(
-      (email) => !receivedSet.has(email) && !bouncedSet.has(email),
+    const acceptedBase = hasRecipientResults
+      ? recipientResults.filter((r) => r.status === "ACCEPTED").map((r) => r.email)
+      : record.recipients;
+    pendingList = acceptedBase.filter(
+      (email) =>
+        !receivedSet.has(email) &&
+        !bouncedSet.has(email) &&
+        !complainedSet.has(email),
     );
 
     const RANK: Record<string, number> = { DELIVERED: 1, OPENED: 2, CLICKED: 3 };
@@ -129,14 +152,37 @@ export default async function BroadcastDetailPage({
       if (!cur || RANK[e.type] > RANK[cur])
         topEvent.set(e.email, e.type as "DELIVERED" | "OPENED" | "CLICKED");
     }
-    recipientRows = record.recipients.map((email) => {
-      const status = bouncedSet.has(email)
-        ? ("BOUNCED" as const)
-        : (topEvent.get(email) ?? ("PENDING" as const));
+    const resultByEmail = new Map(recipientResults.map((r) => [r.email, r]));
+    const baseEmails = hasRecipientResults
+      ? recipientResults.map((r) => r.email)
+      : record.recipients;
+    recipientRows = baseEmails.map((email) => {
+      const provider = resultByEmail.get(email);
+      const status = complainedSet.has(email)
+        ? ("COMPLAINED" as const)
+        : bouncedSet.has(email)
+          ? ("BOUNCED" as const)
+          : topEvent.get(email) ??
+            (provider?.status === "FAILED"
+              ? ("FAILED" as const)
+              : provider?.status === "PENDING"
+                ? ("PENDING" as const)
+                : hasRecipientResults
+                  ? ("ACCEPTED" as const)
+                  : ("PENDING" as const));
       return {
         email,
         status,
-        reason: status === "BOUNCED" ? (reasonMap.get(email) ?? "退信") : null,
+        reason:
+          status === "BOUNCED"
+            ? (reasonMap.get(email) ?? "退信")
+            : status === "COMPLAINED"
+              ? "收件人檢舉為垃圾信"
+              : status === "FAILED"
+                ? (provider?.failureReason ?? "寄送失敗")
+                : status === "PENDING"
+                  ? "provider 結果尚未完成回寫；系統不會自動重寄"
+                  : null,
       };
     });
   }
@@ -319,10 +365,10 @@ export default async function BroadcastDetailPage({
                   filter: "NOT_OPENED",
                   label: "未開信者",
                   count:
-                    record.recipients.length > 0
+                    acceptedCount > 0
                       ? Math.max(
                           0,
-                          record.recipients.length -
+                          acceptedCount -
                             (stats.OPENED ?? 0) -
                             (stats.BOUNCED ?? 0),
                         )
@@ -467,6 +513,9 @@ export default async function BroadcastDetailPage({
                 </li>
               ))}
             </ul>
+            <p className="mt-2 text-xs text-amber-700">
+              舊寄送紀錄，無逐筆 API 結果；此處只顯示當時保存的收件名單，不能據此判定送達或失敗。
+            </p>
           </details>
         )
       )}

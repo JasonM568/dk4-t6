@@ -1078,6 +1078,24 @@ export function SessionCard({
     );
   }, [session.signups, query, searching]);
 
+  // 同行共用聯絡：同一支手機/信箱在這場掛了兩個以上不同姓名——
+  // 多半是訂購人幫同行者填自己的聯絡方式，通知會全寄到訂購人那裡。
+  // 標出來讓操作者知道要補同行者本人的電話/信箱
+  const sharedContactIds = useMemo(() => {
+    const namesByKey = new Map<string, Set<string>>();
+    const keysOf = (s: { phone: string | null; email: string | null }) =>
+      [s.phone && `p:${s.phone}`, s.email && `e:${s.email.toLowerCase()}`].filter(
+        (k): k is string => !!k,
+      );
+    for (const s of session.signups)
+      for (const k of keysOf(s))
+        namesByKey.set(k, (namesByKey.get(k) ?? new Set()).add(s.name.replace(/\s+/g, "")));
+    const ids = new Set<string>();
+    for (const s of session.signups)
+      if (keysOf(s).some((k) => (namesByKey.get(k)?.size ?? 0) > 1)) ids.add(s.id);
+    return ids;
+  }, [session.signups]);
+
   return (
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
@@ -1501,11 +1519,21 @@ export function SessionCard({
                     )}
                     {/* Email 併在手機下方（聯絡資訊一組）：各佔一欄會把表撐出卡片外。
                         同行者多半沒有（訂單只有訂購人填），顯示用；寄信名單以此為準 */}
-                    <span
-                      className="block max-w-[10rem] truncate font-sans text-gray-400"
-                      title={s.email ?? undefined}
-                    >
-                      {s.email ?? "—"}
+                    <span className="flex items-center gap-1">
+                      <span
+                        className="block max-w-[10rem] truncate font-sans text-gray-400"
+                        title={s.email ?? undefined}
+                      >
+                        {s.email ?? "—"}
+                      </span>
+                      {sharedContactIds.has(s.id) && (
+                        <span
+                          className="whitespace-nowrap rounded bg-orange-50 px-1 py-0.5 text-[10px] font-sans text-orange-700"
+                          title="這支手機／信箱在本場掛了不只一個姓名——多半是訂購人幫同行者填自己的聯絡方式，通知會全寄到同一個人那裡；建議補同行者本人的電話或 Email"
+                        >
+                          共用
+                        </span>
+                      )}
                     </span>
                   </td>
                   {/* 產品＋訂單資訊併一欄：編號與日期是純參考，各佔一欄會把表撐出卡片外。

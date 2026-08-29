@@ -6,8 +6,16 @@ import { useState } from "react";
 // 狀態取該收件人最高階事件（點擊 > 開信 > 送達），退信為終態獨立標示。
 export type RecipientStatusRow = {
   email: string;
-  status: "CLICKED" | "OPENED" | "DELIVERED" | "BOUNCED" | "PENDING";
-  reason: string | null; // 退信原因（僅 BOUNCED 有值）
+  status:
+    | "CLICKED"
+    | "OPENED"
+    | "DELIVERED"
+    | "BOUNCED"
+    | "COMPLAINED"
+    | "ACCEPTED"
+    | "PENDING"
+    | "FAILED";
+  reason: string | null;
 };
 
 const STATUS_BADGE: Record<
@@ -18,7 +26,10 @@ const STATUS_BADGE: Record<
   OPENED: { label: "已開信", cls: "bg-emerald-100 text-emerald-800" },
   DELIVERED: { label: "已送達", cls: "bg-green-50 text-green-700" },
   BOUNCED: { label: "退信", cls: "bg-red-100 text-red-700" },
-  PENDING: { label: "未回報送達", cls: "bg-amber-50 text-amber-700" },
+  COMPLAINED: { label: "垃圾信檢舉", cls: "bg-red-100 text-red-700" },
+  FAILED: { label: "API 失敗", cls: "bg-red-50 text-red-700" },
+  ACCEPTED: { label: "等待送達回報", cls: "bg-amber-50 text-amber-700" },
+  PENDING: { label: "結果不確定", cls: "bg-orange-100 text-orange-800" },
 };
 
 const FILTERS = [
@@ -27,7 +38,10 @@ const FILTERS = [
   { key: "OPENED", label: "已開信" },
   { key: "DELIVERED", label: "已送達" },
   { key: "BOUNCED", label: "退信" },
-  { key: "PENDING", label: "未回報" },
+  { key: "COMPLAINED", label: "檢舉" },
+  { key: "FAILED", label: "API 失敗" },
+  { key: "ACCEPTED", label: "等待回報" },
+  { key: "PENDING", label: "結果不確定" },
 ] as const;
 
 export function RecipientStatusTable({ rows }: { rows: RecipientStatusRow[] }) {
