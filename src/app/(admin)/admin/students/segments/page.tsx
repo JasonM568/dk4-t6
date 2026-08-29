@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { createStudentSegmentGroupAction } from "@/actions/student-history";
 import { COURSE_KIND_LABELS, HISTORY_KINDS } from "@/lib/student-course";
 import { hasSegmentCondition, parseSegmentFilter, querySegment } from "@/lib/student-segment";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "分眾圈人 — 管理後台" };
@@ -47,7 +48,7 @@ export default async function Segments({ searchParams }: { searchParams: Promise
   const kinds = [...new Set(courses.map((c) => c.kind))];
   return <div className="max-w-5xl">
     <h1 className="text-2xl font-bold">分眾圈人</h1>
-    <p className="mb-4 mt-1 text-sm text-gray-500">依「上過什麼、缺什麼」從學員資料庫圈出行動名單，一鍵存成 <strong>EDM 名單群組</strong>後走既有群發流程（含退訂過濾）。條件以<a href="/admin/students/courses" className="text-indigo-600 underline">課名歸戶</a>後的標準課程判斷。</p>
+    <p className="mb-4 mt-1 text-sm text-gray-500">依「上過什麼、缺什麼」從學員資料庫圈出行動名單，一鍵存成 <strong>EDM 名單群組</strong>後走既有群發流程（含退訂過濾）。條件以<Link href="/admin/students/courses" className="text-indigo-600 underline">課名歸戶</Link>後的標準課程判斷。</p>
     <div className="mb-5 flex flex-wrap gap-2 text-sm">{PRESETS.map((p) => <a key={p.qs} href={`/admin/students/segments?${p.qs}`} className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-indigo-700 hover:bg-indigo-100">{p.label}</a>)}</div>
 
     <form action="/admin/students/segments" className="rounded-xl border border-gray-200 p-4">
@@ -71,7 +72,7 @@ export default async function Segments({ searchParams }: { searchParams: Promise
         <label className="flex items-center gap-2">至少上過<input type="number" name="minCourses" min={2} defaultValue={filter.minCourses ?? ""} className="w-16 rounded border border-gray-300 px-2 py-1" />門不同課程</label>
         <label className="flex items-center gap-2">這天之後沒上課紀錄<input type="date" name="lastBefore" defaultValue={filter.lastBefore ?? ""} className="rounded border border-gray-300 px-2 py-1" /></label>
         <button className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white">試算人數</button>
-        {hasCondition && <a href="/admin/students/segments" className="text-gray-500 underline">清除條件</a>}
+        {hasCondition && <Link href="/admin/students/segments" className="text-gray-500 underline">清除條件</Link>}
       </div>
     </form>
 

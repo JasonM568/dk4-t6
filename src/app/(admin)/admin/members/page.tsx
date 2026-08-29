@@ -15,15 +15,17 @@ export default async function AdminMembersPage({
   searchParams: Promise<{
     q?: string;
     group?: string | string[];
+    archived?: string;
   }>;
 }) {
-  const { q, group } = await searchParams;
+  const { q, group, archived } = await searchParams;
   const query = (q ?? "").trim().toLowerCase();
+  const showArchived = archived === "1";
   const selectedGroupIds = (Array.isArray(group) ? group : group ? [group] : []).filter(Boolean);
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
-  const [profiles, statsList, mailGroups, passwords, authMeta, totalCount, zones] =
+  const [profiles, statsList, mailGroups, passwords, authMeta, totalCount, zones, archives] =
     await Promise.all([
       listProfiles(),
       prisma.memberStats.findMany({ include: { currentTier: true } }),
@@ -40,6 +42,7 @@ export default async function AdminMembersPage({
         orderBy: { createdAt: "asc" },
         select: { id: true, name: true },
       }),
+      prisma.memberArchive.findMany({ orderBy: { archivedAt: "desc" } }),
     ]);
 
   // 企業專區會籍：email → 所屬專區（含來源：邀請碼註冊 / 手動加入）
@@ -91,9 +94,13 @@ export default async function AdminMembersPage({
 
   const statsByUserId = new Map(statsList.map((s) => [s.userId, s]));
   const passwordByUserId = new Map(passwords.map((p) => [p.userId, p.password]));
+  const archivedIds = new Set(archives.map((a) => a.userId));
+  const archivedProfileCount = profiles.filter((p) => archivedIds.has(p.id)).length;
+  const activeProfileCount = profiles.length - archivedProfileCount;
 
   // MemberStats 是 lazy upsert（首次付款才建立），沒有統計的會員以 0 顯示
   const all = profiles
+    .filter((p) => showArchived ? archivedIds.has(p.id) : !archivedIds.has(p.id))
     .map((p) => {
       const stats = statsByUserId.get(p.id);
       return {
@@ -171,14 +178,20 @@ export default async function AdminMembersPage({
           <h1 className="text-2xl font-bold">
             會員管理
             <span className="ml-2 text-base font-normal text-gray-400">
-              共 {totalCount} 位
+              {showArchived ? `已封存 ${archivedProfileCount} 位` : `使用中 ${activeProfileCount}／全部 ${totalCount} 位`}
             </span>
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            搜尋會員、依名單群組篩選；勾選會員可批次開通課程、加入企業專區或名單群組。
+            {showArchived ? "目前顯示已封存會員；可進入詳情解除封存。" : "搜尋會員、依名單群組篩選；封存會員預設不顯示。"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={showArchived ? "/admin/members" : "/admin/members?archived=1"}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            {showArchived ? "← 回使用中會員" : `📦 已封存會員（${archivedProfileCount}）`}
+          </Link>
           {/* 查某堂課的觀看名單 → 跳轉到該課程的觀看權限名單頁（可新增/移除/匯出） */}
           <CourseMembersJump courses={allCourses} />
           <Link
@@ -201,6 +214,7 @@ export default async function AdminMembersPage({
         action="/admin/members"
         className="mb-4 space-y-3 rounded-xl border border-gray-200 p-4"
       >
+        {showArchived && <input type="hidden" name="archived" value="1" />}
         <div className="flex flex-wrap items-center gap-2">
           <input
             name="q"
@@ -214,7 +228,7 @@ export default async function AdminMembersPage({
           {hasFilter && (
             <>
               <Link
-                href="/admin/members"
+                href={showArchived ? "/admin/members?archived=1" : "/admin/members"}
                 className="flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50"
               >
                 清除
@@ -255,8 +269,8 @@ export default async function AdminMembersPage({
 
       <MemberTable
         zones={zones}
-        canEdit={canEditNow}
-        canResetPassword={canResetPasswordNow}
+        canEdit={!showArchived && canEditNow}
+        canResetPassword={!showArchived && canResetPasswordNow}
         courses={allCourses}
         showTier={TIER_SYSTEM_ENABLED}
         members={members.map((m) => ({

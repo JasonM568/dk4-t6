@@ -4,8 +4,10 @@ import { prisma } from "@/lib/db";
 import { getProfile } from "@/lib/supabase/admin";
 import { formatNT } from "@/lib/format";
 import { grantEnrollmentAction, revokeEnrollment } from "@/actions/admin";
-import { currentCanEdit } from "@/lib/auth/staff";
+import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
+import { isFullAdmin } from "@/lib/auth/role";
 import { EnrollmentEditor } from "./enrollment-editor";
+import { ArchiveControl } from "./archive-control";
 
 export const metadata = { title: "會員詳情 — 管理後台" };
 
@@ -25,7 +27,7 @@ export default async function MemberDetailPage({
   const { id } = await params;
 
   // 會員身分在 public.profiles（唯讀），課程資料在 course schema，應用層拼裝
-  const [profile, stats, enrollments, orders, allCourses, memberProfile] = await Promise.all([
+  const [profile, stats, enrollments, orders, allCourses, memberProfile, archive] = await Promise.all([
     getProfile(id),
     prisma.memberStats.findUnique({ where: { userId: id } }),
     prisma.enrollment.findMany({
@@ -45,8 +47,10 @@ export default async function MemberDetailPage({
       select: { id: true, title: true, isPublished: true },
     }),
     prisma.memberProfile.findUnique({ where: { userId: id } }),
+    prisma.memberArchive.findUnique({ where: { userId: id } }),
   ]);
   const canEditNow = await currentCanEdit();
+  const canArchiveNow = isFullAdmin(await currentStaffRole());
   if (!profile) notFound();
 
   // 方案 A：已開通清單 + 尚未開通的課程（給下拉選單）
@@ -108,6 +112,17 @@ export default async function MemberDetailPage({
           />
         </dl>
       </section>
+
+      {canArchiveNow && (
+        <ArchiveControl
+          userId={id}
+          archive={archive ? {
+            reason: archive.reason,
+            archivedBy: archive.archivedBy,
+            archivedAt: archive.archivedAt.toISOString(),
+          } : null}
+        />
+      )}
 
       {/* 觀看權限（可勾選編輯） */}
       <section className="mt-8">

@@ -2,6 +2,7 @@ import { pageGuardEditor } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { assignCourseAliasAction, saveCanonicalCourseAction } from "@/actions/student-history";
 import { COURSE_KIND_LABELS, COURSE_LEVEL_LABELS } from "@/lib/student-course";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "課名歸戶 — 管理後台" };
@@ -28,7 +29,7 @@ export default async function CourseCanon() {
   const options = courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>);
   return <div className="max-w-5xl">
     <h1 className="text-2xl font-bold">課名歸戶</h1>
-    <p className="mb-5 mt-1 text-sm text-gray-500">同一門課在訂單裡有很多種寫法（「3/26 AI 變現入門課」「2026.03.26 AI初階課程」…），這裡把每種寫法歸到<strong>標準課程</strong>，記錄卡與名單統計都以歸戶後的課程計算。新場次出現的新課名會列在下方「未歸戶」，指派一次即長期受用。<a href="/admin/students" className="text-indigo-600 underline">← 回學員資料庫</a></p>
+    <p className="mb-5 mt-1 text-sm text-gray-500">同一門課在訂單裡有很多種寫法（「3/26 AI 變現入門課」「2026.03.26 AI初階課程」…），這裡把每種寫法歸到<strong>標準課程</strong>，記錄卡與名單統計都以歸戶後的課程計算。新場次出現的新課名會列在下方「未歸戶」，指派一次即長期受用。<Link href="/admin/students" className="text-indigo-600 underline">← 回學員資料庫</Link></p>
 
     {unmapped.length > 0 && <section className="mb-6 overflow-hidden rounded-xl border border-amber-300">
       <div className="border-b bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">未歸戶課名（{unmapped.length} 種）——挑一個標準課程按指派</div>

@@ -74,9 +74,12 @@ model StudentRecord {
   phone         String?                @unique
   email         String?
   name          String?
+  legacyAccessStatus String            @default("UNKNOWN") // NONE / ACTIVE / TO_MIGRATE / MIGRATED / UNKNOWN
+  legacyNote    String?                @db.Text
   claimedUserId String?                @db.Uuid
   claimedAt     DateTime?
   histories     StudentCourseHistory[]
+  engagements   StudentEngagement[]
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
@@ -95,6 +98,39 @@ model StudentCourseHistory {
   createdAt  DateTime      @default(now())
 
   @@index([studentId])
+}
+
+// 非正式課程的接觸紀錄：讀冊會、頻率意識地圖、講座與其他活動。
+// 這些紀錄用於潛在名單分眾，不得計入「上過幾堂課」。
+model StudentEngagement {
+  id         String        @id @default(cuid())
+  studentId  String
+  student    StudentRecord @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  type       String        // BOOK_CLUB / FREQUENCY_MAP / SEMINAR / EVENT / OTHER
+  title      String
+  occurredAt DateTime?
+  source     String?
+  sourceRef  String?
+  note       String?       @db.Text
+  createdAt  DateTime      @default(now())
+
+  @@index([studentId])
+  @@index([type])
+}
+
+// 學員主檔維護稽核。student/history 被刪後仍須保留，因此刻意不設 FK。
+model StudentDataAuditLog {
+  id         String   @id @default(cuid())
+  studentId  String?
+  historyId  String?
+  action     String
+  actorEmail String?
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now())
+
+  @@index([studentId, createdAt])
+  @@index([createdAt])
 }
 
 // 標準課程主檔（課名歸戶的目的地）：歷史紀錄的課名同一門課有六七種寫法
@@ -159,6 +195,17 @@ model AdminAuditLog {
 
   @@index([action, createdAt])
   @@index([targetId])
+}
+
+// 課程平台會員列表封存：只影響本平台後台呈現，不刪除／停用共用 Supabase Auth。
+// 訂單、Enrollment、學員履歷與舊官網登入皆維持原狀，可隨時解除封存。
+model MemberArchive {
+  userId      String   @id @db.Uuid
+  reason      String?  @db.Text
+  archivedBy  String?
+  archivedAt  DateTime @default(now())
+
+  @@index([archivedAt])
 }
 
 // course 平台自管的後台幹部角色（admin 仍沿用 QBC public.profiles.role=admin，不存這裡）。

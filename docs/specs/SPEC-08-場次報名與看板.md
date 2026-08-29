@@ -4,7 +4,7 @@
 
 | 欄位 | 內容 |
 |---|---|
-| 版本／日期 | v0.1 Draft／2026-08-29 |
+| 版本／日期 | v0.2 Draft／2026-08-29 |
 | 範圍 | `/admin/sessions`、`/board`、`/live` |
 | 核心資料 | CourseSession、SessionSignup、BoardLoginThrottle |
 | 狀態 | 現況基線 SPEC |
@@ -16,7 +16,7 @@
 ## 2. 範圍與明確不做
 
 - 範圍：場次 CRUD、關鍵字歸類、1shop 匯入、人工報名、名單修正、退款同步、延期／復原、分組、簽到與財務 Sheet、課前通知狀態、board/live 守門。
-- 不做：不在本模組計算財務分潤、不直接發 EDM/SMS、不建立 Enrollment、不在公開看板顯示手機／Email。
+- 不做：不在本模組計算財務分潤、不直接發 EDM/SMS、不建立 Enrollment、不在公開看板顯示手機／Email。課後開通由 SPEC-06 執行；本模組只提供可信的報名／上課事實與操作者選取的名單。
 
 ## 3. 技術環境與約束
 
@@ -57,6 +57,8 @@
 - T6 通知介面：提供 ALL/PENDING 最新名單，EDM 與 SMS 各自只回寫成功者。
 - T7 board/live：限流、session cookie、過期場次下架、code 驗證與最小資料揭露。
 - T8 匯出與測試：簽到表、財務表授權，匯入／名單／通知／live DB 回歸。
+- T9 課後銜接：場次頁提供「處理課後影片權限」入口，帶入 courseId 與目前有效名單後導向 SPEC-06；傳遞集合必須排除 staff、退款、延期原列，並保留同行者為獨立人物。
+- T10 上課事實：場次結束後可同步到 `StudentCourseHistory`；同步冪等且只建立上課履歷，不直接授權影片。尚未確定實際出席時，產品需以目前有效名單或簽到資料明確標示資料可信度。
 
 ## 8. 驗收標準
 
@@ -72,6 +74,9 @@
 | AC-08 | live code 只能取得該場會議資料，停用／錯碼無法取得 |
 | AC-09 | 場次報名不自動建立 Enrollment |
 | AC-10 | session import/roster/notice/live tests、typecheck、lint、build 通過 |
+| AC-11 | 從場次點擊課後開通可直接進入對應課程流程，不需回會員管理重新找人 |
+| AC-12 | 傳給開通流程的名單排除 staff、退款與延期原列，同行者仍為獨立列 |
+| AC-13 | 同步歷史履歷不會自行建立 Enrollment；影片授權仍需 SPEC-06 流程 |
 
 ## 9. 非功能需求與 Agent 指示
 

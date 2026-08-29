@@ -4,10 +4,10 @@
 
 | 欄位 | 內容 |
 |---|---|
-| 文件版本 | v0.1 Draft |
+| 文件版本 | v0.2 Draft |
 | 建立日期 | 2026-08-29 |
 | 模組 | 學員資料庫 `/admin/students` |
-| 需求來源 | 現行程式、資料模型、CLAUDE.md、使用者需求「可以刪除跟編輯名單」 |
+| 需求來源 | 現行程式、資料模型、CLAUDE.md、2026-08-29 名單分類與課程開通討論 |
 | 實作對象 | Claude／Coding Agent |
 | 狀態 | 待使用者確認後實作 |
 
@@ -16,6 +16,9 @@
 1. 後台管理者需要編輯學員資料。
 2. 後台管理者需要刪除錯誤的學員資料。
 3. 既有匯入、訂單同步、搜尋、課名歸戶與分眾功能必須保持可用。
+4. 歷史學員是數量最大的未註冊族群，少部分仍在舊官網登入觀看影片。
+5. 潛在名單是未上過正式課程、但參加讀冊會／活動或填寫頻率意識地圖問卷的人。
+6. 學員頁必須同時看得見上課履歷與新平台影片權限摘要，但 Enrollment 仍由 SPEC-06 擁有。
 
 ### 建議決策（實作前確認）
 
@@ -47,6 +50,8 @@
 - 新增、編輯及刪除單筆上課紀錄。
 - 永久刪除錯誤建立的整位學員及其歷史課程。
 - 在任何破壞性操作前看清楚影響範圍。
+- 區分正式課程履歷與讀冊會／問卷等潛在接觸紀錄。
+- 標示舊官網觀看狀態，支援日後轉移追蹤。
 
 ### 1.3 成功指標
 
@@ -66,6 +71,8 @@
 5. 修改／刪除稽核紀錄。
 6. 搜尋結果的「查看／編輯」入口與刪除影響提示。
 7. Server Action 權限、輸入驗證、衝突處理與自動化測試。
+8. 潛在接觸紀錄與舊官網狀態。
+9. 提供跨模組唯讀摘要 DTO，供 SPEC-10 顯示帳號、課程履歷與影片權限。
 
 ### 2.2 明確不做
 
@@ -76,6 +83,8 @@
 - 不以 Email 改為唯一識別鍵。
 - 不允許使用者自行修改學員歷史。
 - 不提供稽核快照的一鍵還原。
+- 不因潛在名單參加活動而建立 `Enrollment` 或正式課程履歷。
+- 不在本模組修改新平台影片權限或舊官網帳密。
 
 ## 3. 技術環境與約束
 
@@ -120,14 +129,39 @@
 - `source`
 - `note`
 
-### 5.2 新增 `StudentDataAuditLog`
+### 5.2 `StudentRecord` 補充欄位
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `legacyAccessStatus` | String | `NONE`、`ACTIVE`、`TO_MIGRATE`、`MIGRATED`、`UNKNOWN`；預設 `UNKNOWN` |
+| `legacyNote` | Text nullable | 舊官網人工核對備註，不保存密碼 |
+
+### 5.3 新增 `StudentEngagement`
+
+用來保存尚不構成正式上課履歷的接觸事件；不得塞入 `StudentCourseHistory`。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | String cuid | 主鍵 |
+| `studentId` | String | FK `StudentRecord`，刪除主檔時 Cascade |
+| `type` | String | `BOOK_CLUB`、`FREQUENCY_MAP`、`SEMINAR`、`EVENT`、`OTHER` |
+| `title` | String | 活動／問卷名稱 |
+| `occurredAt` | DateTime nullable | 發生日期 |
+| `source` | String nullable | 匯入、表單或人工來源 |
+| `sourceRef` | String nullable | 外部事件 id；有值時供冪等去重 |
+| `note` | Text nullable | 內部備註 |
+| `createdAt` | DateTime | 建立時間 |
+
+索引至少包含 `studentId`、`type`；同一來源可用 `(source, sourceRef, studentId)` 應用層冪等，是否建立 DB unique 應依來源 ref 穩定性決定。
+
+### 5.4 新增 `StudentDataAuditLog`
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `id` | String cuid | 主鍵 |
 | `studentId` | String nullable | 軟連結；學生刪除後仍保留原 id |
 | `historyId` | String nullable | 單筆課程操作時保存原 id |
-| `action` | String | `STUDENT_UPDATE`、`STUDENT_DELETE`、`HISTORY_CREATE`、`HISTORY_UPDATE`、`HISTORY_DELETE` |
+| `action` | String | 原有 action，另含 `ENGAGEMENT_CREATE/UPDATE/DELETE`、`LEGACY_STATUS_UPDATE` |
 | `actorEmail` | String nullable | 操作者 Email |
 | `beforeJson` | Json nullable | 修改／刪除前快照 |
 | `afterJson` | Json nullable | 新增／修改後快照 |
@@ -203,6 +237,14 @@
 - 新增學員 CRUD DB 測試，使用帶有固定 TEST 前綴的資料並在 finally 清理。
 - 測試環境需有 localhost／測試 DB 安全鎖。
 
+### T8. 名單狀態與跨模組摘要
+
+- 詳細頁分區顯示「正式上課履歷」與「其他接觸紀錄」，不得把讀冊會或問卷算成上過正式課程。
+- 可維護舊官網狀態與不含密碼的備註；`MIGRATED` 只代表人工確認已轉移，不自動建立 Enrollment。
+- 提供可重用的唯讀查詢／DTO：studentId、姓名、手機、Email、claimedUserId、正式上課數、engagement 種類、legacyAccessStatus。
+- UI 衍生狀態：有正式 history＝歷史學員；只有 engagement 且無正式 history＝潛在名單。不得寫入永久互斥的 `memberType`。
+- 跨模組拼裝找不到唯一人物時回傳 `AMBIGUOUS`，不得依共用 Email 自動合併。
+
 ## 8. 驗收標準
 
 | 編號 | 驗收條件 |
@@ -222,6 +264,10 @@
 | AC-13 | 現有匯入、訂單同步、認領、課名歸戶及分眾功能回歸通過 |
 | AC-14 | migration 只作用於 `course` schema，不含 public/auth 或破壞既有資料的 SQL |
 | AC-15 | DB 測試、typecheck、lint、Server Action 檢查及 production build 全部通過 |
+| AC-16 | 正式課程履歷與讀冊會／問卷接觸紀錄分開儲存、分開統計 |
+| AC-17 | 可標示舊官網 ACTIVE／待轉移／已轉移，且不保存舊站密碼、不自動授權新站影片 |
+| AC-18 | 只有 engagement、沒有正式 history 的人可被篩為潛在名單 |
+| AC-19 | 跨模組摘要遇共用 Email 或身分歧義時不自動合併，回傳待人工確認狀態 |
 
 ## 9. 非功能需求、待確認與 Agent 指示
 
@@ -238,6 +284,7 @@
 1. 是否接受 Editor 與 Admin 都能永久刪除？建議沿用目前學員模組 Editor 權限；若希望更嚴格，可改為只有 Admin。
 2. 是否採用本 SPEC 的「永久刪除＋稽核快照」，或改成「封存為主、永久刪除僅 Admin」？建議後者更安全，但需要新增 archivedAt 與列表篩選。
 3. 上課紀錄是否允許手動新增？本 SPEC 預設允許，因維護需求通常包含漏資料補登。
+4. 舊官網是否有可匯出的帳號／影片權限清單？未取得前只做人工作業狀態，不宣稱完成自動同步。
 
 ### 9.3 給 Coding Agent 的執行指示
 

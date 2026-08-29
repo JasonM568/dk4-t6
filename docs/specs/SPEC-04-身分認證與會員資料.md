@@ -4,7 +4,7 @@
 
 | 欄位 | 內容 |
 |---|---|
-| 版本／日期 | v0.1 Draft／2026-08-29 |
+| 版本／日期 | v0.2 Draft／2026-08-29 |
 | 路由 | `/login`、`/register`、`/forgot-password`、`/reset-password`、`/complete-profile`、`/dashboard/profile` |
 | 真實來源 | 現行 Supabase Auth 程式、`MemberProfile`、Architecture |
 | 狀態 | 現況基線 SPEC，待產品驗收 |
@@ -14,6 +14,8 @@
 本模組管理帳號生命週期、session 與平台專屬會員資料。Supabase Auth 是帳密、Email 確認與 session 的唯一來源；`course.MemberProfile` 只保存手機與個資同意。本模組不得自行建立第二套帳密系統。
 
 目標是讓一般使用者可安全註冊、登入、補齊個資、重設密碼及更新手機，並在帳號出現時認領待開通課程與歷史學員記錄。
+
+產品語意：註冊只代表「已有平台帳號」，不等於上過課或已有影片權限。註冊完成後的責任是嘗試認領既有人物與待開通資格，並把結果清楚回報給營運模組。
 
 ## 2. 範圍與明確不做
 
@@ -89,6 +91,10 @@
 ### T4. 跨模組認領
 - 成功取得 userId 後依序認領待開通與歷史學員記錄。
 - 認領需冪等；共用 Email 無法唯一判定 StudentRecord 時不得猜測。
+- 匹配優先序固定為：已驗證 userId → normalized phone 唯一命中 → normalized Email 且只有一筆、姓名相容；任一步出現多筆或姓名衝突即停止自動認領。
+- 認領結果需回傳 `CLAIMED`、`NO_MATCH`、`AMBIGUOUS`、`FAILED`，供 SPEC-10 顯示待人工處理；不得只寫 console。
+- `PendingEnrollment` 的 Email 唯一命中可依既有規則認領課程，但不得順便猜測並合併多張 StudentRecord。
+- 認領成功後保留歷史學員卡與 claimedUserId，不把 StudentRecord 刪除或搬進 profile。
 
 ### T5. 安全與測試
 - 測試未登入守門、錯誤 token、open redirect、重複註冊、認領冪等與個資補齊。
@@ -108,6 +114,9 @@
 | AC-09 | course migration 不修改 `auth`／`public` schema |
 | AC-10 | 密碼、token 不出現在資料庫業務表、log 或 URL |
 | AC-11 | typecheck、auth/claim DB tests、lint、build 通過 |
+| AC-12 | 註冊完成但沒有 Enrollment 的會員仍顯示為已註冊、不可觀看，不被誤標成已開通 |
+| AC-13 | 手機唯一命中可正確認領；共用 Email、多筆或姓名衝突回傳 AMBIGUOUS 且不合併 |
+| AC-14 | 認領 pending 後只建立對應課程 Enrollment，重跑不重複且不改動其他履歷 |
 
 ## 9. 非功能需求與 Agent 指示
 

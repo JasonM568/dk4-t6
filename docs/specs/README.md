@@ -4,6 +4,29 @@
 
 本目錄的 SPEC 是 Coding Agent 的功能契約；`docs/ARCHITECTURE.md` 說明全站架構，`docs/MODULARIZATION_PLAN.md` 說明程式拆分方向，兩者不能取代功能 SPEC。
 
+## 2026-08-29 名單與課程開通優化決策
+
+平台不得再把所有對象統稱為同一種「會員名單」。產品介面以「人」為中心呈現，但底層資料仍由各業務模組各自擁有：
+
+| 使用者看見的狀態 | 判定依據 | 資料 owner | 對應 SPEC |
+|---|---|---|---|
+| 已註冊會員 | Supabase Auth／profile 存在 | Identity | SPEC-04 |
+| 已報名、尚未註冊 | 有有效場次報名或待開通，但無 Auth 帳號 | Sessions／Learning Access | SPEC-08、SPEC-06 |
+| 歷史學員 | `StudentRecord` 有上課履歷，可能尚未註冊或仍在舊官網 | Student Database | SPEC-03 |
+| 潛在名單 | 只參加讀冊會、講座、問卷等接觸活動，尚無正式課程履歷 | Student Database／來源模組 | SPEC-03 |
+
+四種狀態不是互斥且永久的分類；同一人會隨報名、上課、註冊與授權而轉換。UI 必須分開顯示「帳號狀態」「報名／上課事實」「新平台影片權限」「舊官網狀態」，不得用單一 `memberType` 取代這些事實。
+
+跨模組操作入口由 **SPEC-10 會員營運**負責；它只拼裝與協調，不複製 Auth、StudentRecord、SessionSignup、Enrollment 或 PendingEnrollment。影片能否觀看的唯一業務依據仍是 SPEC-06 的 `Enrollment`（以及已明定的專區例外）。
+
+### 本輪建議實作順序
+
+1. SPEC-03：補足學員主檔、歷史課程、潛在接觸來源與舊官網狀態。
+2. SPEC-04：強化註冊後身分認領與歧義佇列。
+3. SPEC-06：建立「已開通／待註冊／可能漏開通」查核模型與統一授權服務。
+4. SPEC-08：提供有效報名／已上課事實給跨模組查核，不自行授權影片。
+5. SPEC-10：完成「學員與名單」統一入口及課程開通直線流程。
+
 ## 建立順序與狀態
 
 | 優先序 | 文件 | 模組 | 狀態 |
