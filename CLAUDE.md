@@ -107,9 +107,23 @@ src/lib/sms/dispatch.ts       簡訊名單解析與發送（對照 email/dispatc
 src/lib/class-notice.ts       課前通知草稿（場次 → 簡訊／EDM 內容）
 src/lib/live-auth.ts          /live 上課碼閘門（HMAC token，與 /board 網域分離）
 src/app/live/                 學員憑上課碼索取 Zoom 連結
+src/actions/student-history.ts 學員記錄卡匯入（upsertStudent：姓名不同＝不同人，絕不併卡）
+src/lib/student-course.ts     標準課程 kind/level 標籤（課名歸戶）
+src/lib/student-segment.ts    分眾圈人查詢（上過 X 未上過 Y → MailGroup 快照）
 prisma/schema.prisma          資料模型（course schema only）
 ```
 
+## 學員資料庫（/admin/students）
+
+- **記錄卡**：手機是識別鍵；`/admin/students` 輸入電話查上課史
+- **課名歸戶**：`/admin/students/courses`——訂單課名原文 → 27 個標準課程
+  （`CanonicalCourse` + `StudentCourseAlias`，完整原文比對）。新場次的新課名會列「未歸戶」待指派
+- **分眾圈人**：`/admin/students/segments`——條件圈人存成 MailGroup 快照，寄信走既有 EDM 群發
+- **同行者鐵則**：訂購人常幫同行者填自己的電話/信箱。`upsertStudent` 一律「姓名不同＝不同人」，
+  撞到別人手機就退回信箱路徑另建卡；**改這裡前先想清楚會不會把兩個人併成一張卡**
+
 ## git 注意
 
-專案含 `[slug]`、`(auth)` 括號目錄，務必用 `git add -A`，勿用括號路徑（zsh glob 危險）。
+專案含 `[slug]`、`(auth)` 括號目錄；括號路徑要加引號（zsh glob 危險）。
+**Jason 常同時開多個 session 動同一個 repo**：commit 前先看 `git status`，
+只 add 自己改的檔（`git add "src/app/(admin)/..."`），別用 `git add -A` 掃進別人的在途工作。
