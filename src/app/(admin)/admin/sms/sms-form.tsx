@@ -30,6 +30,10 @@ export type SmsInitial = {
   audience: "session" | "manual";
   sessionIds: string[];
   manualList: string;
+  /** 場次名單範圍：ALL＝全部報名者；PENDING＝只發還沒收到課前簡訊的人 */
+  noticeScope?: "ALL" | "PENDING";
+  /** 單人補通知：回寫「已通知」用的名單列 id（手動名單沒有場次可對照） */
+  signupIds?: string[];
   scheduledAt: string; // datetime-local 格式（台北時間）；過期或複製時給空字串
   copiedFrom?: string | null; // 複製來源的標題，畫面上標示用
   /** 補發模式：帶入「這場還沒收到的人」的手動名單快照（已收到的不重寄） */
@@ -69,6 +73,9 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
   );
   const [pickedSessions, setPickedSessions] = useState<string[]>(initial?.sessionIds ?? []);
   const [manualList, setManualList] = useState(initial?.manualList ?? "");
+  const [noticeScope, setNoticeScope] = useState<"ALL" | "PENDING">(
+    initial?.noticeScope ?? "ALL",
+  );
   const [body, setBody] = useState(initial?.body ?? "");
   const [noticeAck, setNoticeAck] = useState(false);
   // 存過一次之後就一直改同一筆草稿——不然每按一次「存草稿」就多一則
@@ -90,7 +97,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
-  const previewKey = JSON.stringify({ audience, pickedSessions, manualList, body });
+  const previewKey = JSON.stringify({ audience, pickedSessions, manualList, body, noticeScope });
   const current = preview?.key === previewKey ? preview.data : null;
 
   const hasTarget =
@@ -105,6 +112,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
           audienceType: audience,
           sessionIds: pickedSessions,
           manualList,
+          noticeScope,
           messageType,
           body,
         });
@@ -115,7 +123,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
       alive = false;
       clearTimeout(timer);
     };
-  }, [audience, pickedSessions, manualList, body, hasTarget, previewKey]);
+  }, [audience, pickedSessions, manualList, body, noticeScope, hasTarget, previewKey]);
 
   // 即時字數：以「王小明」等長姓名估算，與伺服器端的上界估法一致
   const sampleText = `${brandPrefix}${body
@@ -302,6 +310,30 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
               場次報名者
               <span className="text-xs text-gray-400">（可複選，重複報名的人只會收到一則）</span>
             </label>
+            {/* 名單範圍：開課前會重複匯入名單，多數時候只需要通知這次新進來的人。
+                口徑是「還沒收到課前簡訊的人」，所以漏發、送失敗的也會被撈回來。 */}
+            {audience === "session" && (
+              <div className="ml-6 mb-2 flex flex-wrap items-center gap-4 text-sm">
+                <input type="hidden" name="noticeScope" value={noticeScope} />
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    checked={noticeScope === "ALL"}
+                    onChange={() => setNoticeScope("ALL")}
+                  />
+                  全部報名者
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    checked={noticeScope === "PENDING"}
+                    onChange={() => setNoticeScope("PENDING")}
+                  />
+                  只發還沒收到的人
+                  <span className="text-xs text-gray-400">（重複匯入後只通知新名單）</span>
+                </label>
+              </div>
+            )}
             {audience === "session" && (
               <div className="ml-6 max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
                 {sessions.length === 0 ? (
@@ -350,6 +382,12 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
               />
               手動貼入名單
             </label>
+            {/* 從名單列「簡訊」按鈕進來的單人補通知：帶著名單列 id，
+                發送成功才回寫得了「已通知」，這個人才不會一直留在未通知被重複發送 */}
+            {audience === "manual" &&
+              (initial?.signupIds ?? []).map((id) => (
+                <input key={id} type="hidden" name="signupIds" value={id} />
+              ))}
             {audience === "manual" && (
               <textarea
                 name="manualList"

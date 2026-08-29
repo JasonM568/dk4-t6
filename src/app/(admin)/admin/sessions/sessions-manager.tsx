@@ -55,6 +55,7 @@ import {
 } from "@/lib/roster-search";
 // 講座型場次判斷與收支表模板共用同一條規則（人工指定優先、否則看名稱）
 import { deriveFinanceTemplate } from "@/lib/finance/labels";
+import { computeNoticeProgress } from "@/lib/session-notice";
 
 export type SignupRow = {
   id: string;
@@ -70,6 +71,9 @@ export type SignupRow = {
   isRetrain: boolean | null; // 新舊生人工覆寫；null = 依產品名自動判斷
   deferredToSessionId: string | null;
   deferredFromSessionId: string | null;
+  // 課前通知已送達的時間（null = 還沒通知到）；場次卡片據此算「還有誰沒收到」
+  smsNoticeAt: string | null;
+  emailNoticeAt: string | null;
 };
 
 export type SessionRow = {
@@ -237,6 +241,38 @@ export function UploadOrdersForm({
             {state.report.invalid > 0 && `、資料不全 ${state.report.invalid}`}
             （檔案共 {state.report.totalRows} 列）
           </div>
+          {/* 這次真的新增了誰——開課前重複匯入時，這份清單就是「要補通知的人」。
+              通知走「只發還沒收到的人」，所以不必記住是哪一批，漏掉的下次也會撈回來 */}
+          {state.report.added.length > 0 && (
+            <div className="rounded bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900">
+              <div className="font-medium">
+                ✅ 這次新增 {state.report.added.length} 位：
+              </div>
+              <ul className="mt-1 space-y-0.5">
+                {state.report.added.map((a) => (
+                  <li key={a.id}>
+                    {a.name}
+                    <span className="ml-1 text-emerald-700/70">
+                      {a.phone ? formatMobile(a.phone) : "無手機"}
+                      {a.email ? `・${a.email}` : ""}
+                    </span>
+                    <span className="ml-1 text-emerald-700/50">{a.sessionTitle}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {[...new Set(state.report.added.map((a) => a.sessionId))].map((sid) => (
+                  <Link
+                    key={sid}
+                    href={`/admin/sms?session=${sid}&pending=1`}
+                    className="rounded border border-emerald-400 bg-white px-2 py-1 font-medium text-emerald-800 transition hover:bg-emerald-100"
+                  >
+                    📱 通知這場還沒收到的人
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
           {state.report.companionCheck.length > 0 && (
             <div className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
               <div className="font-medium">
@@ -1043,6 +1079,8 @@ export function SessionCard({
   const sessionTitle = (id: string | null) =>
     sessionOptions.find((o) => o.id === id)?.title ?? "其他場次";
   const stats = computeRosterStats(session.signups);
+  // 課前通知進度：開課前重複匯入名單後，這裡直接看得出「還有誰沒收到」
+  const notice = computeNoticeProgress(session.signups);
   // 講座型場次：不供餐、不分組——名單列表隱藏葷素與組別欄（版面也不再擠爆）
   const isSeminar =
     (session.financeTemplate ?? deriveFinanceTemplate(session.title)) === "SEMINAR";
@@ -1115,6 +1153,16 @@ export function SessionCard({
           )}
           {stats.deferredOut > 0 && `｜延期 ${stats.deferredOut}`}
         </span>
+        {/* 課前通知進度：全部發完才不顯示，開課前一眼看出還有誰漏掉 */}
+        {(notice.smsPending > 0 || notice.emailPending > 0) &&
+          (notice.smsDone > 0 || notice.emailDone > 0) && (
+            <span
+              className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+              title="還沒收到課前通知的人數（送失敗的也算未通知）"
+            >
+              未通知 簡訊 {notice.smsPending}／Email {notice.emailPending}
+            </span>
+          )}
         {!session.isVisible && (
           <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">
             不顯示於看板
@@ -1262,6 +1310,16 @@ export function SessionCard({
               >
                 📱 發課前通知（簡訊）
               </Link>
+              {/* 開課前會重複匯入名單，多半只需要通知這次新進來的人。
+                  口徑是「還沒收到課前簡訊的人」，所以漏發、送失敗的也會被撈回來 */}
+              {notice.smsPending > 0 && notice.smsDone > 0 && (
+                <Link
+                  href={`/admin/sms?session=${session.id}&pending=1`}
+                  className="inline-block rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 transition hover:bg-amber-100"
+                >
+                  📱 只通知還沒收到的 {notice.smsPending} 人
+                </Link>
+              )}
               {/* 收支含分潤金額（內部薪酬）：僅管理員可見；頁面本身也擋 pageGuardFullAdmin */}
               {isAdmin && (
                 <Link

@@ -77,6 +77,17 @@ export type ImportReport = {
     existingOrderNo: string;
     sessionTitle: string;
   }[];
+  // 這次「真的新加進名單」的人（開課前重複匯入時，只有這些是新的）。
+  // createMany + skipDuplicates 只回傳筆數不回傳資料，所以插入後依 createdAt 撈回來。
+  // 用途：匯入報告直接列出是誰，並帶連結只通知這批人。
+  added: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    sessionId: string;
+    sessionTitle: string;
+  }[];
   // 金額第二階段（收支模組）的結果；名單數字在上面，錢的數字在這裡
   finance: FinanceImportReport;
 };
@@ -513,6 +524,7 @@ export async function importOrders(
     companionCheck: [],
     seatOverflow: [],
     dupSkipped: [],
+    added: [],
     finance: emptyFinanceReport(),
   };
 
@@ -793,12 +805,28 @@ export async function importOrders(
       kept.push(t);
     }
 
+    // 插入前取時間戳：createMany 只回傳筆數，靠 createdAt 把「這次真的新增的人」撈回來
+    const insertedAfter = new Date();
     const res = await prisma.sessionSignup.createMany({
       data: kept,
       skipDuplicates: true,
     });
     report.imported = res.count;
     report.duplicate = kept.length - res.count + report.dupSkipped.length;
+    if (res.count > 0) {
+      const fresh = await prisma.sessionSignup.findMany({
+        where: {
+          sessionId: { in: [...new Set(kept.map((k) => k.sessionId))] },
+          createdAt: { gte: insertedAfter },
+        },
+        select: { id: true, name: true, phone: true, email: true, sessionId: true },
+        orderBy: { createdAt: "asc" },
+      });
+      report.added = fresh.map((f) => ({
+        ...f,
+        sessionTitle: sessionTitle.get(f.sessionId) ?? "（未知場次）",
+      }));
+    }
     if (fills.size > 0) {
       await prisma.$transaction(
         [...fills.entries()].map(([id, data]) =>

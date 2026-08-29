@@ -77,6 +77,8 @@ export default async function SmsPage({
     session?: string;
     // 場次名單列的「簡訊」：只發給這一位（手動名單自動填好該學員）
     signup?: string;
+    // 場次卡片的「通知未收到的 N 人」：勾好場次並選「只發還沒收到的人」
+    pending?: string;
   }>;
 }) {
   await pageGuardEditor();
@@ -87,6 +89,7 @@ export default async function SmsPage({
     followup: followUpParam,
     session: sessionParam,
     signup: signupParam,
+    pending: pendingParam,
   } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
@@ -174,7 +177,7 @@ export default async function SmsPage({
     signupParam && noticeSession
       ? await prisma.sessionSignup.findUnique({
           where: { id: signupParam },
-          select: { name: true, phone: true, sessionId: true },
+          select: { id: true, name: true, phone: true, sessionId: true },
         })
       : null;
   if (!initial && noticeSession) {
@@ -193,6 +196,10 @@ export default async function SmsPage({
           ? `${single.phone},${single.name},${noticeSession.accessCode}`
           : `${single.phone},${single.name}`
         : "",
+      // 場次卡片的「通知未收到的 N 人」帶 ?pending=1：直接勾好「只發還沒收到的人」
+      noticeScope: !single && pendingParam ? "PENDING" : "ALL",
+      // 單人補通知：帶名單列 id，發送成功後才回寫得了「已通知」
+      signupIds: single ? [single.id] : [],
       scheduledAt: "",
       copiedFrom: null,
       followUp: null,

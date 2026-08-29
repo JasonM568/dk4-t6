@@ -62,6 +62,7 @@ async function resolveSmsAudience(
   sessionIds: string[],
   manualRaw: string,
   lenient = false,
+  opts: { noticeScope?: string; signupIds?: string[] } = {},
 ): Promise<{
   error?: string;
   data: {
@@ -69,13 +70,21 @@ async function resolveSmsAudience(
     sessionIds: string[];
     audienceLabel: string;
     manualRows: SmsManualRow[] | undefined;
+    noticeScope: string;
+    signupIds: string[];
   };
 }> {
+  // PENDING 只對場次有意義（手動名單沒有「通知狀態」可比對）
+  const noticeScope =
+    audience !== "manual" && opts.noticeScope === "PENDING" ? "PENDING" : "ALL";
+  const signupIds = [...new Set((opts.signupIds ?? []).filter(Boolean))];
   const empty = {
     audienceType: audience === "manual" ? "MANUAL" : "SESSION",
     sessionIds: [],
     audienceLabel: "",
     manualRows: undefined,
+    noticeScope,
+    signupIds,
   };
 
   if (audience === "manual") {
@@ -88,6 +97,9 @@ async function resolveSmsAudience(
         sessionIds: [],
         audienceLabel: `手動名單 ${rows.length} 筆`,
         manualRows: rows,
+        noticeScope,
+        // 單人補通知：帶名單列 id 進來，發送成功才回寫得了「已通知」
+        signupIds,
       },
     };
   }
@@ -123,12 +135,14 @@ async function resolveSmsAudience(
       audienceType: "SESSION",
       sessionIds: picked.map((s) => s.id),
       audienceLabel:
-        names.length === 1
+        (names.length === 1
           ? `場次：${names[0]}`
           : `場次 ${names.length} 場（已去重）：${names.slice(0, 3).join("、")}${
               names.length > 3 ? ` 等${names.length}場` : ""
-            }`,
+            }`) + (noticeScope === "PENDING" ? "（只發未通知）" : ""),
       manualRows: undefined,
+      noticeScope,
+      signupIds,
     },
   };
 }
@@ -140,6 +154,7 @@ export async function previewSmsAudienceAction(input: {
   manualList?: string;
   messageType: string;
   body: string;
+  noticeScope?: string;
 }): Promise<SmsAudiencePreview & { segments: number; estimatedCents: number }> {
   await requireEditor();
   const settings = await getSmsSettings();
@@ -156,6 +171,7 @@ export async function previewSmsAudienceAction(input: {
           sessionIds: input.sessionIds,
           manualRows,
           messageType: input.messageType,
+          noticeScope: input.noticeScope,
         })
       : EMPTY_SMS_AUDIENCE_PREVIEW;
 
@@ -244,6 +260,8 @@ export async function sendSmsAction(
   const audience = String(formData.get("audience") ?? "session");
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
   const manualRaw = String(formData.get("manualList") ?? "");
+  const noticeScope = String(formData.get("noticeScope") ?? "ALL");
+  const signupIds = formData.getAll("signupIds").map(String).filter(Boolean);
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const noticeAck = formData.get("noticeAck") === "on";
 
@@ -275,6 +293,7 @@ export async function sendSmsAction(
     sessionIds,
     manualRaw,
     mode === "draft",
+    { noticeScope, signupIds },
   );
   if (error) return { error };
 

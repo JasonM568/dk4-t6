@@ -676,6 +676,14 @@ model SessionSignup {
   deferredToSessionId   String? // 有值 = 已延期至該場次
   deferredFromSessionId String? // 有值 = 由該場次延期而來（顯示「延期自…」）
 
+  // 課前通知已送達的時間（null = 還沒通知到）。兩個通道各記一次：沒手機／海外門號
+  // 的人只能走 Email，兩邊的完成度天生不同步。
+  // 刻意記「已通知」而不是「匯入批次」——開課前會重複匯入名單，唯有這個口徑能讓
+  // 「這場還有誰沒收到」永遠算得對（漏發、發失敗的人下次自動被撈回來）。
+  // 只有**實際送出成功**才回寫；送失敗維持 null，下次仍列為未通知。
+  smsNoticeAt   DateTime?
+  emailNoticeAt DateTime?
+
   createdAt DateTime @default(now())
 
   @@unique([sessionId, orderNo, attendeeKey]) // 重複上傳冪等；一張訂單可有多位同行者
@@ -982,6 +990,12 @@ model SmsBroadcast {
   groupIds      String[] @default([]) // audienceType=GROUP（第二階段：名單群組加手機後才接線）
   audienceLabel String? // 顯示用：場次：xxx / 場次 N 場（已去重）：… / 手動名單 N 筆
   manualRows    Json? // audienceType=MANUAL 時的名單 [{mobile,name}]
+  // audienceType=SESSION 的名單範圍：ALL＝全部報名者；PENDING＝只發 smsNoticeAt 為空的人
+  // （開課前重複匯入後，只通知這次新進來的）。同樣在**發送當下**解析。
+  noticeScope   String   @default("ALL")
+  // 回寫 smsNoticeAt 用的名單列 id。SESSION 由解析結果自動帶入；
+  // MANUAL 的單人補通知由頁面帶入（否則補發過的人會一直留在「未通知」被重複發送）。
+  signupIds     String[] @default([])
 
   sentCount     Int @default(0)
   failedCount   Int @default(0)

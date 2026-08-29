@@ -112,6 +112,8 @@ export default async function AdminSessionsPage() {
                 isRetrain: g.isRetrain,
                 deferredToSessionId: g.deferredToSessionId,
                 deferredFromSessionId: g.deferredFromSessionId,
+                smsNoticeAt: g.smsNoticeAt?.toISOString() ?? null,
+                emailNoticeAt: g.emailNoticeAt?.toISOString() ?? null,
               })),
             }}
           />

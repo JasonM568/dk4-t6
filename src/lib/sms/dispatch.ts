@@ -73,11 +73,18 @@ async function filterOptedOut(
 /** 取多個場次的報名者，依勾選順序排序。
  *  排序的理由同 email 的 collectGroupMembers：dedupeByMobile 先到先贏，
  *  跨場次重複報名的學員，{name} 必須穩定取到同一個值，否則預覽與實際發送會不一致。 */
-async function collectSessionSignups(sessionIds: string[]) {
+async function collectSessionSignups(sessionIds: string[], noticeScope = "ALL") {
   const rows = await prisma.sessionSignup.findMany({
     // 已延期到其他場次的不收原場次的上課提醒（新場次名單自然涵蓋他）
-    where: { sessionId: { in: sessionIds }, deferredToSessionId: null },
+    where: {
+      sessionId: { in: sessionIds },
+      deferredToSessionId: null,
+      // PENDING：只發還沒通知到的人（開課前重複匯入後，只通知這次新進來的）。
+      // 與 ALL 同樣在發送當下解析，所以解析到送出之間新報名的人也涵蓋得到。
+      ...(noticeScope === "PENDING" ? { smsNoticeAt: null } : {}),
+    },
     select: {
+      id: true,
       sessionId: true,
       name: true,
       phone: true,
@@ -97,21 +104,32 @@ async function resolveMobiles(record: {
   sessionIds: string[];
   manualRows: unknown;
   messageType: string;
+  noticeScope?: string;
 }): Promise<{
   recipients: SmsRecipient[];
   excludedCount: number;
   noMobileCount: number;
   error?: string;
+  /** 手機 → 名單列 id：發送成功後回寫 smsNoticeAt 用。
+   *  一支號碼可能對到多筆（訂購人幫同行者填自己的號碼），那一封簡訊等於通知到全部，
+   *  所以同號的人一起標記，不會讓同行者永遠留在「未通知」被重複發送。 */
+  signupIdsByMobile?: Map<string, string[]>;
 }> {
   let deduped: SmsRecipient[] = [];
   let noMobileCount = 0;
   let emptyError = "";
+  let signupIdsByMobile: Map<string, string[]> | undefined;
 
   if (record.audienceType === "SESSION") {
     const sessionIds = broadcastSessionIds(record);
     if (sessionIds.length === 0)
       return { recipients: [], excludedCount: 0, noMobileCount: 0, error: "缺少場次" };
-    const signups = await collectSessionSignups(sessionIds);
+    const signups = await collectSessionSignups(sessionIds, record.noticeScope);
+    signupIdsByMobile = new Map();
+    for (const s of signups) {
+      if (!s.phone) continue;
+      signupIdsByMobile.set(s.phone, [...(signupIdsByMobile.get(s.phone) ?? []), s.id]);
+    }
     const r = dedupeByMobile(signups.map((s) => ({
       mobile: s.phone,
       name: s.name,
@@ -120,9 +138,11 @@ async function resolveMobiles(record: {
     deduped = r.recipients;
     noMobileCount = r.noMobileCount;
     emptyError =
-      sessionIds.length > 1
-        ? "所選場次都沒有可發送的手機號碼"
-        : "該場次沒有可發送的手機號碼";
+      record.noticeScope === "PENDING"
+        ? "這些場次的報名者都已經發過課前簡訊了"
+        : sessionIds.length > 1
+          ? "所選場次都沒有可發送的手機號碼"
+          : "該場次沒有可發送的手機號碼";
   } else if (record.audienceType === "MANUAL") {
     const r = dedupeByMobile((record.manualRows ?? []) as SmsManualRow[]);
     deduped = r.recipients;
@@ -149,7 +169,7 @@ async function resolveMobiles(record: {
       noMobileCount,
       error: "名單全數已退訂或無法送達",
     };
-  return { recipients: kept, excludedCount, noMobileCount };
+  return { recipients: kept, excludedCount, noMobileCount, signupIdsByMobile };
 }
 
 /** 後台送出前的人數與金額試算。
@@ -160,6 +180,7 @@ export async function previewSmsAudience(input: {
   sessionIds: string[];
   manualRows?: SmsManualRow[];
   messageType: string;
+  noticeScope?: string;
 }): Promise<SmsAudiencePreview> {
   if (input.audienceType === "SESSION") {
     const sessionIds = broadcastSessionIds(input);
@@ -170,7 +191,8 @@ export async function previewSmsAudience(input: {
         where: { id: { in: sessionIds } },
         select: { id: true, title: true },
       }),
-      collectSessionSignups(sessionIds),
+      // 試算與發送走同一個 scope，否則「只發未通知」的預估人數會是全場人數
+      collectSessionSignups(sessionIds, input.noticeScope),
     ]);
 
     const rowsBySession = new Map<string, number>();
@@ -343,7 +365,7 @@ export async function executeSmsBroadcast(broadcastId: string) {
   const settings = await getSmsSettings();
   const provider = getSmsProvider();
 
-  const { recipients, excludedCount, noMobileCount, error: resolveError } =
+  const { recipients, excludedCount, noMobileCount, error: resolveError, signupIdsByMobile } =
     await resolveMobiles(record);
 
   const renderText = (r: SmsRecipient) =>
@@ -406,6 +428,21 @@ export async function executeSmsBroadcast(broadcastId: string) {
       })),
       skipDuplicates: true, // providerMessageId 唯一鍵兜底
     });
+  }
+
+  // 課前通知狀態回寫：**只標記實際送出成功的**，送失敗的維持未通知，
+  // 下次「只發還沒收到的人」會自動把他們撈回來（永不自動重寄的原則不變）。
+  const sentMobiles = r.results.filter((x) => x.status === "SENT").map((x) => x.mobile);
+  if (sentMobiles.length > 0) {
+    // SESSION 用解析出的對照表；MANUAL 的單人補通知由頁面帶 signupIds 進來
+    const ids = signupIdsByMobile
+      ? sentMobiles.flatMap((m) => signupIdsByMobile.get(m) ?? [])
+      : record.signupIds;
+    if (ids.length > 0)
+      await prisma.sessionSignup.updateMany({
+        where: { id: { in: [...new Set(ids)] } },
+        data: { smsNoticeAt: new Date() },
+      });
   }
 
   const unitPriceCents = toCents(settings.pricePerSegment);
