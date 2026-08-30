@@ -33,9 +33,13 @@ export async function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
-      <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2 text-lg font-bold">
+      {/* RWD：連結列在手機一定塞不下（分頁＋自訂頁數量會成長）。
+          讓它在自己的容器內橫向捲動（min-w-0 + overflow-x-auto），
+          頁面本身就不會被撐寬——整頁橫向溢出會讓所有 mx-auto 置中內容
+          以「溢出後的寬度」置中，捲軸在最左時看起來就是內容偏右、左邊留白。 */}
+      <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Link href="/" className="flex shrink-0 items-center gap-2 text-lg font-bold">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/brand/hope-academy-logo-email.jpg"
@@ -93,7 +97,7 @@ export async function Navbar() {
             </Link>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-4">
           {user ? (
             <>
               <Link

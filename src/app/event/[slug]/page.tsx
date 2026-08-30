@@ -153,11 +153,10 @@ export default async function EventSignupPage({
 
       {/* 課程詳情：圖片與影片依後台排好的順序混排。
           排版比照 1shop（.customize > .img img { display:block; width:100% }）——
-          長 DM 是切成多張圖上傳的，區塊間零間距、圖片零圓角才拼得回一張無縫長圖；
-          手機負 margin 突破容器 padding 滿版貼邊（1shop 的 mobile-padding-0），
-          桌機整包一個圓角框。 */}
+          長 DM 是切成多張圖上傳的，區塊間零間距、圖片零圓角才拼得回一張無縫長圖。
+          不做滿版貼邊：手機也保留容器 padding 的留白，與上方 DM 主視覺對齊。 */}
       {blocks.length > 0 && (
-        <div className="-mx-5 mb-8 sm:mx-0 sm:overflow-hidden sm:rounded-2xl">
+        <div className="mb-8 overflow-hidden rounded-2xl">
           {blocks.map((b, i) => (
             <DmBlockView key={`${b.type}-${b.url}-${i}`} block={b} title={session.title} />
           ))}
