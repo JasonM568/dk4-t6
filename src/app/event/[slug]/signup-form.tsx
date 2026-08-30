@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { submitSignupAction, type PublicSignupState } from "@/actions/session-signup";
+import { createSessionCheckout } from "@/actions/session-checkout";
 import { MAX_ATTENDEES } from "@/lib/session-signup-page";
 import { suggestEmailFix } from "@/lib/email-typo";
 
@@ -27,12 +28,18 @@ const blankAttendee = (): Attendee => ({
 export function SessionSignupForm({
   slug,
   maxSeats,
+  mode = "REQUEST",
+  unitPrice,
 }: {
   slug: string;
   /** 剩餘名額；undefined = 不限額。用來擋「加人加超過剩餘名額」 */
   maxSeats?: number;
+  /** REQUEST = 送出待確認（手動收款）；PAYMENT = 前往平台金流付款 */
+  mode?: "REQUEST" | "PAYMENT";
+  /** PAYMENT 模式每人單價，用來即時顯示總額 */
+  unitPrice?: number;
 }) {
-  const [state, formAction, pending] = useActionState<PublicSignupState, FormData>(
+  const [state, formAction, requestPending] = useActionState<PublicSignupState, FormData>(
     submitSignupAction.bind(null, slug),
     null,
   );
@@ -43,13 +50,45 @@ export function SessionSignupForm({
   const [note, setNote] = useState("");
   const [attendees, setAttendees] = useState<Attendee[]>([blankAttendee()]);
 
+  // PAYMENT 模式：自行送到 createSessionCheckout，成功後 auto-submit PAYUNi 付款表單
+  const formRef = useRef<HTMLFormElement>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [payPending, startPay] = useTransition();
+
   const limit = Math.min(MAX_ATTENDEES, maxSeats ?? MAX_ATTENDEES);
   const typoFix = suggestEmailFix(email);
+  const total = unitPrice != null ? unitPrice * attendees.length : null;
 
   const patch = (i: number, changes: Partial<Attendee>) =>
     setAttendees((prev) => prev.map((a, idx) => (idx === i ? { ...a, ...changes } : a)));
 
-  if (state?.success) {
+  function handlePay(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPayError(null);
+    const fd = new FormData(e.currentTarget);
+    startPay(async () => {
+      const res = await createSessionCheckout(slug, fd);
+      if (!res.ok) {
+        setPayError(res.error);
+        return;
+      }
+      // 動態建表單送到 PAYUNi 收銀台（同 BuyButton）
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = res.action;
+      for (const [key, value] of Object.entries(res.fields)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    });
+  }
+
+  if (mode === "REQUEST" && state?.success) {
     return (
       <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-6 text-center">
         <p className="mb-1 text-lg font-bold text-green-800">報名已送出</p>
@@ -61,8 +100,15 @@ export function SessionSignupForm({
     );
   }
 
+  const pending = mode === "PAYMENT" ? payPending : requestPending;
+  const error = mode === "PAYMENT" ? payError : state?.error;
+
   return (
-    <form action={formAction} className="space-y-5 rounded-2xl border border-gray-200 p-5">
+    <form
+      ref={formRef}
+      {...(mode === "PAYMENT" ? { onSubmit: handlePay } : { action: formAction })}
+      className="space-y-5 rounded-2xl border border-gray-200 p-5"
+    >
       <label className="block">
         <span className="mb-1 block text-sm font-medium">
           聯絡 Email <span className="text-red-600">*</span>
@@ -212,18 +258,28 @@ export function SessionSignupForm({
         className="absolute left-[-9999px] h-0 w-0 opacity-0"
       />
 
-      {state?.error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
       )}
 
       <button
         disabled={pending}
         className="w-full rounded-xl bg-gradient-to-br from-red-800 to-red-600 px-5 py-3 text-base font-bold text-white transition hover:opacity-90 disabled:opacity-50"
       >
-        {pending ? "送出中…" : "送出報名"}
+        {mode === "PAYMENT"
+          ? pending
+            ? "前往付款中…"
+            : total != null
+              ? `前往付款 NT$ ${total.toLocaleString()}`
+              : "前往付款"
+          : pending
+            ? "送出中…"
+            : "送出報名"}
       </button>
       <p className="text-center text-xs text-gray-500">
-        送出後將收到確認信，依信中說明完成繳費才算報名成功。
+        {mode === "PAYMENT"
+          ? "點擊後前往付款頁，支援信用卡與 ATM；付款完成即自動完成報名。"
+          : "送出後將收到確認信，依信中說明完成繳費才算報名成功。"}
       </p>
     </form>
   );

@@ -73,6 +73,25 @@ export async function updateSignupPageAction(
     return { error: "報名網址須為 http(s) 開頭的完整網址" };
   }
 
+  // 報名方式：EXTERNAL 導外部 / PLATFORM 平台線上金流（刷卡＋ATM）/ MANUAL 內建表單手動收款
+  const payMode = String(formData.get("signupPayMode") ?? "MANUAL");
+  if (!["EXTERNAL", "PLATFORM", "MANUAL"].includes(payMode)) {
+    return { error: "報名方式選項不正確" };
+  }
+  const priceRaw = String(formData.get("signupPrice") ?? "").trim();
+  let signupPrice: number | null = null;
+  if (priceRaw) {
+    const n = Number(priceRaw);
+    if (!Number.isInteger(n) || n < 0) return { error: "報名費用請填 0 以上的整數" };
+    signupPrice = n;
+  }
+  if (payMode === "EXTERNAL" && !signupUrl) {
+    return { error: "選「導去外部報名頁」請填外部報名網址" };
+  }
+  if (payMode === "PLATFORM" && (signupPrice === null || signupPrice <= 0)) {
+    return { error: "選「平台線上金流」請填每人報名費用（大於 0）" };
+  }
+
   const openAt = parseTaipeiDateTime(String(formData.get("signupOpenAt") ?? ""));
   if (openAt === undefined) return { error: "報名開始時間格式錯誤" };
   const closeAt = parseTaipeiDateTime(String(formData.get("signupCloseAt") ?? ""));
@@ -98,6 +117,8 @@ export async function updateSignupPageAction(
         signupSlug: slug || null,
         isSignupOpen,
         signupUrl,
+        signupPayMode: payMode,
+        signupPrice,
         dmImage,
         dmBlocks,
         signupIntro: text("signupIntro"),
