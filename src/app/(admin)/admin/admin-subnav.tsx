@@ -23,6 +23,7 @@ const PLATFORM_TABS = [
 const MARKETING_TABS = [
   { href: "/admin/broadcast", label: "Email群發", editorOnly: true },
   { href: "/admin/broadcast/groups", label: "名單群組", editorOnly: true },
+  { href: "/admin/marketing-pages", label: "行銷頁", editorOnly: true },
   { href: "/admin/webinars", label: "講座報名" },
   { href: "/admin/webinars/new", label: "建立講座", editorOnly: true },
   { href: "/admin/corporate", label: "包班諮詢" },
@@ -58,7 +59,13 @@ const PLATFORM_PREFIXES = [
   "/admin/zones",
   "/admin/subscription",
 ];
-const MARKETING_PREFIXES = ["/admin/broadcast", "/admin/webinars", "/admin/corporate", "/admin/sms"];
+const MARKETING_PREFIXES = [
+  "/admin/broadcast",
+  "/admin/marketing-pages",
+  "/admin/webinars",
+  "/admin/corporate",
+  "/admin/sms",
+];
 const ORDERS_PREFIXES = ["/admin/orders"];
 const SESSION_PREFIXES = ["/admin/sessions"];
 const FINANCE_PREFIXES = ["/admin/finance"];

@@ -44,6 +44,7 @@ export async function createCustomPageAction(
     return { error: `網址代稱「${parsed.slug}」已被使用` };
   }
   revalidatePath("/admin/settings");
+  revalidatePath("/admin/marketing-pages");
   revalidatePath("/", "layout"); // navbar 全站
   return { success: `已建立頁面：/p/${parsed.slug}` };
 }
@@ -62,6 +63,7 @@ export async function updateCustomPageAction(
     return { error: `網址代稱「${parsed.slug}」已被使用` };
   }
   revalidatePath("/admin/settings");
+  revalidatePath("/admin/marketing-pages");
   revalidatePath(`/p/${parsed.slug}`);
   revalidatePath("/", "layout");
   return { success: "已更新" };
@@ -72,5 +74,6 @@ export async function deleteCustomPageAction(id: string) {
   await requireFullAdmin();
   await prisma.customPage.delete({ where: { id } }).catch(() => undefined);
   revalidatePath("/admin/settings");
+  revalidatePath("/admin/marketing-pages");
   revalidatePath("/", "layout");
 }

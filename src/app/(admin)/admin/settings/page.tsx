@@ -4,19 +4,15 @@ import { togglePageAction } from "@/actions/admin";
 import { pageGuardFullAdmin } from "@/lib/auth/staff";
 import { prisma } from "@/lib/db";
 import { TrackingForm } from "./tracking-form";
-import { CreateCustomPageForm, CustomPageCard } from "./custom-pages-manager";
 import Link from "next/link";
 
 export const metadata = { title: "分頁管理 — 管理後台" };
 
 export default async function AdminSettingsPage() {
   await pageGuardFullAdmin(); // 僅管理員
-  const [pages, tracking, customPages] = await Promise.all([
+  const [pages, tracking] = await Promise.all([
     getPageStates(),
     getTrackingSettings(),
-    prisma.customPage.findMany({
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    }),
   ]);
 
   return (
@@ -57,35 +53,18 @@ export default async function AdminSettingsPage() {
         ))}
       </ul>
 
-      {/* 自訂分頁：後台自建的前台頁面 */}
-      <section className="mt-10">
-        <h2 className="mb-1 text-lg font-bold">自訂分頁</h2>
-        <p className="mb-4 text-sm text-gray-500">
-          自建前台頁面（網址 /p/代稱），可放文字、圖片與影片；「顯示於導覽列」開啟後出現在頂端導覽。
-          <strong>短影片行銷頁</strong>：填影片網址、關掉「顯示於導覽列」，EDM 放頁面連結導流——看過的人 Pixel 會記成受眾（ViewContent），FB 廣告可直接圈這群人再行銷。
-          內文語法與 EDM 相同：空行分段、網址自動連結、[按鈕文字](網址) 變紅色按鈕。
+      {/* 自訂頁（/p/代稱）已搬到「行銷推播 → 行銷頁」——那是行銷素材，不是站台結構分頁 */}
+      <section className="mt-10 rounded-xl border border-gray-200 p-4">
+        <h2 className="text-lg font-bold">行銷頁（自訂頁）</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          短影片行銷頁與活動落地頁（/p/代稱）已移到「行銷推播 → 行銷頁」管理。
         </p>
-        <div className="mb-4 space-y-3">
-          {customPages.map((p) => (
-            <CustomPageCard
-              key={p.id}
-              page={{
-                id: p.id,
-                slug: p.slug,
-                title: p.title,
-                content: p.content,
-                images: p.images,
-                videoUrl: p.videoUrl,
-                isPublished: p.isPublished,
-                showInNav: p.showInNav,
-              }}
-            />
-          ))}
-        </div>
-        <div className="rounded-xl border border-dashed border-gray-300 p-4">
-          <h3 className="mb-2 text-sm font-medium">新增頁面</h3>
-          <CreateCustomPageForm />
-        </div>
+        <Link
+          href="/admin/marketing-pages"
+          className="mt-3 inline-block rounded-lg border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50"
+        >
+          前往行銷頁
+        </Link>
       </section>
 
       <section className="mt-10 rounded-xl border border-gray-200 p-4">
