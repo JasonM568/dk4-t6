@@ -92,6 +92,7 @@ export function SignupPageForm({
   const [slug, setSlug] = useState(initial.signupSlug ?? "");
   const [signupUrl, setSignupUrl] = useState(initial.signupUrl ?? "");
   const [payMode, setPayMode] = useState(initial.signupPayMode || "MANUAL");
+  const [ctaLabel, setCtaLabel] = useState(initial.signupCtaLabel ?? "");
   const [price, setPrice] = useState(initial.signupPrice?.toString() ?? "");
   const [listPrice, setListPrice] = useState(initial.signupListPrice?.toString() ?? "");
   const [retrainPrice, setRetrainPrice] = useState(initial.signupRetrainPrice?.toString() ?? "");
@@ -192,6 +193,24 @@ export function SignupPageForm({
       <section className="space-y-3 rounded-2xl border border-gray-200 p-5">
         <h2 className="text-base font-bold">報名方式</h2>
         <input type="hidden" name="signupPayMode" value={payMode} />
+        {/* 模式切換不弄丟設定：未顯示區塊的欄位用隱藏欄位照樣送出，儲存永遠帶全部值。
+            沒有這段的話，切去別的模式再儲存，看不見的欄位會被存成空（外部連結要重打）。 */}
+        {payMode !== "EXTERNAL" && (
+          <>
+            <input type="hidden" name="signupUrl" value={signupUrl} />
+            <input type="hidden" name="signupCtaLabel" value={ctaLabel} />
+          </>
+        )}
+        {payMode !== "PLATFORM" && (
+          <>
+            <input type="hidden" name="signupPrice" value={price} />
+            <input type="hidden" name="signupListPrice" value={listPrice} />
+            <input type="hidden" name="signupRetrainPrice" value={retrainPrice} />
+            {[...retrainCourseIds].map((id) => (
+              <input key={id} type="hidden" name="signupRetrainCourseIds" value={id} />
+            ))}
+          </>
+        )}
         <div className="space-y-2 text-sm">
           {[
             { v: "PLATFORM", t: "平台線上金流（刷卡＋ATM）", d: "學員在這頁填表→線上付款，付款完成自動進正式名單並開立電子發票。" },
@@ -327,7 +346,8 @@ export function SignupPageForm({
               <input
                 name="signupCtaLabel"
                 maxLength={30}
-                defaultValue={initial.signupCtaLabel ?? ""}
+                value={ctaLabel}
+                onChange={(e) => setCtaLabel(e.target.value)}
                 placeholder="例：前往查看課程介紹"
                 className={INPUT}
               />
