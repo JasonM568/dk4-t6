@@ -85,6 +85,8 @@ export async function updateSignupPageAction(
   if (payMode === "EXTERNAL" && !signupUrl) {
     return { error: "選「導去外部報名頁」請填外部報名網址" };
   }
+  // CTA 按鈕文字（導外部模式）：留空 = 預設「立即報名」
+  const signupCtaLabel = String(formData.get("signupCtaLabel") ?? "").trim().slice(0, 30) || null;
   if (payMode === "PLATFORM" && (signupPrice === null || signupPrice <= 0)) {
     return { error: "選「平台線上金流」請填每人報名費用（大於 0）" };
   }
@@ -137,6 +139,7 @@ export async function updateSignupPageAction(
         signupSlug: slug || null,
         isSignupOpen,
         signupUrl,
+        signupCtaLabel,
         signupPayMode: payMode,
         signupPrice,
         signupListPrice,

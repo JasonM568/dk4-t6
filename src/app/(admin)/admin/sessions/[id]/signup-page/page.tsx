@@ -80,6 +80,7 @@ export default async function SessionSignupPageAdmin({
           signupSlug: session.signupSlug,
           isSignupOpen: session.isSignupOpen,
           signupUrl: session.signupUrl,
+          signupCtaLabel: session.signupCtaLabel,
           signupPayMode: session.signupPayMode,
           signupPrice: session.signupPrice,
           signupListPrice: session.signupListPrice,

@@ -762,6 +762,7 @@ model CourseSession {
   // 不收表單、不管名額（席次由 1shop 控管，訂單照舊匯入場次看板）。
   // 留空 = 用平台自己的報名表單（走 SessionSignupRequest 待確認流程）。
   signupUrl       String?
+  signupCtaLabel  String?   // 導外部模式的 CTA 按鈕文字（例：前往查看課程介紹）；null = 預設「立即報名」
   signupPriceNote String?   // 費用說明（Phase 1 純文字，例：早鳥 3800 / 原價 4500）
   signupPayNote   String?   @db.Text // 付款方式說明（匯款帳號、現場付款注意事項）
   signupNotice    String?   @db.Text // 注意事項／退費政策

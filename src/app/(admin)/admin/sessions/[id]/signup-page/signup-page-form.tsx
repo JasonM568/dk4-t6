@@ -52,6 +52,7 @@ export type SignupPageInitial = {
   signupSlug: string | null;
   isSignupOpen: boolean;
   signupUrl: string | null;
+  signupCtaLabel: string | null;
   signupPayMode: string; // EXTERNAL / PLATFORM / MANUAL
   signupPrice: number | null;
   signupListPrice: number | null;
@@ -306,18 +307,32 @@ export function SignupPageForm({
         )}
 
         {payMode === "EXTERNAL" && (
-          <label className="block">
-            <span className="mb-1 block text-xs text-gray-600">
-              外部報名網址（1shop 報名頁）<span className="text-red-600">*</span>
-            </span>
-            <input
-              name="signupUrl"
-              value={signupUrl}
-              onChange={(e) => setSignupUrl(e.target.value)}
-              placeholder="https://…"
-              className={INPUT}
-            />
-          </label>
+          <div className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs text-gray-600">
+                外部報名網址（1shop 報名頁）<span className="text-red-600">*</span>
+              </span>
+              <input
+                name="signupUrl"
+                value={signupUrl}
+                onChange={(e) => setSignupUrl(e.target.value)}
+                placeholder="https://…"
+                className={INPUT}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-gray-600">
+                按鈕文字（選填，留空顯示「立即報名」）
+              </span>
+              <input
+                name="signupCtaLabel"
+                maxLength={30}
+                defaultValue={initial.signupCtaLabel ?? ""}
+                placeholder="例：前往查看課程介紹"
+                className={INPUT}
+              />
+            </label>
+          </div>
         )}
       </section>
 

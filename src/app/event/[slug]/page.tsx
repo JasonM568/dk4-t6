@@ -171,7 +171,12 @@ export default async function EventSignupPage({
             {CLOSED_MESSAGE[state.reason]}
           </p>
         ) : isExternal ? (
-          <ExternalSignupCta slug={slug} title={session.title} url={session.signupUrl!} />
+          <ExternalSignupCta
+            slug={slug}
+            title={session.title}
+            url={session.signupUrl!}
+            label={session.signupCtaLabel}
+          />
         ) : isPlatform ? (
           <SessionSignupForm
             slug={slug}

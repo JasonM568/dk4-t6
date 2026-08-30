@@ -12,10 +12,13 @@ export function ExternalSignupCta({
   slug,
   title,
   url,
+  label,
 }: {
   slug: string;
   title: string;
   url: string;
+  /** 按鈕文字；後台可自訂（例：前往查看課程介紹），空值用預設 */
+  label?: string | null;
 }) {
   useEffect(() => {
     window.fbq?.("track", "ViewContent", {
@@ -44,7 +47,7 @@ export function ExternalSignupCta({
         onClick={onClick}
         className="block w-full rounded-xl bg-gradient-to-br from-red-800 to-red-600 px-5 py-4 text-lg font-bold text-white transition hover:opacity-90"
       >
-        立即報名
+        {label || "立即報名"}
       </a>
       <p className="mt-3 text-xs text-gray-500">
         點擊後前往報名系統完成填表與付款
