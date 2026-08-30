@@ -67,5 +67,16 @@ export function collectAttendees(
       return { error: `「${attendees[i].name}」在這次報名中重複填寫了` };
     }
   }
+
+  // 同行者鐵則硬擋：多位參加者不可共用同一支手機（parseAttendee 已正規化）。
+  // 訂購人代填自己的號碼會讓新舊生判定跟著錯、記錄卡把兩個人併成一張。
+  for (let i = 1; i < attendees.length; i++) {
+    const dup = attendees.slice(0, i).find((a) => a.phone === attendees[i].phone);
+    if (dup) {
+      return {
+        error: `「${attendees[i].name}」的手機與「${dup.name}」相同——每位參加者請填本人的號碼（課前通知與舊生辨識都以手機為準）`,
+      };
+    }
+  }
   return { attendees };
 }

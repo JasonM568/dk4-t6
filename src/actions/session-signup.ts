@@ -3,25 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
-import { explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { isRetrainProduct, isSamePerson } from "@/lib/session-roster";
+import { collectAttendees, type ParsedAttendee } from "@/lib/session-attendees";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import {
   SIGNUP_SLUG_RE,
   SIGNUP_REQUEST_STATUS,
   parseDmBlocks,
   type DmBlock,
-  MAX_ATTENDEES,
   attendeeKeyAt,
   makeWebOrderNo,
   signupState,
   CLOSED_MESSAGE,
 } from "@/lib/session-signup-page";
 
-// 場次公開報名頁：後台設定 ＋ 訪客送出報名 ＋ 管理員確認收款轉入名單。
-//
-// Phase 1 不接金流：訪客送出寫進 SessionSignupRequest（待確認），
-// 管理員收到款後按「轉入名單」才寫 SessionSignup。理由見 schema 的模型註解。
+// 場次公開報名頁：後台設定 ＋ 訪客送出報名（手動收款模式）＋ 管理員確認收款轉入名單。
+// 平台金流模式的結帳在 session-checkout.ts；參加者解析兩邊共用 lib/session-attendees。
 
 export type SignupPageState = { error?: string; success?: string } | null;
 export type PublicSignupState = { error?: string; success?: string } | null;
@@ -173,49 +170,8 @@ export async function updateSignupPageAction(
 }
 
 // ───────────────────────── 前台：訪客送出報名 ─────────────────────────
-
-type ParsedAttendee = {
-  name: string;
-  phone: string | null;
-  email: string | null;
-  meal: "MEAT" | "VEG";
-  isRetrain: boolean;
-};
-
-/** 解析第 i 位參加者的欄位；回傳 null 表示整列留空（略過） */
-function parseAttendee(
-  formData: FormData,
-  i: number,
-): ParsedAttendee | { error: string } | null {
-  const name = String(formData.get(`attendee-${i}-name`) ?? "").trim();
-  const phoneRaw = String(formData.get(`attendee-${i}-phone`) ?? "").trim();
-  const email = String(formData.get(`attendee-${i}-email`) ?? "").trim().toLowerCase();
-  const mealRaw = String(formData.get(`attendee-${i}-meal`) ?? "");
-  const isRetrain = formData.get(`attendee-${i}-retrain`) === "on";
-
-  if (!name && !phoneRaw && !email) return null;
-  const who = name || `第 ${i + 1} 位參加者`;
-  if (!name) return { error: `請填寫第 ${i + 1} 位參加者的姓名` };
-
-  // 同行者鐵則：每位參加者都要留自己的手機。訂購人幫同行者填自己的號碼，
-  // 是學員記錄卡把兩個人併成一張卡的主因，在表單這一層就擋掉最省事。
-  if (!phoneRaw) return { error: `請填寫「${who}」本人的手機（每位參加者要留自己的號碼）` };
-  const { mobile, reject, overseas } = explainMobile(phoneRaw);
-  if (!mobile && !overseas) {
-    return {
-      error: `「${who}」的手機${reject ? `：${MOBILE_REJECT_LABEL[reject]}` : "格式不正確"}（請填 09 開頭 10 碼，海外門號請加國碼如 +60123456789）`,
-    };
-  }
-  if (email && !EMAIL_RE.test(email)) return { error: `「${who}」的 Email 格式不正確` };
-
-  return {
-    name,
-    phone: mobile ?? overseas!,
-    email: email || null,
-    meal: mealRaw === "VEG" ? "VEG" : "MEAT", // 白名單，預設葷
-    isRetrain,
-  };
-}
+// 參加者解析統一走 lib/session-attendees（與平台金流結帳同一套同行者鐵則，
+// 含「多位參加者不可共用同一支手機」的硬擋），不在這裡另留一份。
 
 export async function submitSignupAction(
   slug: string,
@@ -239,21 +195,9 @@ export async function submitSignupAction(
   if (!EMAIL_RE.test(buyerEmail)) return { error: "請填寫正確的 Email（報名確認信會寄到這裡）" };
   const note = String(formData.get("note") ?? "").trim() || null;
 
-  const attendees: ParsedAttendee[] = [];
-  for (let i = 0; i < MAX_ATTENDEES; i++) {
-    const parsed = parseAttendee(formData, i);
-    if (parsed === null) continue;
-    if ("error" in parsed) return { error: parsed.error };
-    attendees.push(parsed);
-  }
-  if (attendees.length === 0) return { error: "請至少填寫一位參加者" };
-
-  // 同一次報名內自己撞名（同名同手機）：多半是重複填寫，直接擋掉
-  for (let i = 1; i < attendees.length; i++) {
-    if (attendees.slice(0, i).some((a) => isSamePerson(a, attendees[i]))) {
-      return { error: `「${attendees[i].name}」在這次報名中重複填寫了` };
-    }
-  }
+  const collected = collectAttendees(formData);
+  if ("error" in collected) return { error: collected.error };
+  const { attendees } = collected;
 
   // 開放與名額判定：已確認名單（未延出）＋ 待確認申請都算佔位
   const [roster, pendingCount, recentDup] = await Promise.all([
