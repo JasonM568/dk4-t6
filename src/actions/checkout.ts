@@ -8,10 +8,143 @@ import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { isCoursePublicActive } from "@/lib/course-access";
 import { nextOrderNo } from "@/lib/order-no";
 import { getPaymentToolConfig, resolvePayTools } from "@/lib/payment/pay-config";
+import { explainMobile } from "@/lib/sms/phone";
+import { findAuthUserIdByEmail } from "@/lib/supabase/admin";
 
 export type CheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
   | { ok: false; error: string; redirect?: string };
+
+/**
+ * 訪客結帳（未登入也能買）：不建帳號、不寄信，只建一筆 userId=null 的訂單送去金流。
+ * 付款成功後由 settlePaidOrder 建立／連結會員帳號、開通課程並寄設定密碼信——
+ * 沒付款就不會有帳號，公開端點無法被拿來灌帳號。
+ */
+export async function createGuestCheckout(
+  courseId: string,
+  buyer: { email: string; name: string; phone: string },
+): Promise<CheckoutResult> {
+  const email = buyer.email.trim().toLowerCase();
+  const name = buyer.name.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: "請填寫正確的 Email（課程開通通知會寄到這裡）" };
+  }
+  if (name.length < 2) return { ok: false, error: "請填寫姓名" };
+  const { mobile, overseas } = explainMobile(buyer.phone);
+  const phone = mobile ?? overseas;
+  if (!phone) {
+    return { ok: false, error: "請填寫正確的手機號碼（09 開頭 10 碼，海外請加國碼）" };
+  }
+
+  const course = await prisma.course.findUnique({ where: { id: courseId } });
+  if (!course || !isCoursePublicActive(course) || course.groupId) {
+    return { ok: false, error: "課程不存在" };
+  }
+
+  // 訪客一律原價（會員等級折扣要登入才算）
+  const subtotal = course.price;
+  const total = subtotal;
+  if (total <= 0) {
+    return { ok: false, error: "此課程無法透過金流購買，請聯繫管理員開通觀看權限" };
+  }
+
+  // 已有帳號且已擁有這門課 → 請他登入，不要重複買
+  const existingUserId = await findAuthUserIdByEmail(email).catch(() => null);
+  if (existingUserId) {
+    const owned = await prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId: existingUserId, courseId } },
+    });
+    if (owned) {
+      return {
+        ok: false,
+        error: "這個信箱已經擁有本課程，請直接登入觀看",
+        redirect: "/login",
+      };
+    }
+  }
+
+  // 逾期未付款的訪客單先失效，釋放防重鍵
+  await prisma.order.updateMany({
+    where: {
+      buyerEmail: email,
+      userId: null,
+      status: "PENDING",
+      createdAt: { lt: new Date(Date.now() - PENDING_EXPIRE_MS) },
+    },
+    data: { status: "EXPIRED", checkoutKey: null },
+  });
+
+  let orderId: string | null = null;
+  let orderNo = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    orderNo = await nextOrderNo(course, attempt);
+    try {
+      const created = await prisma.order.create({
+        data: {
+          orderNo,
+          // 訪客防重鍵用 email（尚無 userId）
+          checkoutKey: `guest:${email}:${courseId}`,
+          userId: null,
+          buyerEmail: email,
+          buyerName: name,
+          buyerPhone: phone,
+          status: "PENDING",
+          subtotal,
+          discount: 0,
+          total,
+          items: { create: [{ courseId: course.id, unitPrice: course.price }] },
+          payment: {
+            create: {
+              provider: process.env.PAYMENT_PROVIDER ?? "ecpay",
+              status: "PENDING",
+              amount: total,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      orderId = created.id;
+      break;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
+        if (target.includes("orderNo")) continue;
+        return {
+          ok: false,
+          error:
+            "你已有這門課的待付款訂單，請先完成付款；若不打算付款，2 小時後訂單自動失效即可重新下單",
+        };
+      }
+      throw e;
+    }
+  }
+  if (!orderId) {
+    console.error("[guest-checkout] 訂單編號連撞 4 次，放棄", { courseId });
+    return { ok: false, error: "系統忙碌中，請稍後再試" };
+  }
+
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+  const provider = getPaymentProvider();
+  try {
+    const { action, fields } = provider.createPayment({
+      orderNo,
+      amount: total,
+      itemName: course.title,
+      tradeDesc: "guest-course-order",
+      returnUrl: `${base}/api/payment/${provider.name}/notify`,
+      resultUrl: `${base}/api/payment/${provider.name}/return`,
+      clientBackUrl: `${base}/orders/${orderNo}`,
+      payTools: resolvePayTools(await getPaymentToolConfig(), total),
+    });
+    return { ok: true, action, fields };
+  } catch (e) {
+    console.error("[guest-checkout] 建立付款表單失敗：", e);
+    await prisma.order
+      .update({ where: { id: orderId }, data: { status: "FAILED", checkoutKey: null } })
+      .catch(() => undefined);
+    return { ok: false, error: "建立付款連結失敗，請稍後再試" };
+  }
+}
 
 /** PENDING 訂單有效期：逾期在下次結帳時 lazy 轉 EXPIRED 並釋放防重鍵 */
 const PENDING_EXPIRE_MS = 2 * 60 * 60 * 1000;

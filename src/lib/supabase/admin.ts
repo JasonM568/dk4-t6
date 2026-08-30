@@ -197,6 +197,26 @@ export async function createMember(input: {
   return { ok: true, userId: data.user.id };
 }
 
+/** 產生「設定密碼」連結（recovery link）。訪客購課自動建帳號後，
+ *  用這條連結請他設定自己的密碼——絕不自行保存或寄出明碼。
+ *  落點與忘記密碼同一條（/auth/confirm → /reset-password）。 */
+export async function generateSetPasswordLink(
+  email: string,
+): Promise<string | null> {
+  const supabase = createAdminClient();
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
+  const { data, error } = await supabase.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo: `${base}/auth/confirm` },
+  });
+  if (error) {
+    console.error("[supabase/admin] 產生設定密碼連結失敗：", email, error.message);
+    return null;
+  }
+  return data.properties?.action_link ?? null;
+}
+
 // ───── 課程圖片上傳（Supabase Storage：course-assets 公開 bucket）─────
 
 const COURSE_ASSETS_BUCKET = "course-assets";
