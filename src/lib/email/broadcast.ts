@@ -1,7 +1,12 @@
 import "server-only";
 
 import { buildOneClickUnsubscribeUrl } from "./unsubscribe";
-import { buildContentHtml, esc, type Recipient } from "./render-content";
+import {
+  applyMergeTags,
+  buildContentHtml,
+  esc,
+  type Recipient,
+} from "./render-content";
 
 // 內文渲染與合併變數移到 ./render-content（純函式，後台即時預覽共用）；
 // 這裡 re-export 讓既有呼叫端（dispatch/actions）維持從本模組匯入
@@ -193,7 +198,9 @@ export type SendOptions = {
   withUnsubscribe?: boolean; // 有值時每封帶 List-Unsubscribe one-click headers（RFC 8058）
 };
 
-/** 以 Resend batch API 寄送（每批 100 封）；html 逐封產生，支援每位收件人不同內容 */
+/** 以 Resend batch API 寄送（每批 100 封）；html 逐封產生，支援每位收件人不同內容。
+ *  主旨同樣逐封套合併變數（{name}/{email}/{code}）——內文有套、主旨沒套的話，
+ *  「{name} 同學你好」會原樣寄到收件匣。 */
 export async function sendBroadcast(
   recipients: Recipient[],
   subject: string,
@@ -247,7 +254,7 @@ export async function sendBroadcast(
           return {
             from,
             to: [r.email],
-            subject,
+            subject: applyMergeTags(subject, r),
             html: renderHtml(r),
             ...(oneClick
               ? {

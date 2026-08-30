@@ -32,7 +32,8 @@ export default async function BroadcastEditPage({
     redirect(`/admin/broadcast/${id}`);
   }
 
-  const [courses, memberCount, groups, sessions, profiles] = await Promise.all([
+  const [courses, memberCount, groups, sessions, profiles, marketingPages] =
+    await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true },
@@ -52,6 +53,12 @@ export default async function BroadcastEditPage({
       },
     }),
     listProfiles(),
+    // 行銷頁（/p/<slug>）：工具列「🎬 行銷頁」下拉
+    prisma.customPage.findMany({
+      where: { isPublished: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      select: { slug: true, title: true },
+    }),
   ]);
 
   // 跟進信：來源與條件唯讀（要換條件請取消排程後從來源明細頁重建）
@@ -114,6 +121,7 @@ export default async function BroadcastEditPage({
           title: s.title,
           signupCount: s._count.signups,
         }))}
+        marketingPages={marketingPages}
         memberCount={memberCount}
         members={profiles
           .filter((p) => p.email)

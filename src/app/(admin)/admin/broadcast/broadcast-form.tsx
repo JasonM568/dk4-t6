@@ -69,6 +69,8 @@ type BroadcastFormProps = {
   courses: { id: string; title: string }[];
   groups: GroupOption[];
   sessions: SessionOption[];
+  /** 已發佈的行銷頁（/p/<slug>）：工具列「插入行銷頁」下拉用 */
+  marketingPages: { slug: string; title: string }[];
   memberCount: number;
   members: MemberOption[]; // 會員清單（「選取會員」勾選用）
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
@@ -82,6 +84,7 @@ export function BroadcastForm({
   courses,
   groups,
   sessions,
+  marketingPages,
   memberCount,
   members,
   sendAction,
@@ -370,6 +373,32 @@ export function BroadcastForm({
               >
                 {uploadingImg ? "上傳中…" : "🖼️ 圖片"}
               </button>
+              {/* 行銷頁下拉：選一頁就插好 CTA 按鈕，不用自己去複製 /p/<slug> 網址 */}
+              {marketingPages.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const page = marketingPages.find((p) => p.slug === e.target.value);
+                    if (!page) return;
+                    const base =
+                      process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
+                    insertSnippet(
+                      `\n\n[▶ ${page.title}](${base}/p/${page.slug})\n\n`,
+                      [3, 3 + page.title.length + 2],
+                    );
+                    e.target.value = "";
+                  }}
+                  title="插入行銷頁連結（短影片頁／落地頁）"
+                  className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
+                >
+                  <option value="">🎬 行銷頁</option>
+                  {marketingPages.map((p) => (
+                    <option key={p.slug} value={p.slug}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 type="button"
                 onClick={() => setShowPreview((v) => !v)}

@@ -93,5 +93,23 @@ console.log("— 新語法 —");
   check("圖片 alt 轉義", !escaped.includes('onerror="x"'));
 }
 
+// 主旨的合併變數（2026-08-30 修：原本只有內文套 applyMergeTags，
+// 主旨照字面寄出，「{name} 同學好」會原樣進收件匣）
+{
+  const r = { email: "a@b.tw", name: "王小明" };
+  check(
+    "主旨 {name} 會被替換",
+    applyMergeTags("{name}，好久不見", r) === "王小明，好久不見",
+  );
+  check(
+    "主旨無姓名時留空不留變數字面",
+    applyMergeTags("{name} 同學你好", { email: "a@b.tw" }) === " 同學你好",
+  );
+  check(
+    "主旨 {email} 也支援",
+    applyMergeTags("寄給 {email}", r) === "寄給 a@b.tw",
+  );
+}
+
 console.log(fail === 0 ? `\n全部通過（${pass} 項）` : `\n${fail} 項失敗（${pass} 項通過）`);
 process.exit(fail === 0 ? 0 : 1);

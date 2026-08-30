@@ -104,6 +104,7 @@ export default async function BroadcastPage({
     sessions,
     profiles,
     templates,
+    marketingPages,
   ] = await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -138,6 +139,12 @@ export default async function BroadcastPage({
     listProfiles(),
     // 範本庫：最近更新在前
     prisma.mailTemplate.findMany({ orderBy: { updatedAt: "desc" } }),
+    // 行銷頁（/p/<slug>）：工具列「🎬 行銷頁」下拉，一鍵插入 CTA 連結
+    prisma.customPage.findMany({
+      where: { isPublished: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      select: { slug: true, title: true },
+    }),
   ]);
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -330,6 +337,7 @@ export default async function BroadcastPage({
         courses={courses}
         groups={groupOptions}
         sessions={sessionOptions}
+        marketingPages={marketingPages}
         memberCount={memberCount}
         members={memberOptions}
         sendAction={sendBroadcastAction}
