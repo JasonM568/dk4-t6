@@ -12,6 +12,7 @@ import { normalizeEmail } from "@/lib/course-access";
 import { explainMobile } from "@/lib/sms/phone";
 import { PRIVACY_POLICY_VERSION } from "@/lib/privacy";
 import { getAuthUser } from "@/lib/supabase/server";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 export type ActionState = {
   error?: string;
@@ -202,8 +203,7 @@ export async function completeProfileAction(
     },
   });
 
-  const nextRaw = String(formData.get("next") ?? "");
-  redirect(/^\/(?!\/)/.test(nextRaw) ? nextRaw : "/dashboard");
+  redirect(safeNextPath(formData.get("next")));
 }
 
 /** 會員資料頁更新手機（已同意過條款者；同意紀錄不變） */

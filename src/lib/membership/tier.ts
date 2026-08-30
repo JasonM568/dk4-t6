@@ -37,7 +37,10 @@ export async function recalcTier(
   }
 }
 
-/** 依折扣百分比計算折扣金額（無條件捨去到整數）*/
+/** 依折扣百分比計算折扣金額（無條件捨去到整數）。
+ *  percent 夾在 0–100：DB 端 discountPercent 無 CHECK 約束，若某等級被設成 >100
+ *  或負數，折扣金額會超過原價（total 變負）或倒扣。合法 0–100 值行為不變。 */
 export function computeDiscount(subtotal: number, discountPercent: number): number {
-  return Math.floor((subtotal * discountPercent) / 100);
+  const pct = Math.min(100, Math.max(0, discountPercent));
+  return Math.floor((subtotal * pct) / 100);
 }

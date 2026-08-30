@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment";
-import { recalcTier } from "@/lib/membership/tier";
+import { settlePaidOrder, settleFailedOrder } from "@/lib/payment/settle";
 
 // ECPay 簽章需要 node:crypto，禁用 edge runtime
 export const runtime = "nodejs";
@@ -9,6 +8,12 @@ export const runtime = "nodejs";
 /**
  * ECPay server-to-server 背景通知（ReturnURL）。
  * 這是訂單付款狀態的「唯一真實來源」。必須回傳純文字 "1|OK"。
+ *
+ * 結算／開通／消費累計與冪等判斷全走 src/lib/payment/settle.ts——後台「金流確認」
+ * 與 PAYUNi notify 共用同一份。ECPay route 曾自帶一份 inline 結算，冪等只認 PAID，
+ * 沒涵蓋 CONFIRMED/COMPLETED/REFUNDED/CANCELLED：管理員把單標成已確認後，ECPay
+ * 重送通知就會二次累加 totalSpent、灌水升等，甚至把已取消/已退款的單翻回 PAID。
+ * 改為委派 settle.ts 後兩邊行為一致，這類重送不再重複結算。
  */
 export async function POST(req: NextRequest) {
   const form = await req.formData();
@@ -36,105 +41,33 @@ export async function POST(req: NextRequest) {
       : "2000132");
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { orderNo: result.orderNo },
-        include: { items: true },
-      });
-      if (!order) return;
-
-      // 防線 2：已處理過的訂單直接略過（冪等）
-      if (order.status === "PAID") return;
-
-      // 防線 5：訂單超過 7 天仍未付款，記錄異常但仍繼續處理（ECPay 有重送機制）
-      const orderAgeMs = Date.now() - order.createdAt.getTime();
-      if (orderAgeMs > 7 * 24 * 60 * 60 * 1000) {
-        console.warn("[ecpay notify] stale order callback", {
+    if (result.success) {
+      // 防線 2：商店代號比對（金額比對與冪等在 settlePaidOrder 內）。
+      // 不符時記錄異常、不結算，但仍回成功字串停止 ECPay 重送。
+      if (result.merchantId !== configuredMerchantId) {
+        console.error("[ecpay notify] merchant mismatch", {
           orderNo: result.orderNo,
-          ageDays: Math.floor(orderAgeMs / 86400000),
+          expectedMerchantId: configuredMerchantId,
+          receivedMerchantId: result.merchantId,
+        });
+        return new Response("1|OK");
+      }
+      const settled = await settlePaidOrder({
+        orderNo: result.orderNo,
+        amount: result.amount,
+        tradeNo: result.tradeNo,
+        paymentType: result.paymentType,
+        raw: payload,
+      });
+      if (!settled.ok) {
+        console.error("[ecpay notify] 結算拒絕", {
+          orderNo: result.orderNo,
+          reason: settled.reason,
         });
       }
-
-      if (result.success) {
-        // 防線 4：比對回呼金額與商店代號，防止偽造/竄改的成功回呼開通課程。
-        // 不符時記錄異常、不標 PAID、不開通；但仍須回傳成功字串以停止 ECPay 重送。
-        const amountMatches = result.amount === order.total;
-        const merchantMatches = result.merchantId === configuredMerchantId;
-        if (!amountMatches || !merchantMatches) {
-          console.error("[ecpay notify] callback verification mismatch", {
-            orderNo: result.orderNo,
-            expectedAmount: order.total,
-            receivedAmount: result.amount,
-            expectedMerchantId: configuredMerchantId,
-            receivedMerchantId: result.merchantId,
-          });
-          return;
-        }
-
-        await tx.order.update({
-          where: { id: order.id },
-          data: { status: "PAID", paidAt: new Date(), checkoutKey: null },
-        });
-        await tx.payment.update({
-          where: { orderId: order.id },
-          data: {
-            status: "SUCCESS",
-            tradeNo: result.tradeNo,
-            paymentType: result.paymentType,
-            rawCallback: payload,
-            notifiedAt: new Date(),
-          },
-        });
-
-        // 防線 3：建立 enrollment（@@unique 保證不重複授權）
-        for (const item of order.items) {
-          await tx.enrollment.upsert({
-            where: {
-              userId_courseId: {
-                userId: order.userId,
-                courseId: item.courseId,
-              },
-            },
-            update: {},
-            create: {
-              userId: order.userId,
-              courseId: item.courseId,
-              orderId: order.id,
-              source: "PURCHASE",
-            },
-          });
-        }
-
-        // 累加消費並重算會員等級
-        // MemberStats 採 lazy upsert：首次付款成功時建立，之後累加
-        await tx.memberStats.upsert({
-          where: { userId: order.userId },
-          update: {
-            totalSpent: { increment: order.total },
-            coursesBought: { increment: order.items.length },
-          },
-          create: {
-            userId: order.userId,
-            totalSpent: order.total,
-            coursesBought: order.items.length,
-          },
-        });
-        await recalcTier(tx, order.userId);
-      } else {
-        await tx.order.update({
-          where: { id: order.id },
-          data: { status: "FAILED", checkoutKey: null },
-        });
-        await tx.payment.update({
-          where: { orderId: order.id },
-          data: {
-            status: "FAILED",
-            rawCallback: payload,
-            notifiedAt: new Date(),
-          },
-        });
-      }
-    });
+    } else {
+      await settleFailedOrder(result.orderNo, payload);
+    }
   } catch (error) {
     console.error("[ecpay notify] error:", error);
     return new Response("0|ServerError");
