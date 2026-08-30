@@ -54,6 +54,7 @@ export type SignupPageInitial = {
   signupUrl: string | null;
   signupPayMode: string; // EXTERNAL / PLATFORM / MANUAL
   signupPrice: number | null;
+  signupListPrice: number | null;
   signupRetrainPrice: number | null;
   signupRetrainCourseIds: string[];
   dmImage: string | null;
@@ -91,6 +92,7 @@ export function SignupPageForm({
   const [signupUrl, setSignupUrl] = useState(initial.signupUrl ?? "");
   const [payMode, setPayMode] = useState(initial.signupPayMode || "MANUAL");
   const [price, setPrice] = useState(initial.signupPrice?.toString() ?? "");
+  const [listPrice, setListPrice] = useState(initial.signupListPrice?.toString() ?? "");
   const [retrainPrice, setRetrainPrice] = useState(initial.signupRetrainPrice?.toString() ?? "");
   const [retrainCourseIds, setRetrainCourseIds] = useState<Set<string>>(
     new Set(initial.signupRetrainCourseIds),
@@ -217,23 +219,40 @@ export function SignupPageForm({
         </div>
 
         {payMode === "PLATFORM" && (
-          <label className="block">
-            <span className="mb-1 block text-xs text-gray-600">
-              每人報名費用（NT$，整數）<span className="text-red-600">*</span>
-            </span>
-            <input
-              type="number"
-              min={1}
-              name="signupPrice"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="例：5880"
-              className={INPUT}
-            />
-            <span className="mt-1 block text-xs text-gray-500">
-              這是新生／一般價。多人報名時金額逐位加總。開放刷卡與 ATM 兩種付款。
-            </span>
-          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-xs text-gray-600">
+                每人報名費用＝特價（NT$，實收）<span className="text-red-600">*</span>
+              </span>
+              <input
+                type="number"
+                min={1}
+                name="signupPrice"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="例：5880"
+                className={INPUT}
+              />
+              <span className="mt-1 block text-xs text-gray-500">
+                新生／一般實收價。多人報名時金額逐位加總。開放刷卡與 ATM。
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-gray-600">原價（選填，顯示用）</span>
+              <input
+                type="number"
+                min={1}
+                name="signupListPrice"
+                value={listPrice}
+                onChange={(e) => setListPrice(e.target.value)}
+                placeholder="例：8880"
+                className={INPUT}
+              />
+              <span className="mt-1 block text-xs text-gray-500">
+                報名頁會顯示「原價劃線 → 特價」；留空則只顯示一個價格。不影響實收。
+              </span>
+            </label>
+          </div>
         )}
 
         {payMode === "PLATFORM" && (

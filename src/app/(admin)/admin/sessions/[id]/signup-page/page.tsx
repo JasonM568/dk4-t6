@@ -82,6 +82,7 @@ export default async function SessionSignupPageAdmin({
           signupUrl: session.signupUrl,
           signupPayMode: session.signupPayMode,
           signupPrice: session.signupPrice,
+          signupListPrice: session.signupListPrice,
           signupRetrainPrice: session.signupRetrainPrice,
           signupRetrainCourseIds: session.signupRetrainCourseIds,
           dmImage: session.dmImage,

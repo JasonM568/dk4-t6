@@ -91,6 +91,17 @@ export async function updateSignupPageAction(
   if (payMode === "PLATFORM" && (signupPrice === null || signupPrice <= 0)) {
     return { error: "選「平台線上金流」請填每人報名費用（大於 0）" };
   }
+  // 原價（純顯示，劃線對比特價）
+  const listPriceRaw = String(formData.get("signupListPrice") ?? "").trim();
+  let signupListPrice: number | null = null;
+  if (listPriceRaw) {
+    const n = Number(listPriceRaw);
+    if (!Number.isInteger(n) || n < 0) return { error: "原價請填 0 以上的整數" };
+    signupListPrice = n;
+  }
+  if (signupListPrice !== null && signupPrice !== null && signupListPrice <= signupPrice) {
+    return { error: "原價要大於特價，否則劃線沒有意義（不顯示原價請留空）" };
+  }
   // 自動新舊生定價（選填）：複訓價 + 複訓資格課程（CanonicalCourse.id）
   const retrainPriceRaw = String(formData.get("signupRetrainPrice") ?? "").trim();
   let signupRetrainPrice: number | null = null;
@@ -131,6 +142,7 @@ export async function updateSignupPageAction(
         signupUrl,
         signupPayMode: payMode,
         signupPrice,
+        signupListPrice,
         signupRetrainPrice,
         signupRetrainCourseIds,
         dmImage,

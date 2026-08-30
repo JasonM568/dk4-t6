@@ -177,6 +177,8 @@ export default async function EventSignupPage({
             slug={slug}
             mode="PAYMENT"
             unitPrice={session.signupPrice!}
+            listPrice={session.signupListPrice}
+            retrainPrice={session.signupRetrainPrice}
             maxSeats={remaining === null ? undefined : remaining}
           />
         ) : (

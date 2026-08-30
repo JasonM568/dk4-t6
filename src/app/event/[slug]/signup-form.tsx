@@ -30,14 +30,20 @@ export function SessionSignupForm({
   maxSeats,
   mode = "REQUEST",
   unitPrice,
+  listPrice,
+  retrainPrice,
 }: {
   slug: string;
   /** 剩餘名額；undefined = 不限額。用來擋「加人加超過剩餘名額」 */
   maxSeats?: number;
   /** REQUEST = 送出待確認（手動收款）；PAYMENT = 前往平台金流付款 */
   mode?: "REQUEST" | "PAYMENT";
-  /** PAYMENT 模式每人單價，用來即時顯示總額 */
+  /** PAYMENT 模式每人單價（新生特價，實收），用來即時顯示總額 */
   unitPrice?: number;
+  /** 原價（純顯示，劃線對比特價）；null/undefined = 不顯示 */
+  listPrice?: number | null;
+  /** 複訓價（顯示方案用） */
+  retrainPrice?: number | null;
 }) {
   const [state, formAction, requestPending] = useActionState<PublicSignupState, FormData>(
     submitSignupAction.bind(null, slug),
@@ -139,6 +145,33 @@ export function SessionSignupForm({
       {...(mode === "PAYMENT" ? { onSubmit: handlePay } : { action: formAction })}
       className="space-y-5 rounded-2xl border border-gray-200 p-5"
     >
+      {/* 價格方案：原價劃線 → 特價（同課程頁的呈現）；有複訓價也一併列出 */}
+      {mode === "PAYMENT" && unitPrice != null && (
+        <div className="rounded-xl bg-red-50/60 px-4 py-3">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            {listPrice != null && listPrice > unitPrice && (
+              <span className="text-sm text-gray-400 line-through">
+                原價 NT$ {listPrice.toLocaleString()}
+              </span>
+            )}
+            <span className="text-2xl font-bold text-red-700">
+              NT$ {unitPrice.toLocaleString()}
+            </span>
+            <span className="text-sm text-gray-600">／人</span>
+            {listPrice != null && listPrice > unitPrice && (
+              <span className="text-xs font-medium text-green-700">
+                現省 NT$ {(listPrice - unitPrice).toLocaleString()}
+              </span>
+            )}
+          </div>
+          {retrainPrice != null && (
+            <p className="mt-1 text-xs text-gray-600">
+              量子舊生複訓價 NT$ {retrainPrice.toLocaleString()}／人——填手機後自動辨識，符合即自動套用
+            </p>
+          )}
+        </div>
+      )}
+
       <label className="block">
         <span className="mb-1 block text-sm font-medium">
           聯絡 Email <span className="text-red-600">*</span>
