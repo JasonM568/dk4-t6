@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/db";
 import { recalcTier } from "@/lib/membership/tier";
+import {
+  provisionGuestAccount,
+  fillGuestProfile,
+  sendGuestWelcomeEmail,
+  sendExistingMemberPurchaseEmail,
+} from "@/lib/guest-account";
 import { getEzpayConfig, issueInvoice } from "@/lib/invoice/ezpay";
 import { getProfile } from "@/lib/supabase/admin";
 import type { Prisma } from "@prisma/client";
@@ -30,10 +36,90 @@ const OWNED_STATUSES = ["PAID", "CONFIRMED", "COMPLETED"] as const;
  *  管理員把單標成已確認後，下一次重送就會重複累計消費與開通。 */
 const SETTLED_STATUSES = new Set(["PAID", "CONFIRMED", "COMPLETED", "REFUNDED"]);
 
+/** 訪客建帳號的注入點。正式路徑走 guest-account 的 Supabase Admin API；
+ *  本機測試改注入假實作——**測試絕不可對正式 Supabase 建帳號**（CLAUDE.md 鐵則）。 */
+type GuestProvisioner = typeof provisionGuestAccount;
+let guestProvisioner: GuestProvisioner = provisionGuestAccount;
+
+/** 購課通知信的注入點（同理：測試不可真的透過 Resend 寄信到不存在的信箱）。 */
+type GuestNotifier = (input: {
+  email: string;
+  name?: string | null;
+  courseTitle: string;
+  courseSlug: string;
+  created: boolean;
+}) => Promise<void>;
+let guestNotifier: GuestNotifier = async ({ created, ...rest }) =>
+  created ? sendGuestWelcomeEmail(rest) : sendExistingMemberPurchaseEmail(rest);
+
+/** 僅供本機測試腳本使用：替換建帳號／寄信實作，避免測試打到正式 Supabase 與 Resend。 */
+export function __setGuestProvisionerForTest(
+  fn: GuestProvisioner,
+  notifier?: GuestNotifier,
+): void {
+  guestProvisioner = fn;
+  if (notifier) guestNotifier = notifier;
+}
+
+/** 訪客訂單付款成功 → 找出或建立會員帳號並回填 order.userId。
+ *  回傳這次是否為新建帳號（供結算後寄對應的通知信）；非訪客訂單回傳 null。 */
+async function provisionGuestOrderAccount(
+  orderNo: string,
+  paidAmount: number,
+): Promise<{ userId: string; created: boolean; email: string; name: string | null } | null> {
+  const order = await prisma.order.findUnique({
+    where: { orderNo },
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      total: true,
+      buyerEmail: true,
+      buyerName: true,
+      buyerPhone: true,
+    },
+  });
+  // 已有帳號、找不到單、已結算過的單都不處理
+  if (!order || order.userId || SETTLED_STATUSES.has(order.status)) return null;
+  // 金額不符／已取消的單稍後會被拒絕結算——這裡就不要先建帳號，
+  // 否則偽造或竄改金額的回呼可以拿公開端點灌帳號（結算本身仍會擋下開通）
+  if (order.status === "CANCELLED" || paidAmount !== order.total) return null;
+  if (!order.buyerEmail) {
+    console.error("[settle] 訪客訂單缺 buyerEmail，無法建立帳號", { orderNo });
+    return null;
+  }
+
+  const res = await guestProvisioner(order.buyerEmail, order.buyerName);
+  if (!res.ok) {
+    console.error("[settle] 訪客訂單建立帳號失敗，訂單將維持未開通", {
+      orderNo,
+      error: res.error,
+    });
+    return null;
+  }
+  await prisma.order.update({ where: { id: order.id }, data: { userId: res.userId } });
+  await fillGuestProfile(res.userId, {
+    email: order.buyerEmail,
+    name: order.buyerName,
+    phone: order.buyerPhone,
+  });
+  return {
+    userId: res.userId,
+    created: res.created,
+    email: order.buyerEmail,
+    name: order.buyerName,
+  };
+}
+
 /** 把訂單標為已付款並開通課程（冪等）。只做 DB transaction，發票另呼叫
  *  issueInvoiceForOrder——外部 API 不能包在 transaction 裡。 */
 export async function settlePaidOrder(input: SettleInput): Promise<SettleResult> {
   let outcome: SettleResult = { ok: true, already: false };
+
+  // 訪客訂單（userId 為 null）：付款成功才建立／連結會員帳號，回填到訂單後
+  // 才進 transaction——GoTrue 是外部 API，絕不能包在 DB transaction 裡。
+  // 未付款的訪客訂單永遠走不到這裡，所以公開結帳端點無法被用來灌帳號。
+  const guestInfo = await provisionGuestOrderAccount(input.orderNo, input.amount);
 
   await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -115,12 +201,38 @@ export async function settlePaidOrder(input: SettleInput): Promise<SettleResult>
         notifiedAt: new Date(),
       },
     });
+    // userId 於此必定有值（訪客訂單已在 transaction 前回填）；建帳號失敗時仍為 null，
+    // 此時錢已收但無法開通——訂單照標 PAID 留下金流事實，改存待開通名單，
+    // 之後該 email 註冊／被建立帳號時由 claimPendingEnrollments 自動補開通。
+    const buyerId = order.userId;
+    if (!buyerId) {
+      console.error("[settle] 已付款但無會員帳號，改存待開通名單等認領", {
+        orderNo: input.orderNo,
+        buyerEmail: order.buyerEmail,
+      });
+      if (order.buyerEmail) {
+        for (const item of order.items) {
+          await tx.pendingEnrollment.upsert({
+            where: { courseId_email: { courseId: item.courseId, email: order.buyerEmail } },
+            update: {},
+            create: {
+              courseId: item.courseId,
+              email: order.buyerEmail,
+              name: order.buyerName,
+              createdBy: "guest-checkout",
+            },
+          });
+        }
+      }
+      return;
+    }
+
     for (const item of order.items) {
       await tx.enrollment.upsert({
-        where: { userId_courseId: { userId: order.userId, courseId: item.courseId } },
+        where: { userId_courseId: { userId: buyerId, courseId: item.courseId } },
         update: {},
         create: {
-          userId: order.userId,
+          userId: buyerId,
           courseId: item.courseId,
           orderId: order.id,
           source: "PURCHASE",
@@ -128,19 +240,40 @@ export async function settlePaidOrder(input: SettleInput): Promise<SettleResult>
       });
     }
     await tx.memberStats.upsert({
-      where: { userId: order.userId },
+      where: { userId: buyerId },
       update: {
         totalSpent: { increment: order.total },
         coursesBought: { increment: order.items.length },
       },
       create: {
-        userId: order.userId,
+        userId: buyerId,
         totalSpent: order.total,
         coursesBought: order.items.length,
       },
     });
-    await recalcTier(tx, order.userId);
+    await recalcTier(tx, buyerId);
   });
+
+  // 訪客購課通知信（transaction 外，寄不出去不影響開通）：
+  // 新帳號寄「設定密碼」連結，既有帳號只請他登入
+  if (guestInfo && outcome.ok && !outcome.already) {
+    const course = await prisma.order
+      .findUnique({
+        where: { orderNo: input.orderNo },
+        select: { items: { include: { course: { select: { title: true, slug: true } } } } },
+      })
+      .catch(() => null);
+    const first = course?.items[0]?.course;
+    if (first) {
+      await guestNotifier({
+        email: guestInfo.email,
+        name: guestInfo.name,
+        courseTitle: first.title,
+        courseSlug: first.slug,
+        created: guestInfo.created,
+      }).catch((e) => console.error("[settle] 購課通知信例外", e));
+    }
+  }
 
   return outcome;
 }
@@ -198,8 +331,12 @@ export async function issueInvoiceForOrder(orderNo: string): Promise<InvoiceIssu
 
     const buyerEmail = order.buyerEmail ?? "";
     if (!buyerEmail) return { ok: false, error: "訂單缺買受人信箱" };
-    const profile = await getProfile(order.userId).catch(() => null);
-    const buyerName = profile?.display_name || buyerEmail.split("@")[0];
+    // 訪客訂單在結算時才會有 userId；買受人姓名優先用訂單快照，再退回 profile
+    const profile = order.userId
+      ? await getProfile(order.userId).catch(() => null)
+      : null;
+    const buyerName =
+      order.buyerName || profile?.display_name || buyerEmail.split("@")[0];
     const itemName = order.items[0]?.course.title ?? "線上課程";
 
     const record = await prisma.invoiceRecord.upsert({

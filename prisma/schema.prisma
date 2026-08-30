@@ -1102,7 +1102,10 @@ model Order {
   // nullable unique（PG 允許多個 NULL）保證同 user 同課程同時只有一筆有效 PENDING，
   // 併發下單靠 unique violation 擋，不靠先查再建
   checkoutKey String?     @unique
-  userId      String      @db.Uuid // auth.users.id，無 FK
+  // auth.users.id，無 FK。**可為 null = 訪客下單**（未註冊就能買）：
+  // 付款成功時才用 buyerEmail 建立／連結帳號並回填，然後開通課程。
+  // 未付款的訪客訂單永遠不會產生帳號（避免有人拿公開結帳端點灌帳號）。
+  userId      String?     @db.Uuid
   // 訂購人快照（下單當下抓，對齊 1shop 訂單介面）：會員之後改資料不影響歷史訂單。
   // name 取自 QBC profiles.display_name、phone 取自 MemberProfile（都可能缺）
   buyerEmail  String?
