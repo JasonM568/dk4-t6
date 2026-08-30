@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { submitSignupAction, type PublicSignupState } from "@/actions/session-signup";
-import { createSessionCheckout } from "@/actions/session-checkout";
+import { createSessionCheckout, previewSessionPricing } from "@/actions/session-checkout";
 import { MAX_ATTENDEES } from "@/lib/session-signup-page";
 import { suggestEmailFix } from "@/lib/email-typo";
 
@@ -55,9 +55,39 @@ export function SessionSignupForm({
   const [payError, setPayError] = useState<string | null>(null);
   const [payPending, startPay] = useTransition();
 
+  // 即時試算：PAYMENT 模式下，依各人手機/email 自動判新舊生與價格（純顯示，成交以伺服器為準）
+  const [preview, setPreview] = useState<
+    { lines: { tier: "NEW" | "RETRAIN"; price: number }[]; total: number } | null
+  >(null);
+
   const limit = Math.min(MAX_ATTENDEES, maxSeats ?? MAX_ATTENDEES);
   const typoFix = suggestEmailFix(email);
-  const total = unitPrice != null ? unitPrice * attendees.length : null;
+  const fallbackTotal = unitPrice != null ? unitPrice * attendees.length : null;
+  const total = preview?.total ?? fallbackTotal;
+
+  // 手機/email 一變就重新試算（debounce 500ms）。至少要有第一位的手機才查。
+  const contactsKey = attendees.map((a) => `${a.phone}|${a.email}`).join(",") + `|${email}`;
+  useEffect(() => {
+    if (mode !== "PAYMENT") return;
+    const first = attendees[0];
+    const valid = !!first?.phone && first.phone.replace(/\D/g, "").length >= 9;
+    const contacts = attendees.map((a, i) => ({
+      phone: a.phone,
+      email: a.email || (i === 0 ? email : ""),
+    }));
+    // 全部走 debounce timeout（含清空）——避免在 effect 內同步 setState
+    const t = setTimeout(async () => {
+      if (!valid) {
+        setPreview(null);
+        return;
+      }
+      const res = await previewSessionPricing(slug, contacts);
+      setPreview(res.ok ? { lines: res.lines, total: res.total } : null);
+    }, 500);
+    return () => clearTimeout(t);
+    // contactsKey 已涵蓋 attendees 與 email 的變化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactsKey, mode, slug]);
 
   const patch = (i: number, changes: Partial<Attendee>) =>
     setAttendees((prev) => prev.map((a, idx) => (idx === i ? { ...a, ...changes } : a)));
@@ -198,17 +228,34 @@ export function SessionSignupForm({
                 <option value="VEG">素</option>
               </select>
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                name={`attendee-${i}-retrain`}
-                checked={a.retrain}
-                onChange={(e) => patch(i, { retrain: e.target.checked })}
-                className="h-3.5 w-3.5"
-              />
-              我是舊生（複訓）
-            </label>
+            {/* 手動勾選只在「送出待確認」模式；平台金流模式改成用手機/email 自動判定 */}
+            {mode === "REQUEST" && (
+              <label className="flex items-center gap-1.5 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  name={`attendee-${i}-retrain`}
+                  checked={a.retrain}
+                  onChange={(e) => patch(i, { retrain: e.target.checked })}
+                  className="h-3.5 w-3.5"
+                />
+                我是舊生（複訓）
+              </label>
+            )}
           </div>
+
+          {mode === "PAYMENT" && preview?.lines[i] && (
+            <p
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                preview.lines[i].tier === "RETRAIN"
+                  ? "bg-green-50 text-green-800"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {preview.lines[i].tier === "RETRAIN"
+                ? `偵測為量子舊生 → 複訓價 NT$ ${preview.lines[i].price.toLocaleString()}`
+                : `新生 → NT$ ${preview.lines[i].price.toLocaleString()}`}
+            </p>
+          )}
         </fieldset>
       ))}
 

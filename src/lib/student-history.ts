@@ -9,6 +9,23 @@ export async function findStudentByPhone(phone: string | null | undefined) {
   return prisma.studentRecord.findUnique({ where: { phone: mobile } });
 }
 
+/** 依聯絡方式找歷史學員（純識別，不認領）：手機優先，查不到再用 email——
+ *  且 email 僅在「該信箱剛好唯一一筆」時才採信（共用信箱不猜，比照 claimStudentRecord）。 */
+export async function findStudentByContact(
+  phone?: string | null,
+  email?: string | null,
+) {
+  const byPhone = await findStudentByPhone(phone);
+  if (byPhone) return byPhone;
+  const normalized = email?.trim().toLowerCase();
+  if (!normalized) return null;
+  const matches = await prisma.studentRecord.findMany({
+    where: { email: normalized },
+    take: 2,
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
 /** 註冊時認領歷史學員資料。
  *
  *  以手機為主：夫妻、親子共用一個信箱很常見，單用 email 認領會把別人的上課
