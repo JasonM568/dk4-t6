@@ -54,6 +54,8 @@ export type SignupPageInitial = {
   signupUrl: string | null;
   signupPayMode: string; // EXTERNAL / PLATFORM / MANUAL
   signupPrice: number | null;
+  signupRetrainPrice: number | null;
+  signupRetrainCourseIds: string[];
   dmImage: string | null;
   dmBlocks: DmBlock[];
   signupIntro: string | null;
@@ -71,10 +73,12 @@ export type SignupPageInitial = {
 export function SignupPageForm({
   sessionId,
   groups,
+  canonicalCourses,
   initial,
 }: {
   sessionId: string;
   groups: { id: string; name: string }[];
+  canonicalCourses: { id: string; name: string; kind: string }[];
   initial: SignupPageInitial;
 }) {
   const [state, formAction] = useActionState<SignupPageState, FormData>(
@@ -87,6 +91,17 @@ export function SignupPageForm({
   const [signupUrl, setSignupUrl] = useState(initial.signupUrl ?? "");
   const [payMode, setPayMode] = useState(initial.signupPayMode || "MANUAL");
   const [price, setPrice] = useState(initial.signupPrice?.toString() ?? "");
+  const [retrainPrice, setRetrainPrice] = useState(initial.signupRetrainPrice?.toString() ?? "");
+  const [retrainCourseIds, setRetrainCourseIds] = useState<Set<string>>(
+    new Set(initial.signupRetrainCourseIds),
+  );
+  const toggleRetrainCourse = (id: string) =>
+    setRetrainCourseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [imgError, setImgError] = useState("");
   const [uploading, setUploading] = useState<"main" | "detail" | null>(null);
 
@@ -216,9 +231,59 @@ export function SignupPageForm({
               className={INPUT}
             />
             <span className="mt-1 block text-xs text-gray-500">
-              多人報名時金額 = 單價 × 人數。開放刷卡與 ATM 兩種付款。
+              這是新生／一般價。多人報名時金額逐位加總。開放刷卡與 ATM 兩種付款。
             </span>
           </label>
+        )}
+
+        {payMode === "PLATFORM" && (
+          <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+            <p className="text-xs font-medium text-gray-700">
+              自動新舊生定價（選填）
+            </p>
+            <p className="text-xs text-gray-500">
+              報名時用手機／email 查學員上課史，上過下方任一課程＝舊生套「複訓價」，否則套新生價。
+              留空複訓價＝不分新舊生，一律新生價。
+            </p>
+            <label className="block">
+              <span className="mb-1 block text-xs text-gray-600">複訓價（NT$，整數）</span>
+              <input
+                type="number"
+                min={0}
+                name="signupRetrainPrice"
+                value={retrainPrice}
+                onChange={(e) => setRetrainPrice(e.target.value)}
+                placeholder="例：2380"
+                className={INPUT}
+              />
+            </label>
+            <div>
+              <span className="mb-1 block text-xs text-gray-600">
+                複訓資格課程（勾選「上過就算舊生」的標準課程）
+              </span>
+              {canonicalCourses.length === 0 ? (
+                <p className="text-xs text-gray-400">
+                  尚無標準課程可選（請先到「學員 → 課名歸戶」建立）
+                </p>
+              ) : (
+                <div className="grid max-h-56 grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 sm:grid-cols-2">
+                  {canonicalCourses.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        name="signupRetrainCourseIds"
+                        value={c.id}
+                        checked={retrainCourseIds.has(c.id)}
+                        onChange={() => toggleRetrainCourse(c.id)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>{c.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {payMode === "EXTERNAL" && (

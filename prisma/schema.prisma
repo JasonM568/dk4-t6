@@ -773,7 +773,12 @@ model CourseSession {
   // MANUAL = 內建表單手動收款（既有 SessionSignupRequest 待確認流程）。
   // 舊資料 migration 依 signupUrl 有無回填 EXTERNAL / MANUAL，行為不變。
   signupPayMode   String    @default("MANUAL")
-  signupPrice     Int?      // PLATFORM 模式每人單價（NT$）；金額 = signupPrice × 報名人數
+  signupPrice     Int?      // PLATFORM 模式每人單價（NT$）＝新生／一般價
+  // 自動新舊生定價（PLATFORM 模式）：報名時用手機/email 查學員上課史，上過任一
+  // signupRetrainCourseIds 的標準課程（CanonicalCourse.id）＝複訓 → 套 signupRetrainPrice；
+  // 否則＝新生 → 套 signupPrice。signupRetrainPrice 為 null 或 courseIds 空 = 不分新舊生，一律 signupPrice。
+  signupRetrainPrice     Int?
+  signupRetrainCourseIds String[] @default([])
 
   signups        SessionSignup[]
   signupRequests SessionSignupRequest[]

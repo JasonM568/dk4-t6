@@ -91,6 +91,18 @@ export async function updateSignupPageAction(
   if (payMode === "PLATFORM" && (signupPrice === null || signupPrice <= 0)) {
     return { error: "選「平台線上金流」請填每人報名費用（大於 0）" };
   }
+  // 自動新舊生定價（選填）：複訓價 + 複訓資格課程（CanonicalCourse.id）
+  const retrainPriceRaw = String(formData.get("signupRetrainPrice") ?? "").trim();
+  let signupRetrainPrice: number | null = null;
+  if (retrainPriceRaw) {
+    const n = Number(retrainPriceRaw);
+    if (!Number.isInteger(n) || n < 0) return { error: "複訓價請填 0 以上的整數" };
+    signupRetrainPrice = n;
+  }
+  const signupRetrainCourseIds = formData
+    .getAll("signupRetrainCourseIds")
+    .map(String)
+    .filter(Boolean);
 
   const openAt = parseTaipeiDateTime(String(formData.get("signupOpenAt") ?? ""));
   if (openAt === undefined) return { error: "報名開始時間格式錯誤" };
@@ -119,6 +131,8 @@ export async function updateSignupPageAction(
         signupUrl,
         signupPayMode: payMode,
         signupPrice,
+        signupRetrainPrice,
+        signupRetrainCourseIds,
         dmImage,
         dmBlocks,
         signupIntro: text("signupIntro"),

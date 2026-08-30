@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { getPaymentProvider } from "@/lib/payment";
 import { collectAttendees } from "@/lib/session-attendees";
+import { classifyTiers, priceForTier } from "@/lib/session-student-tier";
 import { isSamePerson } from "@/lib/session-roster";
 import {
   makeWebOrderNo,
@@ -15,6 +16,36 @@ import {
 export type SessionCheckoutResult =
   | { ok: true; action: string; fields: Record<string, string> }
   | { ok: false; error: string };
+
+export type PricingPreview =
+  | { ok: true; lines: { tier: "NEW" | "RETRAIN"; price: number }[]; total: number }
+  | { ok: false };
+
+/** 報名頁即時試算：依手機/email 判各人新舊生與價格（不建單、不收費）。
+ *  純顯示用，實際定價一律在 createSessionCheckout 伺服器端重算。 */
+export async function previewSessionPricing(
+  slug: string,
+  contacts: { phone?: string | null; email?: string | null }[],
+): Promise<PricingPreview> {
+  const session = await prisma.courseSession.findUnique({
+    where: { signupSlug: slug.toLowerCase() },
+    select: {
+      signupPayMode: true,
+      signupPrice: true,
+      signupRetrainPrice: true,
+      signupRetrainCourseIds: true,
+    },
+  });
+  if (!session || session.signupPayMode !== "PLATFORM" || !session.signupPrice) {
+    return { ok: false };
+  }
+  const tiers = await classifyTiers(contacts, session.signupRetrainCourseIds);
+  const lines = tiers.map((t) => ({
+    tier: t,
+    price: priceForTier(t, session.signupPrice!, session.signupRetrainPrice),
+  }));
+  return { ok: true, lines, total: lines.reduce((s, l) => s + l.price, 0) };
+}
 
 /**
  * 場次報名頁「平台金流」結帳（訪客免登入）。
@@ -88,9 +119,21 @@ export async function createSessionCheckout(
     }
   }
 
-  const unitPrice = session.signupPrice;
-  const total = unitPrice * attendees.length;
-  const buyer = attendees[0];
+  // 自動新舊生判定（伺服器端重算，前端改不了價）：逐位查手機/email 的上課史，
+  // 上過任一複訓資格課程＝複訓價，否則新生價。isRetrain 一律以自動判定為準（覆蓋手動勾選）。
+  const tiers = await classifyTiers(
+    attendees.map((a) => ({ phone: a.phone, email: a.email })),
+    session.signupRetrainCourseIds,
+  );
+  const priced = attendees.map((a, i) => ({
+    ...a,
+    isRetrain: tiers[i] === "RETRAIN",
+    tier: tiers[i],
+    price: priceForTier(tiers[i], session.signupPrice!, session.signupRetrainPrice),
+  }));
+  const total = priced.reduce((sum, a) => sum + a.price, 0);
+  const unitPrice = session.signupPrice!; // 名目新生價；混合定價的實際明細在 attendees 快照
+  const buyer = priced[0];
   const provider = getPaymentProvider();
 
   // 建 SessionSignupOrder（PENDING）。checkoutKey 擋「同場次同信箱重複下單」，
@@ -108,8 +151,8 @@ export async function createSessionCheckout(
           buyerEmail,
           buyerName: buyer.name,
           buyerPhone: buyer.phone,
-          attendees: attendees as unknown as Prisma.InputJsonValue,
-          quantity: attendees.length,
+          attendees: priced as unknown as Prisma.InputJsonValue,
+          quantity: priced.length,
           unitPrice,
           total,
           status: "PENDING",

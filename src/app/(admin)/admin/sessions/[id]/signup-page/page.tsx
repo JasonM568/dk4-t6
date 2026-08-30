@@ -16,9 +16,13 @@ export default async function SessionSignupPageAdmin({
   await requireStaff();
   const { id } = await params;
 
-  const [session, groups, requests, confirmedCount] = await Promise.all([
+  const [session, groups, canonicalCourses, requests, confirmedCount] = await Promise.all([
     prisma.courseSession.findUnique({ where: { id } }),
     prisma.mailGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.canonicalCourse.findMany({
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true, kind: true },
+    }),
     prisma.sessionSignupRequest.findMany({
       where: { sessionId: id, status: SIGNUP_REQUEST_STATUS.PENDING },
       orderBy: [{ createdAt: "desc" }, { attendeeKey: "asc" }],
@@ -71,12 +75,15 @@ export default async function SessionSignupPageAdmin({
       <SignupPageForm
         sessionId={id}
         groups={groups}
+        canonicalCourses={canonicalCourses}
         initial={{
           signupSlug: session.signupSlug,
           isSignupOpen: session.isSignupOpen,
           signupUrl: session.signupUrl,
           signupPayMode: session.signupPayMode,
           signupPrice: session.signupPrice,
+          signupRetrainPrice: session.signupRetrainPrice,
+          signupRetrainCourseIds: session.signupRetrainCourseIds,
           dmImage: session.dmImage,
           // DB 的 Json 是 unknown，在伺服器端解析一次再往下傳
           dmBlocks: parseDmBlocks(session.dmBlocks),
