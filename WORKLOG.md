@@ -2,7 +2,53 @@
 
 > 每日收工摘要（做了什麼／為什麼／未完成）。逐項細節與架構脈絡見 `HANDOFF.md`。
 
-## 2026-08-30
+## 2026-08-30（下半場：報名頁上線後的迭代＋訪客購課）
+
+**已全數合入 main 並部署（正式站查證過）：**
+
+4. **訪客免註冊購課**（PR #9）：`/courses/<slug>` 未登入也能買——訪客填 Email/姓名/手機
+   → 建 `userId=null` 的訂單 → 付款成功**才**建立／連結 Supabase 帳號 → 開通課程 →
+   寄「設定密碼」信（Supabase recovery link，絕不寄明碼）。
+   - 建帳號時機刻意在付款成功：未付款不建帳號，公開端點無法灌帳號；
+     **金額不符／已取消的單也不建**（測試抓到的漏洞，已修）
+   - 既有 email 一律連結原帳號，不重建不覆蓋密碼
+   - **保底**：建帳號失敗時訂單仍標 PAID，改存 PendingEnrollment，日後該 email 有帳號
+     由 claimPendingEnrollments 自動補開通——錢收了課不會消失
+   - `scripts/test-guest-checkout-db.ts` 21 項全過
+   - ⏳ 尚未真錢實刷（Jason 選擇直接合，靠保底機制）；建議用 paytest-1twd ＋
+     沒註冊過的信箱走一次，重點看「設定密碼信」的版面與連結體驗
+5. **報名頁迭代**：原價劃線＋特價呈現（signupListPrice）、導外部 CTA 按鈕文字可自訂
+   （signupCtaLabel）、多位參加者不可共用同一支手機（表單層硬擋，兩條報名路徑
+   統一走 lib/session-attendees）
+6. **手機版 RWD 修正**（Jason 回報「內容偏右、左邊留空隙」）：根因是 **navbar 單排 flex
+   無任何 RWD**，手機上整排連結（390px 下內容寬 865px）把整頁撐出橫向溢出，
+   mx-auto 於是以溢出後的寬度置中。改為連結列在自己容器內橫向捲動；
+   報名頁詳情區同時移除 -mx-5 滿版貼邊，改與 DM 主視覺對齊留白
+7. **EDM**：主旨支援 `{name}` 變數（**原本只有內文套 applyMergeTags，主旨照字面寄出**，
+   已修＋3 項回歸測試）；工具列加「🎬 行銷頁」下拉一鍵插入 /p 連結
+8. **行銷頁搬家**：自訂頁（/p/<slug>）從「系統設定→分頁管理」移到
+   **行銷推播 → 行銷頁**（/admin/marketing-pages），權限放寬為 editor；
+   內文加起手範本（短影片頁／活動落地頁／圖文介紹頁）與 EDM 同款工具列
+
+**0919 冷名單招生（已開跑）：**
+- 分眾圈人存成群組「量子沉睡舊生-0919台北」**870 人**（2023 起上過量子課、
+  近一年沒上課、有 Email，共用信箱去重）
+- 三封 EDM 建成草稿＋範本；漏斗改為 **EDM1 只導影片頁（/p/quantum-recap，純養溫不推銷）
+  → EDM2 影片＋報名 → EDM3 收單**
+- **EDM1 已發送 926 封**（13:15）：40 分鐘時 送達 870／退信 28／開信 63／點擊 8，
+  逐連結追蹤正常（影片頁 8 人）。webhook 與 Resend tracking 皆正常回流
+- ⚠️ EDM1 寄出時間早於主旨變數修復部署，該批主旨的 {name} 是空字串；EDM2/3 才會正常
+
+**⚠️ 我犯的錯（已處置）：** 寫訪客購課測試時，沒意識到本機測試腳本會吃 `.env` 的
+**正式** Supabase 金鑰（Prisma 一 import 就載 .env），真的在正式 auth.users 建了
+`guest-test@localhost.test`。已用 `scripts/cleanup-test-user.ts` 刪除，
+auth.users/profiles/Enrollment/MemberStats 皆查證歸零。settle.ts 已加
+`__setGuestProvisionerForTest` 注入點，測試一律用假實作，不再碰正式 Supabase 與 Resend。
+
+**PR 整理：** #4/#5（空 PR、與本專案無關）關閉；#1（觀看時長，6/14 建立、已 DIRTY，
+且 migration 建表未帶 course schema 前綴）關閉，功能留待辦之後照現況重寫。目前無待處理 PR。
+
+## 2026-08-30（上半場）
 
 **三案全部合入 main 並部署上線（PR #6/#7/#8，正式站與正式庫已查證）：**
 
