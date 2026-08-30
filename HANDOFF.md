@@ -307,8 +307,15 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 
 ## 📌 待辦（依優先序）
 
-0. **觀看影片累積時長**（用戶要做、方案已設計）：LessonProgress 表 + 播放頁 YouTube IFrame API 埋點算實看秒數 + 進度回報 API + 後台顯示（約 1.5-2 人日，純 ADD）
-0.5. **P1–P3 其餘 ~25 項**（workflow 報告，完整清單在 /private/tmp 的 wd06dc3dc.output，或重跑）：越權改密碼防護、結帳冪等、免費課 total=0、open redirect、課程排序並發等
+0. **0919 量子思維冷名單招生**（2026-08-30 規劃定案）：報名頁 /event/q2-taipei-0919 切
+   「平台線上金流」（新生 5880／複訓 2380／資格課程勾量子族）→ 分眾圈「沉睡學員」994 人
+   → EDM＋簡訊導流到報名頁（短影片已嵌在頁上）。金流/發票/自動新舊生定價已全部上線
+0.2. **ATM 取號虛擬帳號顯示**：場次訂單感謝頁只說「等待繳款」沒列帳號（課程訂單在
+   /orders 有顯示，場次版沒做）；ATM 佔比高要補
+0.5. ~~P1–P3 其餘 bug~~ **2026-08-29/30 已修 8 項**（open redirect/金流冪等/排序競態/
+   重複付款防護等，見 docs/worklogs/2026-08-29-安全邏輯bug第二輪.md）。未修留檔：
+   自助改密碼 reauthentication（兩站共用開關）、setUserPassword 守衛未下沉
+0.8. **觀看影片累積時長**（用戶要做、方案已設計）：LessonProgress 表 + 播放頁 YouTube IFrame API 埋點算實看秒數 + 進度回報 API + 後台顯示（約 1.5-2 人日，純 ADD）
 
 1. **hope 站註冊回歸測試**：Confirm email 是專案層級開關（已開啟），hope 站新註冊也會被要求驗證 Email——hope 端若沒處理確認連結要把開關關回（course 站已實測 OK，hope 站尚未測）
 2. **與 QBC 站協調**：Recovery 模板已改 `{{ .RedirectTo }}` 格式，hope 站 reset 頁相容性回歸測試

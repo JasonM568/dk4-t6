@@ -2,6 +2,32 @@
 
 > 每日收工摘要（做了什麼／為什麼／未完成）。逐項細節與架構脈絡見 `HANDOFF.md`。
 
+## 2026-08-30
+
+**三案全部合入 main 並部署上線（PR #6/#7/#8，正式站與正式庫已查證）：**
+
+1. **P1–P3 安全/邏輯 bug 第二輪 8 項**（PR #6，詳見 docs/worklogs/2026-08-29-安全邏輯bug第二輪.md）：
+   open redirect 反斜線繞過 ×4（新增 lib/safe-redirect.ts 統一防線）、ECPay notify 冪等
+   分岔改委派 settle.ts、checkoutKey 離開 PENDING 一律釋放、課程排序競態收進
+   Serializable 交易、computeDiscount clamp、重複付款防護（DUPLICATE_PAID 拒絕結算＋
+   標記待退款）、reset-password 移除 hash token 注入、免費課 price=0 擋上架
+2. **場次報名頁接平台金流**（PR #7）：報名方式 3 模式（EXTERNAL 導 1shop／PLATFORM
+   平台金流／MANUAL 手動收款），PLATFORM = 訪客免登入填表 → SessionSignupOrder →
+   PAYUNi 刷卡+ATM → 付款成功自動轉入場次名單＋開 ezPay 發票＋加名單群組。
+   **Jason 已實刷驗證刷卡＋自動開發票**。感謝頁 /event/thanks；ATM 三態 pending
+3. **自動辨識新生/舊生定價**（PR #8）：報名時用手機（優先）/email（唯一一筆才採信）
+   查學員上課史，上過任一「複訓資格課程」（signupRetrainCourseIds，經課名歸戶）＝
+   複訓價，否則新生價；同行者逐位判定可混價、伺服器端重算防竄改；前台即時試算。
+   量子思維設定：資格課程勾量子族、複訓 2380／新生早鳥 5880
+
+- 測試：test-safe-redirect 19、test-session-payment-db 13、test-session-tier-db 9 全過；
+  migration 三支全 additive，正式庫已查證（SessionSignupOrder 表＋4 欄位在）
+- **0919 切換方式**：後台場次 → 報名頁設定 → 報名方式選「平台線上金流」、新生價 5880、
+  複訓價 2380、資格課程勾量子系列 → 儲存即生效（目前仍是導 1shop，未切）
+- ⚠️ 已知缺口：ATM 取號的虛擬帳號感謝頁未顯示（只說等待繳款）；ATM 佔比高要補
+- 冷名單 EDM 行銷計畫（沉睡 994 人 → 影片嵌報名頁 → EDM＋簡訊導流）規劃完成，
+  待 0919 報名頁切平台金流後執行
+
 ## 2026-08-13
 
 **場次模組迭代收尾（8/12 上線後依 Jason 實際使用回饋修，全數已部署）：**
