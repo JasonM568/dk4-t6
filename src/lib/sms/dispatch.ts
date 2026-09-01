@@ -10,6 +10,7 @@ import { sendSms } from "./send";
 import {
   EMPTY_SMS_AUDIENCE_PREVIEW,
   broadcastSessionIds,
+  broadcastWebinarIds,
   type SmsAudiencePreview,
   type SmsManualRow,
   type SmsRecipient,
@@ -98,10 +99,32 @@ async function collectSessionSignups(sessionIds: string[], noticeScope = "ALL") 
   );
 }
 
-/** 依發送對象解析收件手機。三路匯合後統一去重與退訂過濾。 */
+/** 取多個講座的索取者，依勾選順序排序（理由同 collectSessionSignups）。
+ *
+ *  刻意連沒有手機的也收進來：手機必填是 2026-09-02 才上線的，
+ *  更早的索取紀錄沒有號碼。把他們濾在這裡等於無聲消失，
+ *  留著讓 dedupeByMobile 算進 noMobileCount，操作者才看得到「N 人收不到」。 */
+async function collectWebinarRequests(webinarIds: string[], noticeScope = "ALL") {
+  const rows = await prisma.webinarRequest.findMany({
+    where: {
+      webinarId: { in: webinarIds },
+      // PENDING：只發還沒收到講座提醒簡訊的人（同場次的「只發未通知」）
+      ...(noticeScope === "PENDING" ? { smsNoticeAt: null } : {}),
+    },
+    select: { id: true, webinarId: true, name: true, phone: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const rank = new Map(webinarIds.map((id, i) => [id, i]));
+  return rows.sort(
+    (a, b) => (rank.get(a.webinarId) ?? 0) - (rank.get(b.webinarId) ?? 0),
+  );
+}
+
+/** 依發送對象解析收件手機。四路匯合後統一去重與退訂過濾。 */
 async function resolveMobiles(record: {
   audienceType: string;
   sessionIds: string[];
+  webinarIds?: string[];
   manualRows: unknown;
   messageType: string;
   noticeScope?: string;
@@ -114,11 +137,14 @@ async function resolveMobiles(record: {
    *  一支號碼可能對到多筆（訂購人幫同行者填自己的號碼），那一封簡訊等於通知到全部，
    *  所以同號的人一起標記，不會讓同行者永遠留在「未通知」被重複發送。 */
   signupIdsByMobile?: Map<string, string[]>;
+  /** 同上，但對應 WebinarRequest.smsNoticeAt（講座索取名單的「已通知」回寫） */
+  requestIdsByMobile?: Map<string, string[]>;
 }> {
   let deduped: SmsRecipient[] = [];
   let noMobileCount = 0;
   let emptyError = "";
   let signupIdsByMobile: Map<string, string[]> | undefined;
+  let requestIdsByMobile: Map<string, string[]> | undefined;
 
   if (record.audienceType === "SESSION") {
     const sessionIds = broadcastSessionIds(record);
@@ -143,6 +169,26 @@ async function resolveMobiles(record: {
         : sessionIds.length > 1
           ? "所選場次都沒有可發送的手機號碼"
           : "該場次沒有可發送的手機號碼";
+  } else if (record.audienceType === "WEBINAR") {
+    const webinarIds = broadcastWebinarIds(record);
+    if (webinarIds.length === 0)
+      return { recipients: [], excludedCount: 0, noMobileCount: 0, error: "缺少講座" };
+    const requests = await collectWebinarRequests(webinarIds, record.noticeScope);
+    requestIdsByMobile = new Map();
+    for (const q of requests) {
+      if (!q.phone) continue;
+      requestIdsByMobile.set(q.phone, [...(requestIdsByMobile.get(q.phone) ?? []), q.id]);
+    }
+    // 講座沒有 /live 上課碼（連結直接寄信），{code} 一律留空
+    const r = dedupeByMobile(requests.map((q) => ({ mobile: q.phone, name: q.name })));
+    deduped = r.recipients;
+    noMobileCount = r.noMobileCount;
+    emptyError =
+      record.noticeScope === "PENDING"
+        ? "這些講座的索取者都已經發過提醒簡訊了"
+        : webinarIds.length > 1
+          ? "所選講座都沒有可發送的手機號碼"
+          : "該講座沒有可發送的手機號碼（手機必填是 2026-09-02 才上線，更早的索取紀錄沒有號碼）";
   } else if (record.audienceType === "MANUAL") {
     const r = dedupeByMobile((record.manualRows ?? []) as SmsManualRow[]);
     deduped = r.recipients;
@@ -169,7 +215,13 @@ async function resolveMobiles(record: {
       noMobileCount,
       error: "名單全數已退訂或無法送達",
     };
-  return { recipients: kept, excludedCount, noMobileCount, signupIdsByMobile };
+  return {
+    recipients: kept,
+    excludedCount,
+    noMobileCount,
+    signupIdsByMobile,
+    requestIdsByMobile,
+  };
 }
 
 /** 後台送出前的人數與金額試算。
@@ -178,6 +230,7 @@ async function resolveMobiles(record: {
 export async function previewSmsAudience(input: {
   audienceType: string;
   sessionIds: string[];
+  webinarIds?: string[];
   manualRows?: SmsManualRow[];
   messageType: string;
   noticeScope?: string;
@@ -231,6 +284,52 @@ export async function previewSmsAudience(input: {
     };
   }
 
+  if (input.audienceType === "WEBINAR") {
+    const webinarIds = broadcastWebinarIds(input);
+    if (webinarIds.length === 0) return EMPTY_SMS_AUDIENCE_PREVIEW;
+
+    const [found, requests] = await Promise.all([
+      prisma.webinar.findMany({
+        where: { id: { in: webinarIds } },
+        select: { id: true, title: true },
+      }),
+      // 試算與發送走同一個 scope，否則「只發未通知」的預估人數會是全部索取者
+      collectWebinarRequests(webinarIds, input.noticeScope),
+    ]);
+
+    const rowsByWebinar = new Map<string, number>();
+    for (const q of requests)
+      rowsByWebinar.set(q.webinarId, (rowsByWebinar.get(q.webinarId) ?? 0) + 1);
+    const byId = new Map(found.map((w) => [w.id, w]));
+    const sources = webinarIds
+      .map((id) => byId.get(id))
+      .filter((w): w is { id: string; title: string } => !!w)
+      .map((w) => ({
+        id: w.id,
+        label: w.title,
+        rowCount: rowsByWebinar.get(w.id) ?? 0,
+      }));
+
+    const { recipients: deduped, noMobileCount } = dedupeByMobile(
+      requests.map((q) => ({ mobile: q.phone, name: q.name })),
+    );
+    const { kept, excludedCount } = await filterOptedOut(deduped, input.messageType);
+
+    return {
+      sources,
+      missingCount: webinarIds.length - sources.length,
+      totalRows: requests.length,
+      noMobileCount,
+      uniqueCount: deduped.length,
+      duplicateCount: requests.length - noMobileCount - deduped.length,
+      optedOutCount: excludedCount,
+      sendableCount: kept.length,
+      maxNameLength: kept.reduce((n, r) => Math.max(n, r.name?.length ?? 0), 0),
+      // 講座沒有上課碼，{code} 一律替換成空字串
+      withCodeCount: 0,
+    };
+  }
+
   if (input.audienceType === "MANUAL") {
     const rows = input.manualRows ?? [];
     const { recipients: deduped, noMobileCount } = dedupeByMobile(rows);
@@ -281,25 +380,33 @@ export async function resolveSmsFollowUp(broadcastId: string): Promise<{
   const record = await prisma.smsBroadcast.findUnique({ where: { id: broadcastId } });
   if (!record) return { ...empty, error: "找不到這筆發送紀錄" };
   const sourceTitle = record.title ?? "（未命名）";
-  if (record.audienceType !== "SESSION")
+  if (record.audienceType !== "SESSION" && record.audienceType !== "WEBINAR")
     return {
       ...empty,
       sourceTitle,
-      error: "只有「場次」對象的紀錄能算補發名單（手動名單請用「複製」再發）",
+      error: "只有「場次」與「講座」對象的紀錄能算補發名單（手動名單請用「複製」再發）",
     };
 
-  const sessionIds = broadcastSessionIds(record);
-  if (sessionIds.length === 0)
-    return { ...empty, sourceTitle, error: "這筆紀錄沒有場次資料" };
-
-  const signups = await collectSessionSignups(sessionIds);
-  const { recipients, noMobileCount } = dedupeByMobile(
-    signups.map((s) => ({
+  // 兩種名單來源各自解析成同一個 {mobile,name,code} 形狀，之後的差集邏輯完全共用
+  let rows0: { mobile: string | null; name: string | null; code?: string | null }[];
+  if (record.audienceType === "WEBINAR") {
+    const webinarIds = broadcastWebinarIds(record);
+    if (webinarIds.length === 0)
+      return { ...empty, sourceTitle, error: "這筆紀錄沒有講座資料" };
+    const requests = await collectWebinarRequests(webinarIds);
+    rows0 = requests.map((q) => ({ mobile: q.phone, name: q.name }));
+  } else {
+    const sessionIds = broadcastSessionIds(record);
+    if (sessionIds.length === 0)
+      return { ...empty, sourceTitle, error: "這筆紀錄沒有場次資料" };
+    const signups = await collectSessionSignups(sessionIds);
+    rows0 = signups.map((s) => ({
       mobile: s.phone,
       name: s.name,
       code: s.session.accessCode,
-    })),
-  );
+    }));
+  }
+  const { recipients, noMobileCount } = dedupeByMobile(rows0);
   const { kept } = await filterOptedOut(recipients, record.messageType);
 
   // 逐筆紀錄優先（能把上次失敗的挑回來補），早期沒有逐筆紀錄的就退回 recipients 快照
@@ -365,8 +472,14 @@ export async function executeSmsBroadcast(broadcastId: string) {
   const settings = await getSmsSettings();
   const provider = getSmsProvider();
 
-  const { recipients, excludedCount, noMobileCount, error: resolveError, signupIdsByMobile } =
-    await resolveMobiles(record);
+  const {
+    recipients,
+    excludedCount,
+    noMobileCount,
+    error: resolveError,
+    signupIdsByMobile,
+    requestIdsByMobile,
+  } = await resolveMobiles(record);
 
   const renderText = (r: SmsRecipient) =>
     composeSmsText(applySmsMergeTags(record.body, r), {
@@ -434,15 +547,25 @@ export async function executeSmsBroadcast(broadcastId: string) {
   // 下次「只發還沒收到的人」會自動把他們撈回來（永不自動重寄的原則不變）。
   const sentMobiles = r.results.filter((x) => x.status === "SENT").map((x) => x.mobile);
   if (sentMobiles.length > 0) {
-    // SESSION 用解析出的對照表；MANUAL 的單人補通知由頁面帶 signupIds 進來
-    const ids = signupIdsByMobile
-      ? sentMobiles.flatMap((m) => signupIdsByMobile.get(m) ?? [])
-      : record.signupIds;
-    if (ids.length > 0)
-      await prisma.sessionSignup.updateMany({
-        where: { id: { in: [...new Set(ids)] } },
-        data: { smsNoticeAt: new Date() },
-      });
+    // WEBINAR 走 WebinarRequest，其餘走 SessionSignup。
+    // MANUAL 的單人補通知由頁面帶 signupIds 進來（那條路只用於場次名單）。
+    if (requestIdsByMobile) {
+      const ids = sentMobiles.flatMap((m) => requestIdsByMobile.get(m) ?? []);
+      if (ids.length > 0)
+        await prisma.webinarRequest.updateMany({
+          where: { id: { in: [...new Set(ids)] } },
+          data: { smsNoticeAt: new Date() },
+        });
+    } else {
+      const ids = signupIdsByMobile
+        ? sentMobiles.flatMap((m) => signupIdsByMobile.get(m) ?? [])
+        : record.signupIds;
+      if (ids.length > 0)
+        await prisma.sessionSignup.updateMany({
+          where: { id: { in: [...new Set(ids)] } },
+          data: { smsNoticeAt: new Date() },
+        });
+    }
   }
 
   const unitPriceCents = toCents(settings.pricePerSegment);

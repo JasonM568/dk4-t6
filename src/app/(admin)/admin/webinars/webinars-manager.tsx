@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import {
   createWebinarAction,
   updateWebinarAction,
@@ -14,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
+import { CopyPhonesButton } from "./webinar-actions";
 
 // 圖片限制（與課程封面上傳一致；bytes 直傳 Storage 不經 server action body）
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -520,6 +522,18 @@ export function WebinarCard({
           </form>
         )}
 
+        {/* 名單工具列：一鍵帶去發提醒簡訊，或把號碼複製出去給站外用 */}
+        {webinar.requests.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Link
+              href={`/admin/sms?webinar=${webinar.id}`}
+              className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700 transition hover:bg-indigo-50"
+            >
+              📱 發提醒簡訊
+            </Link>
+            <CopyPhonesButton requests={webinar.requests} />
+          </div>
+        )}
         {webinar.requests.length === 0 ? (
           <p className="text-sm text-gray-400">還沒有人索取</p>
         ) : (

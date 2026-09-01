@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
+import { CopyPhonesButton } from "../webinars/webinar-actions";
 
 // 場次看板的「講座」區塊（唯讀）。
 // 講座（Webinar/WebinarRequest）與課程場次（CourseSession/SessionSignup）是兩套獨立資料，
@@ -118,6 +119,17 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
           {webinar.requests.length} 人索取
         </span>
       </div>
+      {webinar.requests.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Link
+            href={`/admin/sms?webinar=${webinar.id}`}
+            className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700 transition hover:bg-indigo-50"
+          >
+            📱 發提醒簡訊
+          </Link>
+          <CopyPhonesButton requests={webinar.requests} />
+        </div>
+      )}
       {webinar.requests.length === 0 ? (
         <p className="text-sm text-gray-400">尚無人索取</p>
       ) : (

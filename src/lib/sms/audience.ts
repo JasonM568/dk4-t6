@@ -48,3 +48,12 @@ export function broadcastSessionIds(record: {
 }): string[] {
   return [...new Set((record.sessionIds ?? []).filter(Boolean))];
 }
+
+/** 發送紀錄要發給哪些講座（audienceType=WEBINAR）。
+ *  與 broadcastSessionIds 同一套規則：去重並保留勾選順序，
+ *  跨講座重複索取的人由排在前面的講座決定姓名（dedupeByMobile 先到先贏）。 */
+export function broadcastWebinarIds(record: {
+  webinarIds?: string[] | null;
+}): string[] {
+  return [...new Set((record.webinarIds ?? []).filter(Boolean))];
+}

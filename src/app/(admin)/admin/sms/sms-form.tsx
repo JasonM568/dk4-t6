@@ -20,6 +20,13 @@ type SessionOption = {
   accessCode: string | null; // 有值 = 這場已開放 /live 索取，{code} 才有東西可帶
 };
 
+type WebinarOption = {
+  id: string;
+  title: string;
+  requestCount: number; // 索取人數
+  withPhoneCount: number; // 其中有手機的人數——差額就是「發不到的人」，勾選前就要看得到
+};
+
 type PreviewData = Awaited<ReturnType<typeof previewSmsAudienceAction>>;
 
 /** 帶入既有內容：草稿（可改同一筆）或複製既有紀錄（id=null，另存新的一則） */
@@ -27,8 +34,9 @@ export type SmsInitial = {
   id: string | null;
   title: string;
   body: string;
-  audience: "session" | "manual";
+  audience: "session" | "webinar" | "manual";
   sessionIds: string[];
+  webinarIds?: string[];
   manualList: string;
   /** 場次名單範圍：ALL＝全部報名者；PENDING＝只發還沒收到課前簡訊的人 */
   noticeScope?: "ALL" | "PENDING";
@@ -49,6 +57,7 @@ export type SmsInitial = {
 
 type Props = {
   sessions: SessionOption[];
+  webinars: WebinarOption[];
   brandPrefix: string;
   isLive: boolean;
   providerLabel: string;
@@ -57,7 +66,14 @@ type Props = {
 
 /** 簡訊發送表單：選對象（場次／手動）→ 即時試算人數與金額 → 測試發送 → 正式發送／排程。
  *  帶 initial 時是「編輯草稿／複製既有紀錄」——草稿存回同一筆，複製則另存新的。 */
-export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial }: Props) {
+export function SmsForm({
+  sessions,
+  webinars,
+  brandPrefix,
+  isLive,
+  providerLabel,
+  initial,
+}: Props) {
   const [state, formAction, pending] = useActionState<SmsState, FormData>(
     sendSmsAction,
     null,
@@ -68,10 +84,11 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
   );
   const formRef = useRef<HTMLFormElement>(null);
 
-  const [audience, setAudience] = useState<"session" | "manual">(
+  const [audience, setAudience] = useState<"session" | "webinar" | "manual">(
     initial?.audience ?? "session",
   );
   const [pickedSessions, setPickedSessions] = useState<string[]>(initial?.sessionIds ?? []);
+  const [pickedWebinars, setPickedWebinars] = useState<string[]>(initial?.webinarIds ?? []);
   const [manualList, setManualList] = useState(initial?.manualList ?? "");
   const [noticeScope, setNoticeScope] = useState<"ALL" | "PENDING">(
     initial?.noticeScope ?? "ALL",
@@ -96,12 +113,27 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
     setPickedSessions((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  const toggleWebinar = (id: string) =>
+    setPickedWebinars((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
 
-  const previewKey = JSON.stringify({ audience, pickedSessions, manualList, body, noticeScope });
+  const previewKey = JSON.stringify({
+    audience,
+    pickedSessions,
+    pickedWebinars,
+    manualList,
+    body,
+    noticeScope,
+  });
   const current = preview?.key === previewKey ? preview.data : null;
 
   const hasTarget =
-    audience === "manual" ? manualList.trim().length > 0 : pickedSessions.length > 0;
+    audience === "manual"
+      ? manualList.trim().length > 0
+      : audience === "webinar"
+        ? pickedWebinars.length > 0
+        : pickedSessions.length > 0;
 
   useEffect(() => {
     if (!hasTarget) return;
@@ -111,6 +143,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
         const r = await previewSmsAudienceAction({
           audienceType: audience,
           sessionIds: pickedSessions,
+          webinarIds: pickedWebinars,
           manualList,
           noticeScope,
           messageType,
@@ -123,7 +156,16 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
       alive = false;
       clearTimeout(timer);
     };
-  }, [audience, pickedSessions, manualList, body, noticeScope, hasTarget, previewKey]);
+  }, [
+    audience,
+    pickedSessions,
+    pickedWebinars,
+    manualList,
+    body,
+    noticeScope,
+    hasTarget,
+    previewKey,
+  ]);
 
   // 即時字數：以「王小明」等長姓名估算，與伺服器端的上界估法一致
   const sampleText = `${brandPrefix}${body
@@ -312,7 +354,7 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
             </label>
             {/* 名單範圍：開課前會重複匯入名單，多數時候只需要通知這次新進來的人。
                 口徑是「還沒收到課前簡訊的人」，所以漏發、送失敗的也會被撈回來。 */}
-            {audience === "session" && (
+            {audience !== "manual" && (
               <div className="ml-6 mb-2 flex flex-wrap items-center gap-4 text-sm">
                 <input type="hidden" name="noticeScope" value={noticeScope} />
                 <label className="flex cursor-pointer items-center gap-1.5">
@@ -330,7 +372,11 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                     onChange={() => setNoticeScope("PENDING")}
                   />
                   只發還沒收到的人
-                  <span className="text-xs text-gray-400">（重複匯入後只通知新名單）</span>
+                  <span className="text-xs text-gray-400">
+                    {audience === "webinar"
+                      ? "（陸續有人登記時只通知新名單）"
+                      : "（重複匯入後只通知新名單）"}
+                  </span>
                 </label>
               </div>
             )}
@@ -368,6 +414,62 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                       )}
                     </label>
                   ))
+                )}
+              </div>
+            )}
+
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="audience"
+                value="webinar"
+                checked={audience === "webinar"}
+                onChange={() => setAudience("webinar")}
+              />
+              講座索取者
+              <span className="text-xs text-gray-400">
+                （可複選，重複登記多場的人只會收到一則）
+              </span>
+            </label>
+            {audience === "webinar" && (
+              <div className="ml-6 max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
+                {webinars.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-gray-400">
+                    尚無講座，請先到
+                    <Link href="/admin/webinars" className="mx-1 text-indigo-600 underline">
+                      講座報名
+                    </Link>
+                    建立
+                  </p>
+                ) : (
+                  webinars.map((w) => {
+                    // 沒有手機的人發不到。手機必填是 2026-09-02 才上線，
+                    // 更早的索取紀錄一定是 0，勾選前就講清楚比送出後才發現好。
+                    const noPhone = w.requestCount - w.withPhoneCount;
+                    return (
+                      <label
+                        key={w.id}
+                        className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                      >
+                        <input
+                          type="checkbox"
+                          name="webinarIds"
+                          value={w.id}
+                          checked={pickedWebinars.includes(w.id)}
+                          onChange={() => toggleWebinar(w.id)}
+                        />
+                        {w.title}
+                        <span className="text-xs text-gray-400">
+                          （{w.requestCount} 人索取）
+                        </span>
+                        {noPhone > 0 && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                            {noPhone} 人沒手機
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })
                 )}
               </div>
             )}
@@ -417,7 +519,8 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                     </div>
                     <div>
                       去重後 {current.uniqueCount} 人
-                      {current.duplicateCount > 0 && `（跨場次重複 ${current.duplicateCount} 筆）`}
+                      {current.duplicateCount > 0 &&
+                        `（${audience === "webinar" ? "跨講座" : "跨場次"}重複 ${current.duplicateCount} 筆）`}
                       {current.optedOutCount > 0 && ` · 已退訂／無法送達 ${current.optedOutCount} 人`}
                     </div>
                     {/* 用了 {code} 卻有人所屬場次沒設碼：那些人會收到一則沒有碼的通知，
@@ -425,12 +528,22 @@ export function SmsForm({ sessions, brandPrefix, isLive, providerLabel, initial 
                     {body.includes("{code}") &&
                       current.withCodeCount < current.sendableCount && (
                         <div className="mt-1 rounded bg-amber-100 px-2 py-1 text-amber-900">
-                          ⚠️ 內容用了 {"{code}"}，但其中{" "}
-                          <strong>
-                            {current.sendableCount - current.withCodeCount} 人
-                          </strong>
-                          所屬場次還沒設上課碼，他們收到的會是一則沒有碼的簡訊。
-                          請先到場次看板設定「上課連結」。
+                          {audience === "webinar" ? (
+                            <>
+                              ⚠️ 內容用了 {"{code}"}，但<strong>講座沒有上課碼</strong>
+                              （連結是登記當下直接寄信給本人），這個變數會被換成空白。
+                              請把 {"{code}"} 從內容裡移除。
+                            </>
+                          ) : (
+                            <>
+                              ⚠️ 內容用了 {"{code}"}，但其中{" "}
+                              <strong>
+                                {current.sendableCount - current.withCodeCount} 人
+                              </strong>
+                              所屬場次還沒設上課碼，他們收到的會是一則沒有碼的簡訊。
+                              請先到場次看板設定「上課連結」。
+                            </>
+                          )}
                         </div>
                       )}
                     <div className="mt-0.5 border-t border-indigo-200 pt-1 font-bold">

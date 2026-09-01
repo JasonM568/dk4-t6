@@ -56,31 +56,40 @@ function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number }
   return { rows, invalid };
 }
 
+/** UI 的 audience 值 → 資料庫的 audienceType。新增名單來源時只加這一張表。 */
+const AUDIENCE_TYPE: Record<string, string> = {
+  manual: "MANUAL",
+  webinar: "WEBINAR",
+  session: "SESSION",
+};
+
 /** 解析發送對象（發送/排程/草稿共用）。lenient = 草稿模式，名單空也照存 */
 async function resolveSmsAudience(
   audience: string,
   sessionIds: string[],
   manualRaw: string,
   lenient = false,
-  opts: { noticeScope?: string; signupIds?: string[] } = {},
+  opts: { noticeScope?: string; signupIds?: string[]; webinarIds?: string[] } = {},
 ): Promise<{
   error?: string;
   data: {
     audienceType: string;
     sessionIds: string[];
+    webinarIds: string[];
     audienceLabel: string;
     manualRows: SmsManualRow[] | undefined;
     noticeScope: string;
     signupIds: string[];
   };
 }> {
-  // PENDING 只對場次有意義（手動名單沒有「通知狀態」可比對）
+  // PENDING 只對場次／講座有意義（手動名單沒有「通知狀態」可比對）
   const noticeScope =
     audience !== "manual" && opts.noticeScope === "PENDING" ? "PENDING" : "ALL";
   const signupIds = [...new Set((opts.signupIds ?? []).filter(Boolean))];
   const empty = {
-    audienceType: audience === "manual" ? "MANUAL" : "SESSION",
+    audienceType: AUDIENCE_TYPE[audience] ?? "SESSION",
     sessionIds: [],
+    webinarIds: [],
     audienceLabel: "",
     manualRows: undefined,
     noticeScope,
@@ -95,10 +104,57 @@ async function resolveSmsAudience(
       data: {
         audienceType: "MANUAL",
         sessionIds: [],
+        webinarIds: [],
         audienceLabel: `手動名單 ${rows.length} 筆`,
         manualRows: rows,
         noticeScope,
         // 單人補通知：帶名單列 id 進來，發送成功才回寫得了「已通知」
+        signupIds,
+      },
+    };
+  }
+
+  // WEBINAR：可複選講座。結構刻意與下方 SESSION 對稱——
+  // 兩邊的「找不到就擋下重選」「照勾選順序排」規則必須一致，
+  // 否則其中一邊改了規則，另一邊會靜靜走偏。
+  if (audience === "webinar") {
+    const wids = [...new Set((opts.webinarIds ?? []).filter(Boolean))];
+    const foundW = wids.length
+      ? await prisma.webinar.findMany({
+          where: { id: { in: wids } },
+          select: { id: true, title: true },
+        })
+      : [];
+    const byWId = new Map(foundW.map((w) => [w.id, w]));
+    const pickedW = wids.map((id) => byWId.get(id)).filter((w) => !!w);
+
+    if (pickedW.length === 0) {
+      if (!lenient) return { error: "請至少勾選一場講座", data: empty };
+      return {
+        data: { ...empty, audienceType: "WEBINAR", audienceLabel: "講座：未選擇" },
+      };
+    }
+    // 勾選後講座被刪掉：寧可擋下重選，也不要默默少發一整批人
+    if (!lenient && pickedW.length < wids.length)
+      return {
+        error: `有 ${wids.length - pickedW.length} 場講座已不存在（可能剛被刪除），請重新勾選`,
+        data: empty,
+      };
+
+    const wNames = pickedW.map((w) => w.title);
+    return {
+      data: {
+        audienceType: "WEBINAR",
+        sessionIds: [],
+        webinarIds: pickedW.map((w) => w.id),
+        audienceLabel:
+          (wNames.length === 1
+            ? `講座：${wNames[0]}`
+            : `講座 ${wNames.length} 場（已去重）：${wNames.slice(0, 3).join("、")}${
+                wNames.length > 3 ? ` 等${wNames.length}場` : ""
+              }`) + (noticeScope === "PENDING" ? "（只發未通知）" : ""),
+        manualRows: undefined,
+        noticeScope,
         signupIds,
       },
     };
@@ -134,6 +190,7 @@ async function resolveSmsAudience(
     data: {
       audienceType: "SESSION",
       sessionIds: picked.map((s) => s.id),
+      webinarIds: [],
       audienceLabel:
         (names.length === 1
           ? `場次：${names[0]}`
@@ -151,6 +208,7 @@ async function resolveSmsAudience(
 export async function previewSmsAudienceAction(input: {
   audienceType: string;
   sessionIds: string[];
+  webinarIds?: string[];
   manualList?: string;
   messageType: string;
   body: string;
@@ -164,16 +222,23 @@ export async function previewSmsAudienceAction(input: {
       ? parseMobileRows(input.manualList ?? "").rows
       : undefined;
 
-  const preview =
-    input.audienceType === "manual" || input.sessionIds.length > 0
-      ? await previewSmsAudience({
-          audienceType: input.audienceType === "manual" ? "MANUAL" : "SESSION",
-          sessionIds: input.sessionIds,
-          manualRows,
-          messageType: input.messageType,
-          noticeScope: input.noticeScope,
-        })
-      : EMPTY_SMS_AUDIENCE_PREVIEW;
+  const webinarIds = input.webinarIds ?? [];
+  const hasTarget =
+    input.audienceType === "manual"
+      ? true
+      : input.audienceType === "webinar"
+        ? webinarIds.length > 0
+        : input.sessionIds.length > 0;
+  const preview = hasTarget
+    ? await previewSmsAudience({
+        audienceType: AUDIENCE_TYPE[input.audienceType] ?? "SESSION",
+        sessionIds: input.sessionIds,
+        webinarIds,
+        manualRows,
+        messageType: input.messageType,
+        noticeScope: input.noticeScope,
+      })
+    : EMPTY_SMS_AUDIENCE_PREVIEW;
 
   // 以名單中最長姓名估則數上界（{name} 長度不一，估上界才不會低估金額）
   const sampleName = "王".repeat(Math.max(1, preview.maxNameLength));
@@ -259,6 +324,7 @@ export async function sendSmsAction(
   const messageType = String(formData.get("messageType") ?? "NOTICE");
   const audience = String(formData.get("audience") ?? "session");
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
+  const webinarIds = formData.getAll("webinarIds").map(String).filter(Boolean);
   const manualRaw = String(formData.get("manualList") ?? "");
   const noticeScope = String(formData.get("noticeScope") ?? "ALL");
   const signupIds = formData.getAll("signupIds").map(String).filter(Boolean);
@@ -293,7 +359,7 @@ export async function sendSmsAction(
     sessionIds,
     manualRaw,
     mode === "draft",
-    { noticeScope, signupIds },
+    { noticeScope, signupIds, webinarIds },
   );
   if (error) return { error };
 

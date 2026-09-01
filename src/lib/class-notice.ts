@@ -47,6 +47,21 @@ export function buildClassNoticeSmsTitle(s: NoticeSession): string {
   return `${date ? `${date} ` : ""}${s.title} 課前通知`;
 }
 
+// ── 講座（Webinar）的提醒簡訊草稿 ──
+// 講座與課程場次是兩套資料：講座沒有 /live 上課碼（連結在索取時就直接寄信給本人），
+// 所以草稿刻意**不帶** {code}，也不放連結——連結只走 Email，簡訊只負責「別忘了時間」。
+// 開講時間目前只存在 meetingInfo 的自由文字裡，這裡不去猜，留給管理員自己補。
+
+/** 講座提醒簡訊草稿。中文 70 字/則是硬限制，所以只有稱呼＋講座名＋一句提醒。 */
+export function buildWebinarNoticeSms(w: { title: string }): string {
+  return `{name} 您好，提醒您登記的「${w.title}」即將開始，連結請見先前寄給您的 Email。`;
+}
+
+/** 講座提醒簡訊的標題（後台識別用，不會出現在簡訊裡） */
+export function buildWebinarNoticeSmsTitle(w: { title: string }): string {
+  return `${w.title} 提醒`;
+}
+
 /** EDM 草稿。信裡空間夠，把上課資訊寫完整；
  *  課程資料照抄場次設定的那份，兩邊不會各說各話。 */
 export function buildClassNoticeEmail(s: NoticeSession): {

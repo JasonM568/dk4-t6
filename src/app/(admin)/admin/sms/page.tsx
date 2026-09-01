@@ -4,11 +4,14 @@ import { prisma } from "@/lib/db";
 import { getSmsSettings, formatCents } from "@/lib/sms/settings";
 import { getSmsProvider } from "@/lib/sms/provider";
 import { resolveSmsFollowUp } from "@/lib/sms/dispatch";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { cancelScheduledSmsAction, deleteSmsDraftAction } from "@/actions/sms";
 import { SmsForm, type SmsInitial } from "./sms-form";
 import {
   buildClassNoticeSms,
   buildClassNoticeSmsTitle,
+  buildWebinarNoticeSms,
+  buildWebinarNoticeSmsTitle,
 } from "@/lib/class-notice";
 import { SubmitButton } from "@/components/admin/submit-button";
 
@@ -79,6 +82,8 @@ export default async function SmsPage({
     signup?: string;
     // 場次卡片的「通知未收到的 N 人」：勾好場次並選「只發還沒收到的人」
     pending?: string;
+    // 從講座卡片「發提醒簡訊」帶過來：勾好講座並填好草稿
+    webinar?: string;
   }>;
 }) {
   await pageGuardEditor();
@@ -90,6 +95,7 @@ export default async function SmsPage({
     session: sessionParam,
     signup: signupParam,
     pending: pendingParam,
+    webinar: webinarParam,
   } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
 
@@ -112,8 +118,11 @@ export default async function SmsPage({
           ? "manual"
           : source.audienceType === "MANUAL"
             ? "manual"
-            : "session",
+            : source.audienceType === "WEBINAR"
+              ? "webinar"
+              : "session",
         sessionIds: followUp ? [] : source.sessionIds,
+        webinarIds: followUp ? [] : source.webinarIds,
         manualList: followUp
           ? followUp.rows
               // 第三欄是上課碼：有碼就得連空姓名的逗號一起補，否則碼會被當成姓名讀回去
@@ -143,7 +152,7 @@ export default async function SmsPage({
     : null;
 
   const provider = getSmsProvider();
-  const [settings, sessions, history, total] = await Promise.all([
+  const [settings, sessions, webinars, history, total] = await Promise.all([
     getSmsSettings(),
     prisma.courseSession.findMany({
       orderBy: [{ eventDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
@@ -158,6 +167,18 @@ export default async function SmsPage({
         _count: { select: { signups: true } },
       },
     }),
+    // 講座索取名單：只列進行中的（已結束／已關閉的講座沒有再發提醒的意義）
+    prisma.webinar.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        endDate: true,
+        unpublishAt: true,
+        requests: { select: { phone: true } },
+      },
+    }),
     prisma.smsBroadcast.findMany({
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * PAGE_SIZE,
@@ -165,6 +186,25 @@ export default async function SmsPage({
     }),
     prisma.smsBroadcast.count(),
   ]);
+
+  // 顯示條件與公開看板 /board 一致；withPhoneCount 讓操作者勾選前就看到「幾個人發不到」
+  const nowTs = new Date();
+  const webinarOptions = webinars
+    .filter(
+      (w) =>
+        !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > nowTs),
+    )
+    .map((w) => ({
+      id: w.id,
+      title: w.title,
+      requestCount: w.requests.length,
+      withPhoneCount: w.requests.filter((r) => !!r.phone).length,
+    }));
+
+  // 從講座卡片「發提醒簡訊」進來：勾好講座並填好草稿
+  const noticeWebinar = webinarParam
+    ? webinarOptions.find((w) => w.id === webinarParam)
+    : undefined;
 
   // 從場次看板「發課前通知」進來：勾好場次並填好草稿，按下發送前只需確認內容。
   // 已經在編輯草稿／複製／補發時不覆蓋（那些的內容是使用者自己的）。
@@ -180,6 +220,24 @@ export default async function SmsPage({
           select: { id: true, name: true, phone: true, sessionId: true },
         })
       : null;
+  if (!initial && noticeWebinar) {
+    initial = {
+      id: null,
+      title: buildWebinarNoticeSmsTitle(noticeWebinar),
+      body: buildWebinarNoticeSms(noticeWebinar),
+      audience: "webinar",
+      sessionIds: [],
+      webinarIds: [noticeWebinar.id],
+      manualList: "",
+      // 講座是陸續有人登記的，預設只通知還沒收到提醒的人，避免重複發費用
+      noticeScope: pendingParam ? "PENDING" : "ALL",
+      signupIds: [],
+      scheduledAt: "",
+      copiedFrom: null,
+      followUp: null,
+    };
+  }
+
   if (!initial && noticeSession) {
     const single =
       singleSignup?.phone && singleSignup.sessionId === noticeSession.id
@@ -212,19 +270,28 @@ export default async function SmsPage({
     <div className="max-w-3xl">
       <h1 className="text-2xl font-bold">簡訊發送</h1>
       <p className="mb-6 text-sm text-gray-500">
-        發送上課提醒給場次報名者。名單於<strong>發送當下</strong>才解析，
-        重複報名多場的學員只會收到一則。
+        發送上課提醒給場次報名者，或提醒簡訊給講座索取者。名單於
+        <strong>發送當下</strong>才解析，重複報名多場的人只會收到一則。
       </p>
 
       {/* key：切換草稿/複製來源時強制重掛，表單內的狀態才會換成新內容 */}
       <SmsForm
-        key={initial?.id ?? loadId ?? (sessionParam ? `${sessionParam}-${signupParam ?? ""}` : "new")}
+        key={
+          initial?.id ??
+          loadId ??
+          (sessionParam
+            ? `${sessionParam}-${signupParam ?? ""}`
+            : webinarParam
+              ? `w-${webinarParam}`
+              : "new")
+        }
         sessions={sessions.map((s) => ({
           id: s.id,
           title: s.title,
           signupCount: s._count.signups,
           accessCode: s.accessCode,
         }))}
+        webinars={webinarOptions}
         brandPrefix={settings.brandPrefix}
         isLive={provider.isLive}
         providerLabel={provider.label}

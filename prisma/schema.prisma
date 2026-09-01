@@ -673,6 +673,9 @@ model WebinarRequest {
   // 手機（09XXXXXXXX，normalizeMobile 正規化後存）：開課前提醒簡訊與學員記錄卡歸戶用。
   // 2026-09-02 起表單必填，但欄位可空——上線前的舊索取紀錄沒有手機、補不回來。
   phone          String?
+  // 講座提醒簡訊已通知時間（對照 SessionSignup.smsNoticeAt）：
+  // 「只發還沒收到的人」比對這一欄；只有實際送出成功才回寫。
+  smsNoticeAt    DateTime?
   sentCount      Int       @default(0)
   lastSentAt     DateTime?
   // 講座信寄送狀態（Resend webhook 回流，依嚴重度只升不降）：
@@ -1247,13 +1250,14 @@ model SmsBroadcast {
 
   audienceType  String   @default("MANUAL")
   sessionIds    String[] @default([]) // audienceType=SESSION 的場次（可複選，發送當下取最新報名）
+  webinarIds    String[] @default([]) // audienceType=WEBINAR 的講座（可複選，發送當下取最新索取名單）
   groupIds      String[] @default([]) // audienceType=GROUP（第二階段：名單群組加手機後才接線）
   audienceLabel String? // 顯示用：場次：xxx / 場次 N 場（已去重）：… / 手動名單 N 筆
   manualRows    Json? // audienceType=MANUAL 時的名單 [{mobile,name}]
-  // audienceType=SESSION 的名單範圍：ALL＝全部報名者；PENDING＝只發 smsNoticeAt 為空的人
+  // audienceType=SESSION／WEBINAR 的名單範圍：ALL＝全部報名者；PENDING＝只發 smsNoticeAt 為空的人
   // （開課前重複匯入後，只通知這次新進來的）。同樣在**發送當下**解析。
   noticeScope   String   @default("ALL")
-  // 回寫 smsNoticeAt 用的名單列 id。SESSION 由解析結果自動帶入；
+  // 回寫 smsNoticeAt 用的名單列 id。SESSION／WEBINAR 由解析結果自動帶入；
   // MANUAL 的單人補通知由頁面帶入（否則補發過的人會一直留在「未通知」被重複發送）。
   signupIds     String[] @default([])
 
