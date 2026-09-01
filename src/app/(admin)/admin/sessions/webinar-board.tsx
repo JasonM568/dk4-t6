@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
 
 // 場次看板的「講座」區塊（唯讀）。
 // 講座（Webinar/WebinarRequest）與課程場次（CourseSession/SessionSignup）是兩套獨立資料，
@@ -10,6 +11,8 @@ export type BoardWebinarRequest = {
   id: string;
   name: string | null;
   email: string;
+  /** 09XXXXXXXX 或海外 E.164；null = 2026-09-02 手機必填上線前的舊紀錄 */
+  phone: string | null;
   /** SENT/DELIVERED/OPENED/CLICKED/BOUNCED/COMPLAINED/FAILED；null = 追蹤上線前的舊資料 */
   deliveryStatus: string | null;
   deliveryDetail: string | null;
@@ -132,6 +135,15 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
               >
                 {r.name ?? r.email}
                 {r.name && <span className="text-xs text-gray-400">{r.email}</span>}
+                {r.phone && (
+                  <span
+                    className="font-mono text-xs text-gray-400"
+                    title={isOverseasPhone(r.phone) ? "海外門號，不發簡訊" : undefined}
+                  >
+                    {formatMobile(r.phone)}
+                    {isOverseasPhone(r.phone) && " 🌏"}
+                  </span>
+                )}
                 {badge && (
                   <span className={`rounded-full px-1.5 py-0.5 text-xs ${badge.className}`}>
                     {badge.label}

@@ -33,6 +33,7 @@ export default async function AdminSessionsPage() {
             id: true,
             name: true,
             email: true,
+            phone: true,
             deliveryStatus: true,
             deliveryDetail: true,
           },

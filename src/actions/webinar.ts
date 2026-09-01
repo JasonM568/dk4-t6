@@ -7,6 +7,7 @@ import { requireEditor } from "@/lib/auth/staff";
 import { applyMergeTags, buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { buildJoinUrl } from "@/lib/meeting";
+import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
 
@@ -143,8 +144,15 @@ export async function updateWebinarRequestAction(
   const name = String(formData.get("name") ?? "").trim() || null;
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!EMAIL_RE.test(email)) return { error: "Email 格式錯誤" };
+  // 後台修正手機：這裡允許清空（上線前的舊紀錄本來就沒有號碼，不能逼管理員亂編一個）
+  const phoneRaw = String(formData.get("phone") ?? "").trim();
+  const phone = phoneRaw ? normalizeContactPhone(phoneRaw) : null;
+  if (phoneRaw && !phone) {
+    const reject = explainMobile(phoneRaw).reject ?? "FORMAT";
+    return { error: `手機號碼${MOBILE_REJECT_LABEL[reject]}` };
+  }
   try {
-    await prisma.webinarRequest.update({ where: { id }, data: { name, email } });
+    await prisma.webinarRequest.update({ where: { id }, data: { name, email, phone } });
   } catch {
     return { error: `${email} 已在這個講座的索取名單裡` };
   }
@@ -182,6 +190,21 @@ export async function requestWebinarLinkAction(
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "請填寫姓名" };
   if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確，請再確認" };
+
+  // 手機必填（2026-09-02 Jason 決定）：開課前提醒簡訊與學員記錄卡歸戶都以手機為識別鍵。
+  // 用 normalizeContactPhone 而非 normalizeMobile——海外門號（+60…）是有效聯絡方式，
+  // 只是不發國際簡訊，不該把人擋在報名門外。錯誤訊息帶原因（市話／少一碼…比「格式錯誤」有用）。
+  const phoneRaw = String(formData.get("phone") ?? "").trim();
+  const phone = normalizeContactPhone(phoneRaw);
+  if (!phone) {
+    const reject = explainMobile(phoneRaw).reject ?? "FORMAT";
+    return {
+      error:
+        reject === "EMPTY"
+          ? "請填寫手機號碼"
+          : `手機號碼${MOBILE_REJECT_LABEL[reject]}，請再確認`,
+    };
+  }
 
   const webinar = await prisma.webinar.findUnique({ where: { slug } });
   if (!webinar || !webinar.isActive || hasEndedInTaipei(webinar.endDate) ||
@@ -238,6 +261,7 @@ export async function requestWebinarLinkAction(
         where: { webinarId_email: { webinarId: webinar.id, email } },
         update: {
           name,
+          phone,
           deliveryStatus: "FAILED",
           deliveryDetail: (result.error ?? "寄送失敗").slice(0, 500),
           deliveryAt: new Date(),
@@ -246,6 +270,7 @@ export async function requestWebinarLinkAction(
           webinarId: webinar.id,
           email,
           name,
+          phone,
           deliveryStatus: "FAILED",
           deliveryDetail: (result.error ?? "寄送失敗").slice(0, 500),
           deliveryAt: new Date(),
@@ -261,6 +286,7 @@ export async function requestWebinarLinkAction(
       where: { webinarId_email: { webinarId: webinar.id, email } },
       update: {
         name,
+        phone,
         sentCount: { increment: 1 },
         lastSentAt: new Date(),
         // 重寄 = 新一輪追蹤：狀態重置回 SENT，等 webhook 回報這一封的下場
@@ -272,6 +298,7 @@ export async function requestWebinarLinkAction(
         webinarId: webinar.id,
         email,
         name,
+        phone,
         sentCount: 1,
         lastSentAt: new Date(),
         deliveryStatus: "SENT",

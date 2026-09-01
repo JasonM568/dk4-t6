@@ -9,6 +9,7 @@ import {
   type WebinarRequestState,
 } from "@/actions/webinar";
 import { suggestEmailFix } from "@/lib/email-typo";
+import { explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 
 /** 依信箱網域給對應的找信指引 */
 function searchTips(email: string): string[] {
@@ -41,10 +42,16 @@ export function WebinarRequestForm({
   );
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const [delivery, setDelivery] = useState<WebinarDeliveryStatus>(null);
 
   const suggestion = suggestEmailFix(email.trim());
+  // 手機即時提示：只在「打了夠多字才可能是完整號碼」之後才嫌，
+  // 否則使用者每打一個字就看到一次紅字（打字中途本來就還不合法）
+  const phoneDigits = phone.replace(/\D/g, "");
+  const phoneReject =
+    phoneDigits.length >= 9 ? explainMobile(phone).reject : undefined;
 
   // 寄出成功後啟動 60 秒重寄倒數（與伺服器端限流一致）；
   // setTimeout 0 延遲一拍，避免 effect 內同步 setState 觸發串聯重渲染（lint 規則）
@@ -136,6 +143,8 @@ export function WebinarRequestForm({
         <form action={action} className="flex items-center gap-2">
           <input type="hidden" name="email" value={email} />
           <input type="hidden" name="name" value={name} />
+          {/* 手機是必填欄位，重寄也得帶上，否則會被 action 擋成「請填寫手機號碼」 */}
+          <input type="hidden" name="phone" value={phone} />
           <button
             disabled={pending || cooldown > 0}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
@@ -187,6 +196,29 @@ export function WebinarRequestForm({
         autoComplete="email"
         className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base focus:border-black focus:outline-none"
       />
+      <input
+        type="tel"
+        name="phone"
+        required
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        placeholder="手機號碼（例：0912345678）"
+        inputMode="numeric"
+        autoComplete="tel"
+        className={`w-full rounded-xl border px-4 py-3 text-base focus:outline-none ${
+          phoneReject
+            ? "border-amber-400 focus:border-amber-500"
+            : "border-gray-300 focus:border-black"
+        }`}
+      />
+      {phoneReject ? (
+        <p className="px-1 text-sm text-amber-700">
+          ⚠️ {MOBILE_REJECT_LABEL[phoneReject]}
+          {phoneReject === "OVERSEAS" && "——可以照樣送出，我們會改用 Email 通知你"}
+        </p>
+      ) : (
+        <p className="px-1 text-xs text-gray-400">開課前會用簡訊提醒你，不會用於其他用途</p>
+      )}
       {suggestion && (
         <button
           type="button"

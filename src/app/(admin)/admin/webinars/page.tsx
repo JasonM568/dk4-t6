@@ -73,6 +73,7 @@ export default async function AdminWebinarsPage() {
                 id: r.id,
                 email: r.email,
                 name: r.name,
+                phone: r.phone,
                 sentCount: r.sentCount,
                 lastSentAt: r.lastSentAt?.toISOString() ?? null,
                 createdAt: r.createdAt.toISOString(),

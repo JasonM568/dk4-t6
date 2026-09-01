@@ -81,21 +81,21 @@ model MemberProfile {
 // （蘇郁雅報名時填的是先生陳建中的信箱），email 當唯一鍵會讓第二個人根本建不了檔。
 // email 保留為選填、不設唯一，只在「該信箱剛好只有一筆」時當認領備援。
 model StudentRecord {
-  id            String                 @id @default(cuid())
-  phone         String?                @unique
-  email         String?
-  name          String?
-  legacyAccessStatus String            @default("UNKNOWN") // NONE / ACTIVE / TO_MIGRATE / MIGRATED / UNKNOWN
-  legacyNote    String?                @db.Text
-  archivedAt    DateTime?
-  archivedBy    String?
-  archiveReason String?                @db.Text
-  claimedUserId String?                @db.Uuid
-  claimedAt     DateTime?
-  histories     StudentCourseHistory[]
-  engagements   StudentEngagement[]
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  id                 String                 @id @default(cuid())
+  phone              String?                @unique
+  email              String?
+  name               String?
+  legacyAccessStatus String                 @default("UNKNOWN") // NONE / ACTIVE / TO_MIGRATE / MIGRATED / UNKNOWN
+  legacyNote         String?                @db.Text
+  archivedAt         DateTime?
+  archivedBy         String?
+  archiveReason      String?                @db.Text
+  claimedUserId      String?                @db.Uuid
+  claimedAt          DateTime?
+  histories          StudentCourseHistory[]
+  engagements        StudentEngagement[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@index([email])
   @@index([claimedUserId])
@@ -121,7 +121,7 @@ model StudentEngagement {
   id         String        @id @default(cuid())
   studentId  String
   student    StudentRecord @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  type       String        // BOOK_CLUB / FREQUENCY_MAP / SEMINAR / EVENT / OTHER
+  type       String // BOOK_CLUB / FREQUENCY_MAP / SEMINAR / EVENT / OTHER
   title      String
   occurredAt DateTime?
   source     String?
@@ -150,15 +150,15 @@ model StudentDataAuditLog {
 
 // 一次人工合併的完整、可還原操作單。刻意不設 StudentRecord FK，來源卡刪除後仍須存在。
 model StudentMergeOperation {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   sourceStudentId String
   targetStudentId String
   actorEmail      String?
   snapshotJson    Json
-  status          String   @default("ACTIVE") // ACTIVE / RESTORED
+  status          String    @default("ACTIVE") // ACTIVE / RESTORED
   restoredAt      DateTime?
   restoredBy      String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   @@index([targetStudentId, status, createdAt])
   @@index([sourceStudentId, createdAt])
@@ -231,10 +231,10 @@ model AdminAuditLog {
 // 課程平台會員列表封存：只影響本平台後台呈現，不刪除／停用共用 Supabase Auth。
 // 訂單、Enrollment、學員履歷與舊官網登入皆維持原狀，可隨時解除封存。
 model MemberArchive {
-  userId      String   @id @db.Uuid
-  reason      String?  @db.Text
-  archivedBy  String?
-  archivedAt  DateTime @default(now())
+  userId     String   @id @db.Uuid
+  reason     String?  @db.Text
+  archivedBy String?
+  archivedAt DateTime @default(now())
 
   @@index([archivedAt])
 }
@@ -670,6 +670,9 @@ model WebinarRequest {
   webinar        Webinar   @relation(fields: [webinarId], references: [id], onDelete: Cascade)
   email          String // 一律小寫正規化
   name           String? // 訪客填的姓名（重複索取以最新為準）
+  // 手機（09XXXXXXXX，normalizeMobile 正規化後存）：開課前提醒簡訊與學員記錄卡歸戶用。
+  // 2026-09-02 起表單必填，但欄位可空——上線前的舊索取紀錄沒有手機、補不回來。
+  phone          String?
   sentCount      Int       @default(0)
   lastSentAt     DateTime?
   // 講座信寄送狀態（Resend webhook 回流，依嚴重度只升不降）：
@@ -746,36 +749,36 @@ model CourseSession {
   // PLATFORM 走 SessionSignupOrder → PAYUNi 刷卡/ATM，付款成功自動轉入名單並開發票。
   signupSlug      String?   @unique // 報名頁網址代稱；null = 這場沒開報名頁
   isSignupOpen    Boolean   @default(false) // 報名頁總開關（關閉時頁面顯示「報名已結束」）
-  dmImage         String?   // DM 主視覺（瀏覽器直傳 Storage 的公開網址，同 Webinar.dmImage）
+  dmImage         String? // DM 主視覺（瀏覽器直傳 Storage 的公開網址，同 Webinar.dmImage）
   // 課程詳情區塊：圖片與影片混排，順序即前台顯示順序（後台可拖曳調整）。
   // 形狀 [{ type: "image" | "video", url: string }]，解析走 parseDmBlocks（防禦式）。
   // 用 Json 而非另立一張表：這是一份「整包一起編輯」的有序清單，
   // 逐列 CRUD 反而更麻煩（同 introImages/dmImages 用陣列的既有慣例）。
   dmBlocks        Json      @default("[]")
   signupIntro     String?   @db.Text // 課程介紹（純文字換行，同 Webinar.description 慣例）
-  venue           String?   // 場地名稱（例：台北市青少年發展處 5F）
-  address         String?   // 地址（前台附 Google 地圖連結）
+  venue           String? // 場地名稱（例：台北市青少年發展處 5F）
+  address         String? // 地址（前台附 Google 地圖連結）
   signupOpenAt    DateTime? // 報名開始；null = 立即開放
   signupCloseAt   DateTime? // 報名截止；null = 不自動截止（仍受 isSignupOpen 與開課日限制）
-  signupQuota     Int?      // 名額上限（比對未延期的 SessionSignup 筆數）；null = 不限額
+  signupQuota     Int? // 名額上限（比對未延期的 SessionSignup 筆數）；null = 不限額
   // 外部報名網址（1shop）。有值 = 報名頁只當落地頁：顯示 CTA 導出去，
   // 不收表單、不管名額（席次由 1shop 控管，訂單照舊匯入場次看板）。
   // 留空 = 用平台自己的報名表單（走 SessionSignupRequest 待確認流程）。
   signupUrl       String?
-  signupCtaLabel  String?   // 導外部模式的 CTA 按鈕文字（例：前往查看課程介紹）；null = 預設「立即報名」
-  signupPriceNote String?   // 費用說明（Phase 1 純文字，例：早鳥 3800 / 原價 4500）
+  signupCtaLabel  String? // 導外部模式的 CTA 按鈕文字（例：前往查看課程介紹）；null = 預設「立即報名」
+  signupPriceNote String? // 費用說明（Phase 1 純文字，例：早鳥 3800 / 原價 4500）
   signupPayNote   String?   @db.Text // 付款方式說明（匯款帳號、現場付款注意事項）
   signupNotice    String?   @db.Text // 注意事項／退費政策
-  signupGroupId   String?   // 報名成功自動加入的 MailGroup；null = 不加名單
+  signupGroupId   String? // 報名成功自動加入的 MailGroup；null = 不加名單
 
   // ── 平台線上金流報名（Phase 2）──
   // 報名方式 2 選 1（signupPayMode）：EXTERNAL = 導外部連結（1shop，signupUrl）；
   // PLATFORM = 平台金流（signupPrice，刷卡/ATM，付款成功自動轉入名單＋開發票）；
   // MANUAL = 內建表單手動收款（既有 SessionSignupRequest 待確認流程）。
   // 舊資料 migration 依 signupUrl 有無回填 EXTERNAL / MANUAL，行為不變。
-  signupPayMode   String    @default("MANUAL")
-  signupPrice     Int?      // PLATFORM 模式每人單價（NT$）＝新生／一般「特價」（實收）
-  signupListPrice Int?      // 原價（純顯示：劃線對比特價，例 8880 劃線 → 5880）；null = 不顯示原價
+  signupPayMode          String   @default("MANUAL")
+  signupPrice            Int? // PLATFORM 模式每人單價（NT$）＝新生／一般「特價」（實收）
+  signupListPrice        Int? // 原價（純顯示：劃線對比特價，例 8880 劃線 → 5880）；null = 不顯示原價
   // 自動新舊生定價（PLATFORM 模式）：報名時用手機/email 查學員上課史，上過任一
   // signupRetrainCourseIds 的標準課程（CanonicalCourse.id）＝複訓 → 套 signupRetrainPrice；
   // 否則＝新生 → 套 signupPrice。signupRetrainPrice 為 null 或 courseIds 空 = 不分新舊生，一律 signupPrice。
@@ -1171,16 +1174,16 @@ model SessionSignupOrder {
   buyerPhone  String
   // 參加者名單快照（含同行者）[{name,phone,email,meal,isRetrain}]；付款成功後逐位建 SessionSignup
   attendees   Json
-  quantity    Int         // 報名人數
-  unitPrice   Int         // 每人單價快照
-  total       Int         // = unitPrice × quantity
+  quantity    Int // 報名人數
+  unitPrice   Int // 每人單價快照
+  total       Int // = unitPrice × quantity
   status      OrderStatus @default(PENDING)
   // 防重下單：同場次同 email 只允許一筆有效 PENDING（PENDING=`sessionId:buyerEmail`，離開 PENDING 清 null）
   checkoutKey String?     @unique
   provider    String
-  tradeNo     String?     // 金流商交易序號
-  paymentType String?     // Credit / ATM…
-  rawCallback Json?       // 完整 callback 存證
+  tradeNo     String? // 金流商交易序號
+  paymentType String? // Credit / ATM…
+  rawCallback Json? // 完整 callback 存證
   paidAt      DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -1198,16 +1201,16 @@ model InvoiceRecord {
   orderNo String // 冗餘存一份，後台列表不用 join
 
   // PENDING 待開立（送出前）/ ISSUED 已開立 / FAILED 失敗（error 有原因，可重試）
-  status        String    @default("PENDING")
-  invoiceNumber String? // 發票號碼（如 UY25000014）
-  randomNum     String? // 4 碼防偽隨機碼（買受人對獎用）
+  status         String    @default("PENDING")
+  invoiceNumber  String? // 發票號碼（如 UY25000014）
+  randomNum      String? // 4 碼防偽隨機碼（買受人對獎用）
   invoiceTransNo String? // ezPay 開立序號
-  buyerEmail    String? // 開立當下的買受人信箱（ezPay 會員載具識別）
-  totalAmt      Int // 發票金額（含稅）
-  issuedAt      DateTime?
-  error         String?   @db.Text // 最後一次失敗原因
-  attempts      Int       @default(0)
-  raw           Json? // ezPay 回應存證
+  buyerEmail     String? // 開立當下的買受人信箱（ezPay 會員載具識別）
+  totalAmt       Int // 發票金額（含稅）
+  issuedAt       DateTime?
+  error          String?   @db.Text // 最後一次失敗原因
+  attempts       Int       @default(0)
+  raw            Json? // ezPay 回應存證
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

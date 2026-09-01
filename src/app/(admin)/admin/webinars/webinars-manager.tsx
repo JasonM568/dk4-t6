@@ -13,6 +13,7 @@ import { requestCourseImageUploadUrl } from "@/actions/admin";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
 
 // 圖片限制（與課程封面上傳一致；bytes 直傳 Storage 不經 server action body）
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -43,6 +44,7 @@ export type WebinarRequestRow = {
   sentCount: number;
   lastSentAt: string | null;
   createdAt: string;
+  phone: string | null; // 09XXXXXXXX 或海外 E.164；null = 2026-09-02 手機必填上線前的舊紀錄
   deliveryStatus: string | null; // SENT/DELIVERED/OPENED/CLICKED/BOUNCED/COMPLAINED/FAILED；null = 舊資料
   deliveryDetail: string | null; // 退信/失敗原因
 };
@@ -359,6 +361,14 @@ function RequestRow({
           defaultValue={request.email}
           className="w-64 rounded border border-gray-300 px-2 py-1 text-sm focus:border-black focus:outline-none"
         />
+        {/* 手機不設 required：上線前的舊紀錄沒有號碼，不能逼管理員為了改個名字先編一個號碼出來 */}
+        <input
+          name="phone"
+          type="tel"
+          defaultValue={request.phone ?? ""}
+          placeholder="手機"
+          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm focus:border-black focus:outline-none"
+        />
         <button
           disabled={pending}
           className="rounded bg-black px-2.5 py-1 text-xs font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
@@ -383,6 +393,15 @@ function RequestRow({
       <span className="w-6 font-mono text-gray-400">{index + 1}</span>
       <span className="w-32 truncate">{request.name ?? "—"}</span>
       <span className="w-64 truncate text-gray-600">{request.email}</span>
+      <span
+        className={`w-32 font-mono text-xs ${
+          request.phone ? "text-gray-600" : "text-gray-300"
+        }`}
+        title={isOverseasPhone(request.phone) ? "海外門號，不發簡訊" : undefined}
+      >
+        {formatMobile(request.phone)}
+        {isOverseasPhone(request.phone) && " 🌏"}
+      </span>
       <DeliveryBadge request={request} />
       <span className="text-xs text-gray-400">寄 {request.sentCount} 次</span>
       <span className="text-xs text-gray-400">首次 {formatDate(request.createdAt)}</span>
