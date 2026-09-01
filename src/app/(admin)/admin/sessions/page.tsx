@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import { currentCanEdit, currentStaffRole } from "@/lib/auth/staff";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { WebinarBoardSection } from "./webinar-board";
 import {
   BoardCodeForm,
   CreateSessionForm,
@@ -10,10 +12,32 @@ import {
 export const metadata = { title: "場次看板 — 管理後台" };
 
 export default async function AdminSessionsPage() {
-  const [sessions, boardCode, boardHours, canEditNow, roleNow] = await Promise.all([
+  const [sessions, allWebinars, boardCode, boardHours, canEditNow, roleNow] = await Promise.all([
     prisma.courseSession.findMany({
       orderBy: [{ sortOrder: "asc" }, { eventDate: "desc" }, { createdAt: "desc" }],
       include: { signups: { orderBy: { orderedAt: "asc" } } },
+    }),
+    // 講座（唯讀區塊）：與 /board 同一份資料，讓看板一次看完場次＋講座索取狀況
+    prisma.webinar.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        isActive: true,
+        endDate: true,
+        unpublishAt: true,
+        requests: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            deliveryStatus: true,
+            deliveryDetail: true,
+          },
+        },
+      },
     }),
     prisma.siteSetting.findUnique({ where: { key: "boardCode" } }),
     prisma.siteSetting.findUnique({ where: { key: "boardSessionHours" } }),
@@ -28,13 +52,39 @@ export default async function AdminSessionsPage() {
 
   const totalSignups = sessions.reduce((n, s) => n + s.signups.length, 0);
 
+  // 進行中的講座：條件與公開看板 /board 完全一致（關閉、結束日已過、已到下架時間都不列）
+  const now = new Date();
+  const liveWebinars = allWebinars.filter(
+    (w) =>
+      w.isActive &&
+      !hasEndedInTaipei(w.endDate) &&
+      (!w.unpublishAt || w.unpublishAt > now),
+  );
+  const boardWebinars = liveWebinars.map((w) => ({
+    id: w.id,
+    slug: w.slug,
+    title: w.title,
+    // 日期在 server 端就轉成台北時間字串，避免丟 Date 給 client 後時區/水合不一致
+    offlineLabel:
+      w.unpublishAt?.toLocaleString("zh-TW", {
+        timeZone: "Asia/Taipei",
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }) ?? null,
+    requests: w.requests,
+  }));
+
   return (
     // 不設 max-w-4xl：名單表格欄位多，吃滿 layout 的 max-w-6xl 才放得下
     <div>
       <h1 className="mb-1 text-2xl font-bold">課程場次看板</h1>
       <p className="mb-6 text-sm text-gray-500">
         手動上架場次 → 定期上傳 1shop 訂單檔自動歸類報名 → 看板（/board）憑 4 位碼唯讀查看。
-        目前 {sessions.length} 個場次、共 {totalSignups} 筆報名。
+        目前 {sessions.length} 個場次、共 {totalSignups} 筆報名；
+        另有 {boardWebinars.length} 場進行中講座（下方唯讀區塊）。
       </p>
 
       {canEditNow && (
@@ -68,7 +118,14 @@ export default async function AdminSessionsPage() {
         </>
       )}
 
+      {/* 講座（唯讀）：資料來源是 Webinar，與下方的課程場次各自獨立，只是併在同一頁看 */}
+      <WebinarBoardSection
+        webinars={boardWebinars}
+        hiddenCount={allWebinars.length - liveWebinars.length}
+      />
+
       {/* 場次列表 */}
+      <h2 className="mb-3 text-lg font-bold text-gray-700">📚 課程場次</h2>
       <div className="space-y-3">
         {sessions.length === 0 && (
           <p className="rounded-xl border border-gray-200 px-4 py-6 text-center text-sm text-gray-400">
