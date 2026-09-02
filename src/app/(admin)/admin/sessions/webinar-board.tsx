@@ -122,6 +122,12 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
       {webinar.requests.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Link
+            href={`/admin/webinars/${webinar.id}/preview`}
+            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-50"
+          >
+            ✉️ 預覽索取信
+          </Link>
+          <Link
             href={`/admin/sms?webinar=${webinar.id}`}
             className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700 transition hover:bg-indigo-50"
           >

@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
-import { applyMergeTags, buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
+import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
-import { buildJoinUrl } from "@/lib/meeting";
+import { buildWebinarMail } from "@/lib/webinar-mail";
 import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
@@ -224,27 +224,9 @@ export async function requestWebinarLinkAction(
     };
   }
 
-  // 信件內文：{link} 換成「帶密碼的進會議連結」；內文沒提到連結就自動補 CTA 按鈕
-  const joinUrl = buildJoinUrl(webinar.lectureUrl, webinar.meetingPassword);
-  let body = webinar.emailBody;
-  if (!body.includes("{link}") && !body.includes(webinar.lectureUrl)) {
-    body += `\n\n[▶️ 進入講座]({link})`;
-  }
-  body = body.replaceAll("{link}", joinUrl);
-
-  // 信末附完整會議資訊區塊（點連結失敗時可手動輸入 ID/密碼）
-  const infoLines = [
-    webinar.meetingId && `會議 ID：${webinar.meetingId}`,
-    webinar.meetingPassword && `會議密碼：${webinar.meetingPassword}`,
-    webinar.meetingInfo,
-  ].filter(Boolean);
-  if (infoLines.length > 0) {
-    body += `\n\n──────────\n📌 會議資訊\n\n${infoLines.join("\n")}\n\n若點按鈕無法直接進入，請開啟會議程式後手動輸入上方 ID 與密碼。`;
-  }
-
-  // {name}/{email} 合併變數（先替換再轉 HTML，esc 在 build 內處理防注入）
-  body = applyMergeTags(body, { email, name });
-  const subject = applyMergeTags(webinar.emailSubject, { email, name });
+  // 信件內容組裝抽在 lib/webinar-mail：後台預覽頁走同一支，兩邊不會各說各話。
+  // （{name}/{email} 合併變數先替換再轉 HTML，esc 在 buildBroadcastHtml 內處理防注入）
+  const { subject, body } = buildWebinarMail(webinar, { email, name });
 
   // 帶 webinar_id tag：Resend webhook 事件回流 → 更新這筆索取的寄送狀態
   const result = await sendBroadcast(

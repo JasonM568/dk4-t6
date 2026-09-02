@@ -109,6 +109,7 @@ pnpm tsc --noEmit && pnpm build       # 型別檢查 + 正式 build
 npx tsx scripts/test-ecpay.ts         # 驗 ECPay 簽章
 npx tsx scripts/test-payuni.ts        # 驗 PAYUNi 加解密/三態（官方測試向量）
 npx tsx scripts/test-ezpay-invoice.ts # 驗 ezPay 發票加密/CheckCode/稅額
+npx tsx scripts/check-webinar-mail-refactor.ts # 講座索取信組裝：預覽與實際寄信同一條路徑（離線）
 npx tsx scripts/test-purchase-flow.ts # 付款 webhook 端到端（需 dev server）
 npx tsx scripts/reset-testuser.ts     # 重置測試會員
 pnpm check:actions                    # 檢查 "use server" 檔案的匯出（build 也會跑）

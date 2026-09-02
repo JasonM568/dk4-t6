@@ -502,6 +502,13 @@ export function WebinarCard({
           >
             🔗 開啟活動頁
           </a>
+          {/* 訪客登記後收到的那封信長什麼樣——與實際寄信同一段組裝程式碼 */}
+          <Link
+            href={`/admin/webinars/${webinar.id}/preview`}
+            className="rounded border border-indigo-300 px-2 py-0.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50"
+          >
+            ✉️ 預覽索取信
+          </Link>
           <button
             type="button"
             onClick={() => navigator.clipboard.writeText(url)}
