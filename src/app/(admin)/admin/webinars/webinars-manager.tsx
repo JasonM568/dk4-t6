@@ -459,7 +459,17 @@ export function WebinarCard({
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
         <span className="font-medium">{webinar.title}</span>
-        <span className="font-mono text-xs text-gray-400">/webinar/{webinar.slug}</span>
+        {/* 直接看活動頁。放在 <summary> 裡要擋掉冒泡，否則點連結會順手把卡片展開／收合 */}
+        <a
+          href={`/webinar/${webinar.slug}`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="font-mono text-xs text-gray-400 underline decoration-dotted underline-offset-2 hover:text-indigo-600"
+          title="在新分頁開啟活動頁"
+        >
+          /webinar/{webinar.slug} ↗
+        </a>
         <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-sm font-bold">
           {webinar.requests.length} 人索取
         </span>
@@ -484,6 +494,14 @@ export function WebinarCard({
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-gray-500">報名頁網址：</span>
           <code className="rounded bg-gray-100 px-2 py-0.5 text-xs">{url}</code>
+          <a
+            href={`/webinar/${webinar.slug}`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded border border-indigo-300 px-2 py-0.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50"
+          >
+            🔗 開啟活動頁
+          </a>
           <button
             type="button"
             onClick={() => navigator.clipboard.writeText(url)}
