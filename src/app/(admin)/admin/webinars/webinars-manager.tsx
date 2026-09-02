@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
-import { CopyPhonesButton } from "./webinar-actions";
+import { BackfillPhonesButton, CopyPhonesButton } from "./webinar-actions";
 
 // 圖片限制（與課程封面上傳一致；bytes 直傳 Storage 不經 server action body）
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -557,6 +557,10 @@ export function WebinarCard({
               📱 發提醒簡訊
             </Link>
             <CopyPhonesButton requests={webinar.requests} />
+            {/* 缺手機的才需要比對；補齊了就不顯示，避免一顆按不出東西的按鈕 */}
+            {webinar.requests.some((r) => !r.phone) && (
+              <BackfillPhonesButton webinarId={webinar.id} />
+            )}
           </div>
         )}
         {webinar.requests.length === 0 ? (

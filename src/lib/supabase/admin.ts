@@ -162,6 +162,35 @@ export async function findAuthUserIdByEmail(
   return null;
 }
 
+/** 批次版的 findAuthUserIdByEmail：一次掃完所有使用者，回 email（小寫）→ userId。
+ *
+ *  存在的理由是效能：findAuthUserIdByEmail 每查一個 email 就從第一頁重掃一次，
+ *  查 20 個 email 就是 20 趟全表掃描。需要一次對多個信箱時一律用這支。
+ *  查詢失敗回空 Map（呼叫端自行決定要不要中斷）。 */
+export async function getAuthUserIdsByEmails(
+  emails: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const wanted = new Set(emails.map((e) => e.toLowerCase()));
+  if (wanted.size === 0) return map;
+
+  const supabase = createAdminClient();
+  const perPage = 1000;
+  for (let page = 1; ; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      console.error("[supabase/admin] getAuthUserIdsByEmails 失敗：", error.message);
+      break;
+    }
+    for (const u of data.users) {
+      const e = (u.email ?? "").toLowerCase();
+      if (e && wanted.has(e)) map.set(e, u.id);
+    }
+    if (data.users.length < perPage) break;
+  }
+  return map;
+}
+
 // 批次匯入用：建立 Supabase Auth 會員。
 // metadata 對齊 hope 站註冊（display_name/nickname/role:student），
 // 讓 QBC 的 handle_new_user trigger 建出一致的 profiles。

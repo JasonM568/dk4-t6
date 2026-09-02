@@ -7,6 +7,10 @@ import { requireEditor } from "@/lib/auth/staff";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { buildWebinarMail } from "@/lib/webinar-mail";
+import {
+  backfillWebinarPhones,
+  type BackfillReport,
+} from "@/lib/webinar-phone-backfill";
 import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
@@ -167,6 +171,19 @@ export async function deleteWebinarRequestAction(id: string) {
   await prisma.webinarRequest.delete({ where: { id } }).catch(() => undefined);
   revalidatePath("/admin/webinars");
   revalidatePath("/board");
+}
+
+/** 從會員資料補齊索取名單的手機（姓名吻合才寫，其餘列出讓管理員決定）。
+ *  回傳整份報告——「補了幾筆」不夠，操作者必須看到「哪幾筆不敢補、為什麼」。 */
+export async function backfillWebinarPhonesAction(
+  webinarId: string,
+): Promise<BackfillReport> {
+  await requireEditor();
+  const report = await backfillWebinarPhones(webinarId, { apply: true });
+  revalidatePath("/admin/webinars");
+  revalidatePath("/admin/sessions");
+  revalidatePath("/admin/sms");
+  return report;
 }
 
 /** 訪客索取講座連結：驗證 → 限流 → 記錄 → 進名單群組 → 寄信 */

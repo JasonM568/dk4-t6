@@ -120,6 +120,7 @@ npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM �
 npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單
 npx tsx --conditions=react-server scripts/test-session-notice-db.ts     # 課前通知「未通知名單」11 項
 npx tsx --conditions=react-server scripts/test-webinar-sms-db.ts        # 簡訊「講座索取者」名單 28 項（去重/退訂/未通知/回寫）
+npx tsx --conditions=react-server scripts/test-webinar-phone-backfill-db.ts # 講座補手機 20 項（姓名不同不寫／共用信箱／撞號）
 npx tsx --conditions=react-server scripts/test-session-signup-db.ts     # 公開報名頁 28 項（名額/同行者/轉入名單）
 npx tsx scripts/test-edm-phase2.ts                                      # EDM KPI／CSV／preflight／成效分眾
 npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等（本機 DB）
