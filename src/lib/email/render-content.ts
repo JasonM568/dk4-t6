@@ -11,16 +11,26 @@
 //   明文網址          → 自動轉連結
 
 /** code = 該收件人所屬場次的 /live 上課碼（{code} 變數用）。
- *  跨場次群發時每個人的碼不同，所以綁在收件人身上（同 SmsRecipient）。 */
-export type Recipient = { email: string; name?: string; code?: string };
+ *  跨場次群發時每個人的碼不同，所以綁在收件人身上（同 SmsRecipient）。
+ *
+ *  link = 該收件人的專屬連結（{link} 變數用）。與 code 同理綁在收件人身上，
+ *  但來源不同：code 由場次帶出，link 只能由手動名單的第三欄貼進來——
+ *  「一人一條不同網址」這種名單（語音邀請函、個人化報告）沒有任何資料表
+ *  推得出來，只有操作者手上那份表知道誰對應哪一條。 */
+export type Recipient = { email: string; name?: string; code?: string; link?: string };
 
 // 合併變數：在「原文」階段替換，之後 esc() 會轉義 → 不會注入。
-// 支援 {email}＝收件人 email、{name}＝姓名、{code}＝場次上課碼（皆無值時留空）。
+// 支援 {email}＝收件人 email、{name}＝姓名、{code}＝場次上課碼、
+// {link}＝手動名單第三欄的專屬連結（皆無值時留空）。
+//
+// {link} 替換後只是一段明文網址，接著照常走 renderParagraph 的自動連結規則
+// 變成真 <a>——所以 Resend 的點擊追蹤改寫得到它，誰點了自己的專屬連結會回流。
 export function applyMergeTags(text: string, r: Recipient): string {
   return text
     .replaceAll("{email}", r.email)
     .replaceAll("{name}", r.name ?? "")
-    .replaceAll("{code}", r.code ?? "");
+    .replaceAll("{code}", r.code ?? "")
+    .replaceAll("{link}", r.link ?? "");
 }
 
 export function esc(s: string): string {

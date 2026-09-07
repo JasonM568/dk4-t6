@@ -329,6 +329,14 @@ export function BroadcastForm({
               >
                 {"{code}"}
               </button>
+              <button
+                type="button"
+                onClick={() => insertVar("{link}")}
+                title="插入該收件人的專屬連結（僅「手動貼入名單」對象有值，名單第三欄）"
+                className="rounded border border-gray-300 px-2 py-0.5 font-mono text-xs hover:bg-gray-50"
+              >
+                {"{link}"}
+              </button>
               <span className="mx-0.5 h-4 w-px bg-gray-300" aria-hidden />
               <button
                 type="button"
@@ -447,7 +455,7 @@ export function BroadcastForm({
             <div className="mt-2 overflow-hidden rounded-xl border border-amber-300">
               <div className="flex items-center justify-between bg-amber-50 px-3 py-1.5">
                 <span className="text-xs font-medium text-amber-800">
-                  即時預覽（與實際寄出走同一套排版；變數以「王小明 / example@example.com / 8241」示意）
+                  即時預覽（與實際寄出走同一套排版；變數以「王小明 / example@example.com / 8241 / 專屬連結」示意）
                 </span>
               </div>
               {/* 模擬品牌信：紅底頁首＋白底內文卡（完整版面以「寄測試信」為準） */}
@@ -466,6 +474,7 @@ export function BroadcastForm({
                           email: "example@example.com",
                           name: "王小明",
                           code: "8241",
+                          link: "https://course.huangxi.info/i/XXXXXXXXXXXX",
                         }),
                       ),
                     }}
@@ -481,7 +490,11 @@ export function BroadcastForm({
             <span className="font-mono">{"{name}"}</span>＝姓名、
             <span className="font-mono">{"{code}"}</span>＝該場次的上課碼
             （學員到 course.huangxi.info/live 輸入即可取得 Zoom 連結；
-            只有「場次報名者」對象有值）。寄出時自動帶入每位收件人，沒有值的會留空。
+            只有「場次報名者」對象有值）、
+            <span className="font-mono">{"{link}"}</span>＝該收件人的專屬連結
+            （一人一條不同網址，只有「手動貼入名單」對象有值，寫在名單第三欄；
+            用了這個變數但有人沒填連結會擋下不寄）。
+            寄出時自動帶入每位收件人，沒有值的會留空。
             <br />
             排版：<span className="font-mono">**粗體**</span>、
             <span className="font-mono">## 標題</span>（獨立一段）、
@@ -766,9 +779,17 @@ export function BroadcastForm({
                   required
                   defaultValue={defaultValues?.manualList}
                   rows={6}
-                  placeholder={"student1@example.com,王小明\nstudent2@example.com\n（一行一筆，可附姓名）"}
+                  placeholder={
+                    "student1@example.com,王小明\nstudent2@example.com\nstudent3@example.com,陳小美,https://course.huangxi.info/i/abc123\n（一行一筆：email[,姓名][,專屬連結]）"
+                  }
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  一行一筆：<span className="font-mono">email,姓名,連結</span>
+                  ——姓名與連結都可省略。第三欄的連結會帶入內文的{" "}
+                  <span className="font-mono">{"{link}"}</span> 變數，用來寄「一人一條不同網址」的信
+                  （語音邀請函、個人化報告）。
+                </p>
                 <p className="mt-1 text-xs text-amber-600">
                   💡 寄出後可把這批名單建立成群組，下次直接選用（寄出後下方會再提醒）
                 </p>

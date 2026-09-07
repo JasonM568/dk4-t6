@@ -22,7 +22,12 @@ import {
 /** 以手機為鍵去重，保留第一筆姓名。
  *  對照 email 的 dedupeByEmail：這是唯一的去重點，任何新的名單來源都要匯進這裡。 */
 function dedupeByMobile(
-  rows: { mobile?: unknown; name?: string | null; code?: string | null }[],
+  rows: {
+    mobile?: unknown;
+    name?: string | null;
+    code?: string | null;
+    link?: string | null;
+  }[],
 ): {
   recipients: SmsRecipient[];
   noMobileCount: number;
@@ -43,6 +48,9 @@ function dedupeByMobile(
         mobile,
         name: r.name?.trim() || undefined,
         code: r.code || undefined,
+        // {link}：同一支號碼重複出現而連結不同時也是先到先贏
+        // （專屬連結名單本來就該一人一列，重複貼是操作失誤）
+        link: r.link || undefined,
       });
   }
   return { recipients: [...map.values()], noMobileCount };
@@ -280,7 +288,10 @@ export async function previewSmsAudience(input: {
       optedOutCount: excludedCount,
       sendableCount: kept.length,
       maxNameLength: kept.reduce((n, r) => Math.max(n, r.name?.length ?? 0), 0),
+      maxLinkLength: kept.reduce((n, r) => Math.max(n, r.link?.length ?? 0), 0),
       withCodeCount: kept.filter((r) => !!r.code).length,
+      // 場次名單由資料表推導，帶不出專屬連結
+      withLinkCount: 0,
     };
   }
 
@@ -325,8 +336,11 @@ export async function previewSmsAudience(input: {
       optedOutCount: excludedCount,
       sendableCount: kept.length,
       maxNameLength: kept.reduce((n, r) => Math.max(n, r.name?.length ?? 0), 0),
+      maxLinkLength: kept.reduce((n, r) => Math.max(n, r.link?.length ?? 0), 0),
       // 講座沒有上課碼，{code} 一律替換成空字串
       withCodeCount: 0,
+      // 講座名單由資料表推導，帶不出專屬連結
+      withLinkCount: 0,
     };
   }
 
@@ -344,8 +358,11 @@ export async function previewSmsAudience(input: {
       optedOutCount: excludedCount,
       sendableCount: kept.length,
       maxNameLength: kept.reduce((n, r) => Math.max(n, r.name?.length ?? 0), 0),
+      maxLinkLength: kept.reduce((n, r) => Math.max(n, r.link?.length ?? 0), 0),
       // 手動名單沒有場次可對應，{code} 一律替換成空字串
       withCodeCount: 0,
+      // 專屬連結只有手動名單帶得動：第三欄有填的人數
+      withLinkCount: kept.filter((r) => !!r.link).length,
     };
   }
 
@@ -423,13 +440,15 @@ export async function resolveSmsFollowUp(broadcastId: string): Promise<{
     messages.filter((m) => m.status === "FAILED").map((m) => [m.mobile, m.error]),
   );
 
-  // 補發轉成手動名單快照時把 code 一起帶著，否則補發的那則 {code} 會是空的
+  // 補發轉成手動名單快照時把 code／link 一起帶著，
+  // 否則補發的那則 {code}／{link} 會是空的
   const rows = kept
     .filter((r) => !done.has(r.mobile))
     .map((r) => ({
       mobile: r.mobile,
       ...(r.name ? { name: r.name } : {}),
       ...(r.code ? { code: r.code } : {}),
+      ...(r.link ? { link: r.link } : {}),
     }));
 
   return {

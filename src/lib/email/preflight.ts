@@ -1,6 +1,6 @@
 export type BroadcastPreflight = { errors: string[]; warnings: string[] };
 
-const SUPPORTED_TAGS = new Set(["name", "email", "code"]);
+const SUPPORTED_TAGS = new Set(["name", "email", "code", "link"]);
 const PLACEHOLDER_RE = /(TODO|請填寫|填入日期|填入地點|日期待定|地點待定)/i;
 
 export function inspectBroadcastDraft(input: {
@@ -34,7 +34,8 @@ export function inspectBroadcastDraft(input: {
   if (/!?\[[^\]\n]*\]\([^)]*(?:\n|$)/.test(body)) {
     errors.push("內文含未完成的 Markdown 連結或圖片語法");
   }
-  if (!/(https?:\/\/|\[[^\]]+\]\(https?:\/\/)/.test(body)) {
+  // {link} 也算 CTA：專屬連結信的內文裡不會有明文網址，網址是寄出當下才帶入的
+  if (!/(https?:\/\/|\[[^\]]+\]\(https?:\/\/|\{link\})/.test(body)) {
     warnings.push("內文沒有 CTA 或網址，收件人可能不知道下一步要做什麼");
   }
   if ([...subject].length > 60) warnings.push("主旨超過 60 個字元，部分信箱可能截斷");

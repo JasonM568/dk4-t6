@@ -33,24 +33,28 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 
 const PAGE_SIZE = 20;
 
-/** manualRows（JSON）→ 手動名單輸入框的文字：一行一筆「手機,姓名」。
+/** manualRows（JSON）→ 手動名單輸入框的文字：一行一筆「手機,姓名[,上課碼][,專屬連結]」。
  *  資料庫來的 JSON 一律防禦性讀取，壞資料就跳過那一筆。 */
 function manualRowsToText(rows: unknown): string {
   if (!Array.isArray(rows)) return "";
   return rows
     .map((r) => {
       if (!r || typeof r !== "object") return "";
-      const { mobile, name, code } = r as {
+      const { mobile, name, code, link } = r as {
         mobile?: unknown;
         name?: unknown;
         code?: unknown;
+        link?: unknown;
       };
       if (typeof mobile !== "string" || !mobile) return "";
       const nm = typeof name === "string" ? name : "";
-      // 第三欄是補發帶過來的上課碼；有碼就得連空姓名的逗號一起補上，
-      // 否則碼會被當成姓名解析回去
-      if (typeof code === "string" && /^\d{4}$/.test(code))
-        return `${mobile},${nm},${code}`;
+      // 第三欄之後是補發帶過來的上課碼／專屬連結；只要有其中一個，
+      // 就得連空姓名的逗號一起補上，否則它會被當成姓名解析回去
+      const extras = [
+        typeof code === "string" && /^\d{4}$/.test(code) ? code : "",
+        typeof link === "string" && /^https?:\/\/\S+$/.test(link) ? link : "",
+      ].filter(Boolean);
+      if (extras.length > 0) return [mobile, nm, ...extras].join(",");
       return nm ? `${mobile},${nm}` : mobile;
     })
     .filter(Boolean)

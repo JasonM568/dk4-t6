@@ -771,7 +771,7 @@ type BroadcastAudience = {
     groupIds: string[];
     sessionIds: string[];
     audienceLabel: string;
-    manualRows: { email: string; name?: string }[] | undefined;
+    manualRows: { email: string; name?: string; link?: string }[] | undefined;
     sourceBroadcastId: string | null;
     followUpFilter: string | null;
   };
@@ -795,6 +795,41 @@ async function validateCodeCoverage(
   return null;
 }
 
+/** {link} 的守門：內文用了專屬連結變數，就必須每個人都拿得到一條。
+ *
+ *  跟 validateCodeCoverage 同一種性質，但漏掉的後果更難補救——{code} 空白
+ *  頂多讓學員再問一次碼，{link} 空白是「我特地為你錄了一段話」下面接一片空白，
+ *  那封信等於白寄，而且是寄給最該珍惜的一批人。所以這裡擋下而不是只警告。
+ *
+ *  只有手動名單／選取會員（audienceType=MANUAL）帶得動 link：其餘對象的名單
+ *  由資料表推導，沒有任何欄位存得下「這個人的專屬網址」。 */
+function validateLinkCoverage(
+  body: string,
+  subject: string,
+  audience: string,
+  manualRows: { email: string; link?: string }[] | undefined,
+): string | null {
+  if (!body.includes("{link}") && !subject.includes("{link}")) return null;
+  if (audience !== "manual" && audience !== "members")
+    return "內文使用了 {link}，發送對象必須選擇「手動貼入名單」（一行一筆 email,姓名,連結）";
+  const rows = manualRows ?? [];
+  const missing = rows.filter((r) => !r.link).length;
+  if (rows.length === 0) return "內文使用了 {link}，但名單是空的";
+  if (missing > 0)
+    return `內文使用了 {link}，但 ${rows.length} 筆名單中有 ${missing} 筆沒有連結（格式：email,姓名,https://…）`;
+  return null;
+}
+
+/** 測試信要帶真的專屬連結：測試信是版面確認的唯一管道，
+ *  留白會讓人以為變數壞了（同 testCode 的理由）。取名單第一筆示意。 */
+function firstManualLink(
+  audience: string,
+  manualRows: { link?: string }[] | undefined,
+): string | undefined {
+  if (audience !== "manual" && audience !== "members") return undefined;
+  return manualRows?.find((r) => r.link)?.link;
+}
+
 /** 解析群發表單的發送對象（sendBroadcastAction / updateBroadcastAction 共用）。
  *  lenient = 草稿模式：群組不存在/名單空也照存，之後編輯再補 */
 async function resolveBroadcastAudience(
@@ -810,7 +845,7 @@ async function resolveBroadcastAudience(
   let audienceGroupId: string | null = null;
   let audienceGroupIds: string[] = [];
   let audienceSessionIds: string[] = [];
-  let manualRows: { email: string; name?: string }[] | undefined;
+  let manualRows: { email: string; name?: string; link?: string }[] | undefined;
   let sourceBroadcastId: string | null = null;
   let followUpFilter: string | null = null;
   const emptyAudience = {
@@ -955,7 +990,11 @@ async function resolveBroadcastAudience(
     manualRows = parseRows(manualRaw)
       .filter((r) => EMAIL_RE.test(r.email))
       .filter((r) => !seen.has(r.email) && seen.add(r.email))
-      .map((r) => (r.name ? { email: r.email, name: r.name } : { email: r.email }));
+      .map((r) => ({
+        email: r.email,
+        ...(r.name ? { name: r.name } : {}),
+        ...(r.link ? { link: r.link } : {}),
+      }));
     if (!lenient && manualRows.length === 0)
       return {
         error:
@@ -1161,6 +1200,11 @@ export async function sendBroadcastAction(
       email: admin.email,
       name: admin.displayName ?? undefined,
       code: testCode,
+      link: firstManualLink(
+        audience,
+        (await resolveBroadcastAudience(audience, groupIds, sessionIds, manualRaw, true))
+          .audienceData.manualRows,
+      ),
     };
     const r = await sendBroadcast([me], `[測試] ${subject}`, (rcpt) =>
       buildBroadcastHtml(
@@ -1191,6 +1235,8 @@ export async function sendBroadcastAction(
   const manualRows = audienceData.manualRows;
   const codeError = await validateCodeCoverage(body, audience, sessionIds, notice.messageType);
   if (codeError) return { error: codeError };
+  const linkError = validateLinkCoverage(body, subject, audience, manualRows);
+  if (linkError) return { error: linkError };
 
   // 排程模式：datetime-local 值無時區，固定以台灣時間解讀
   if (scheduledAtRaw) {
@@ -1362,6 +1408,11 @@ export async function updateBroadcastAction(
       email: admin.email,
       name: admin.displayName ?? undefined,
       code: testCode,
+      link: firstManualLink(
+        audience,
+        (await resolveBroadcastAudience(audience, groupIds, sessionIds, manualRaw, true))
+          .audienceData.manualRows,
+      ),
     };
     const r = await sendBroadcast([me], `[測試] ${subject}`, (rcpt) =>
       buildBroadcastHtml(
@@ -1424,6 +1475,8 @@ export async function updateBroadcastAction(
   const { audienceData } = resolved;
   const codeError = await validateCodeCoverage(body, audience, sessionIds, notice.messageType);
   if (codeError) return { error: codeError };
+  const linkError = validateLinkCoverage(body, subject, audience, audienceData.manualRows);
+  if (linkError) return { error: linkError };
 
   // 轉排程
   if (scheduledAtRaw) {
@@ -1739,7 +1792,7 @@ export async function saveBroadcastListToGroupAction(
 
   const rows: { email: string; name?: string }[] =
     Array.isArray(record.manualRows) && record.manualRows.length > 0
-      ? (record.manualRows as { email: string; name?: string }[])
+      ? (record.manualRows as { email: string; name?: string; link?: string }[])
       : record.recipients.map((email) => ({ email }));
   if (rows.length === 0) return;
 
@@ -1880,8 +1933,14 @@ export type BatchState = {
 // - 以「.」開頭的行自動接回上一行（email 被折行成兩行時還原）
 // - 欄位裡同時有 @ 和空白 → 再按空白拆欄（空白分隔的貼法）
 // - 一行出現多個 email（整批空白分隔貼上）→ 每個 email 各自成一筆
-function parseRows(raw: string): { email: string; name: string; password: string }[] {
+/** link 欄位：手動名單第三欄的專屬連結（{link} 變數用）。
+ *  只認 http(s) 開頭的整段字串，先從 rest 抽掉再跑既有的姓名／密碼判斷——
+ *  否則一條網址會被「非中文欄位」的規則判成密碼（會員匯入路徑無視 link，不受影響）。 */
+function parseRows(
+  raw: string,
+): { email: string; name: string; password: string; link: string }[] {
   const CJK = /[一-鿿]/;
+  const URL_FIELD = /^https?:\/\/\S+$/;
 
   const lines: string[] = [];
   for (const rawLine of raw
@@ -1914,13 +1973,16 @@ function parseRows(raw: string): { email: string; name: string; password: string
       .filter(Boolean);
 
     const emails = parts.filter((p) => EMAIL_RE.test(p));
-    const rest = parts.filter((p) => !EMAIL_RE.test(p));
+    const nonEmail = parts.filter((p) => !EMAIL_RE.test(p));
+    const link = nonEmail.find((p) => URL_FIELD.test(p)) ?? "";
+    const rest = nonEmail.filter((p) => p !== link);
 
     if (emails.length > 1)
       return emails.map((e) => ({
         email: e.toLowerCase(),
         name: "",
         password: "",
+        link: "",
       }));
 
     const email = (emails[0] ?? "").toLowerCase();
@@ -1936,7 +1998,7 @@ function parseRows(raw: string): { email: string; name: string; password: string
       if (rest[0].length >= 6 && /\d/.test(rest[0])) password = rest[0];
       else name = rest[0];
     }
-    return [{ email, name, password }];
+    return [{ email, name, password, link }];
   });
 }
 

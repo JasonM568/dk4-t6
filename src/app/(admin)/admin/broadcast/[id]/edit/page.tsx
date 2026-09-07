@@ -70,9 +70,10 @@ export default async function BroadcastEditPage({
       ? await buildFollowUpProp(record.sourceBroadcastId, record.followUpFilter)
       : undefined;
 
-  // manualRows 還原成一行一筆「email,姓名」文字
+  // manualRows 還原成一行一筆「email,姓名,連結」文字（沒有的欄位就不補逗號，
+  // 免得下次存檔多出一堆空欄位）
   const manualRows = Array.isArray(record.manualRows)
-    ? (record.manualRows as { email: string; name?: string }[])
+    ? (record.manualRows as { email: string; name?: string; link?: string }[])
     : [];
   const defaults: BroadcastFormDefaults = {
     subject: record.subject,
@@ -90,7 +91,7 @@ export default async function BroadcastEditPage({
     sessionIds: broadcastSessionIds(record),
     isNotice: record.messageType === "NOTICE",
     manualList: manualRows
-      .map((r) => (r.name ? `${r.email},${r.name}` : r.email))
+      .map((r) => [r.email, r.name, r.link].filter(Boolean).join(","))
       .join("\n"),
     scheduledAt: toDatetimeLocal(record.scheduledAt),
   };

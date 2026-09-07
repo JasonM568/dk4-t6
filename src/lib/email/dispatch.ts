@@ -44,6 +44,10 @@ function dedupeByEmailCounted(rows: Recipient[]): {
         email,
         name: r.name?.trim() || undefined,
         code: r.code || undefined,
+        // {link}：同一個 email 在名單裡出現兩次而連結不同時，也是先到先贏。
+        // 專屬連結的名單本來就該一人一列，重複貼是操作失誤——
+        // 這裡取第一筆而不是後蓋前，至少讓「預覽看到的」就是「寄出去的」。
+        link: r.link || undefined,
       });
   }
   return { recipients: [...map.values()], noEmailCount };
@@ -61,7 +65,11 @@ export async function getBroadcastRecipients(): Promise<Recipient[]> {
   );
 }
 
-export type ManualRow = { email: string; name?: string };
+/** 手動貼入的名單列。link = 該收件人的專屬連結（{link} 變數用）：
+ *  一人一條不同網址的名單只有操作者手上那份表知道對應關係，
+ *  資料庫推不出來，所以跟著名單一起存進 EmailBroadcast.manualRows 快照——
+ *  補寄與「寄送明細」重建名單時才拿得回同一條連結（同 SmsManualRow.code 的理由）。 */
+export type ManualRow = { email: string; name?: string; link?: string };
 
 /** 取多個名單群組的成員聯集，並依「勾選順序」排序。
  *

@@ -167,12 +167,18 @@ export function SmsForm({
     previewKey,
   ]);
 
-  // 即時字數：以「王小明」等長姓名估算，與伺服器端的上界估法一致
+  // 即時字數：以「王小明」等長姓名估算，與伺服器端的上界估法一致。
+  // {link} 是網址（40–80 字），拿名單裡最長的那條來估——用變數本身的 6 個字去算
+  // 會少掉一整段，畫面顯示 1 則、實際扣 2 則的錢。名單還沒貼時退回一條示意網址。
+  const maxLinkLength = preview?.data.maxLinkLength ?? 0;
+  const sampleLink =
+    maxLinkLength > 0 ? "x".repeat(maxLinkLength) : "https://course.huangxi.info/i/XXXXXXXXXXXX";
   const sampleText = `${brandPrefix}${body
     .replace(/\{name\}/g, "王小明")
     .replace(/\{mobile\}/g, "0912345678")
     // 上課碼固定 4 位，估算字數不會有誤差
-    .replace(/\{code\}/g, "8241")}`;
+    .replace(/\{code\}/g, "8241")
+    .replace(/\{link\}/g, sampleLink)}`;
   const count = countSms(sampleText);
   const bodyHasEmoji = hasEmoji(body);
 
@@ -322,6 +328,15 @@ export function SmsForm({
                 {"{code}"}
               </button>
               上課碼
+              <button
+                type="button"
+                onClick={() => setBody((b) => b + "{link}")}
+                title="該收件人的專屬連結；只有手動名單帶得動（名單裡貼 http(s) 那一欄）"
+                className="mx-1 rounded border border-gray-300 px-1.5 py-0.5 hover:bg-gray-50"
+              >
+                {"{link}"}
+              </button>
+              專屬連結
             </span>
             <span className={count.segments > 1 ? "text-amber-600" : "text-gray-400"}>
               含品牌標示共 {count.length} 字 · <strong>{count.segments} 則</strong>
@@ -496,7 +511,9 @@ export function SmsForm({
                 rows={5}
                 value={manualList}
                 onChange={(e) => setManualList(e.target.value)}
-                placeholder={"0912345678,王小明\n0987654321\n（一行一筆，可附姓名）"}
+                placeholder={
+                  "0912345678,王小明\n0987654321\n0922333444,陳小美,https://course.huangxi.info/i/abc123\n（一行一筆：手機[,姓名][,上課碼][,專屬連結]）"
+                }
                 className="ml-6 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
               />
             )}
@@ -542,6 +559,31 @@ export function SmsForm({
                               </strong>
                               所屬場次還沒設上課碼，他們收到的會是一則沒有碼的簡訊。
                               請先到場次看板設定「上課連結」。
+                            </>
+                          )}
+                        </div>
+                      )}
+                    {/* 用了 {link} 卻有人名單裡沒貼連結：他們會收到一則「請點以下連結」
+                        後面接空白的簡訊，等於白發還要付錢——同 {code} 的道理，
+                        但專屬連結信通常是寄給最重要的一批人，漏掉更難補救 */}
+                    {body.includes("{link}") &&
+                      current.withLinkCount < current.sendableCount && (
+                        <div className="mt-1 rounded bg-amber-100 px-2 py-1 text-amber-900">
+                          {audience === "manual" ? (
+                            <>
+                              ⚠️ 內容用了 {"{link}"}，但其中{" "}
+                              <strong>
+                                {current.sendableCount - current.withLinkCount} 人
+                              </strong>
+                              的名單沒有連結，他們收到的會是一則沒有網址的簡訊。
+                              名單格式：<span className="font-mono">手機,姓名,https://…</span>
+                            </>
+                          ) : (
+                            <>
+                              ⚠️ 內容用了 {"{link}"}，但這個變數
+                              <strong>只有「手動貼入名單」帶得動</strong>
+                              （一人一條不同網址，資料表推不出來），會被換成空白。
+                              請改用手動名單，或把 {"{link}"} 從內容裡移除。
                             </>
                           )}
                         </div>

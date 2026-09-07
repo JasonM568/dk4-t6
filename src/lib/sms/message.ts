@@ -58,17 +58,21 @@ export function hasEmoji(text: string): boolean {
   return EMOJI_RE.test(text);
 }
 
-/** {name} / {mobile} / {code} 變數替換（對照 email 的 applyMergeTags） */
+/** {name} / {mobile} / {code} / {link} 變數替換（對照 email 的 applyMergeTags） */
 export function applySmsMergeTags(
   text: string,
-  r: { mobile: string; name?: string; code?: string },
+  r: { mobile: string; name?: string; code?: string; link?: string },
 ): string {
   return text
     .replace(/\{name\}/g, r.name ?? "")
     .replace(/\{mobile\}/g, r.mobile)
     // {code} = 該場次的 /live 上課碼；沒設碼的場次留空（同 {name} 的處理），
     // 「有沒有人會收到空的」由發送前試算的 withCodeCount 負責提醒
-    .replace(/\{code\}/g, r.code ?? "");
+    .replace(/\{code\}/g, r.code ?? "")
+    // {link} = 手動名單第三欄的專屬連結；沒填留空，由 withLinkCount 負責提醒。
+    // 注意這會大幅影響則數：一條網址動輒 40–80 字，而 UCS-2 一段只有 67 字，
+    // 所以字數與金額試算必須逐人替換後再算（renderText 已經是逐人渲染）。
+    .replace(/\{link\}/g, r.link ?? "");
 }
 
 /** 預覽用的等長佔位退訂網址：短碼固定 8 碼，佔位字數與實際完全相同，

@@ -38,7 +38,7 @@ function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number }
   for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
     if (!t) continue;
-    const [first, second, third] = t.split(/[,，\t]/).map((x) => x.trim());
+    const [first, second, ...restCols] = t.split(/[,，\t]/).map((x) => x.trim());
     const mobile = normalizeMobile(first);
     if (!mobile) {
       invalid++;
@@ -46,11 +46,16 @@ function parseMobileRows(raw: string): { rows: SmsManualRow[]; invalid: number }
     }
     if (seen.has(mobile)) continue;
     seen.add(mobile);
-    const code = /^\d{4}$/.test(third ?? "") ? third : undefined;
+    // 第三欄之後依「形狀」判別而非位置：4 位數字＝上課碼、http(s)＝專屬連結。
+    // 兩者都是一人一個值卻很少同時出現，逼操作者記住哪個排前面只會貼錯。
+    const rest = restCols.filter(Boolean);
+    const code = rest.find((x) => /^\d{4}$/.test(x));
+    const link = rest.find((x) => /^https?:\/\/\S+$/.test(x));
     rows.push({
       mobile,
       ...(second ? { name: second } : {}),
       ...(code ? { code } : {}),
+      ...(link ? { link } : {}),
     });
   }
   return { rows, invalid };
@@ -240,10 +245,18 @@ export async function previewSmsAudienceAction(input: {
       })
     : EMPTY_SMS_AUDIENCE_PREVIEW;
 
-  // 以名單中最長姓名估則數上界（{name} 長度不一，估上界才不會低估金額）
+  // 以名單中最長的姓名與連結估則數上界（{name}/{link} 長度不一，估上界才不會低估金額）。
+  // {code} 固定 4 位，直接給一個示意值——之前留空會少算 4 個字，
+  // 剛好卡在分段邊界時就是少算一整則。
   const sampleName = "王".repeat(Math.max(1, preview.maxNameLength));
+  const sampleLink = preview.maxLinkLength > 0 ? "x".repeat(preview.maxLinkLength) : "";
   const sampleText = composeSmsText(
-    applySmsMergeTags(input.body, { mobile: "0912345678", name: sampleName }),
+    applySmsMergeTags(input.body, {
+      mobile: "0912345678",
+      name: sampleName,
+      code: "8241",
+      link: sampleLink,
+    }),
     {
       messageType: input.messageType as "MARKETING" | "NOTICE",
       brandPrefix: settings.brandPrefix,
@@ -291,8 +304,14 @@ export async function sendSmsTestAction(
 
   const settings = await getSmsSettings();
   const provider = getSmsProvider();
+  // {link} 帶入名單第一筆的真連結：測試簡訊是「則數與版面」的唯一驗證管道，
+  // 留白會少算一整段的字數（同 {code} 的理由，但網址長得多）
+  const testLink = parseMobileRows(String(formData.get("manualList") ?? "")).rows.find(
+    (r) => r.link,
+  )?.link;
+
   const text = composeSmsText(
-    applySmsMergeTags(body, { mobile, name: "測試", code: testCode }),
+    applySmsMergeTags(body, { mobile, name: "測試", code: testCode, link: testLink }),
     {
       messageType: messageType as "MARKETING" | "NOTICE",
       brandPrefix: settings.brandPrefix,
