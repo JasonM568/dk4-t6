@@ -657,7 +657,8 @@ model Webinar {
   endDate         DateTime? // 講座結束日：當天照常，隔天（台北時間）看板自動下架＋報名頁自動關閉；null = 不自動結束
   unpublishAt     DateTime? // 精確自動下架時間；與舊結束日並存，任一到期即關閉
 
-  requests WebinarRequest[]
+  requests        WebinarRequest[]
+  blockedAttempts WebinarBlockedAttempt[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -687,6 +688,33 @@ model WebinarRequest {
   createdAt DateTime @default(now())
 
   @@unique([webinarId, email])
+  @@index([webinarId])
+}
+
+// 蜜罐擋下的索取嘗試：**顯示成功卻什麼都不做**的那條路，現在留下痕跡。
+//
+// 蜜罐是「真人看不到的欄位有值 = 機器人」，但密碼管理器會填隱藏欄位，
+// 誤殺過真人（2026-09-03、2026-09-08 各一起）。以前只寫 console.error，
+// Vercel log 保存期短到事後查不回來，被吞掉的人只能靠刪去法推定。
+//
+// 刻意不寫進 WebinarRequest：那張表是「名單」，會被看板、索取人數與
+// EDM／簡訊的 audienceType=WEBINAR 一起吃進去；把疑似機器人混進正式名單，
+// 是拿名單的乾淨度去換診斷能力，不划算。
+//
+// resolvedAt：管理員按「補寄連結信」補救後蓋章，後台預設只列未處理的。
+model WebinarBlockedAttempt {
+  id        String  @id @default(cuid())
+  webinarId String
+  webinar   Webinar @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  // 全部可空：擋下時不做任何驗證（驗證在蜜罐之後），照原樣留存才看得出當時發生什麼事
+  email     String?
+  name      String?
+  phone     String?
+  reason    String  @default("HONEYPOT")
+
+  resolvedAt DateTime? // 已由管理員補寄／確認為機器人
+  createdAt  DateTime  @default(now())
+
   @@index([webinarId])
 }
 

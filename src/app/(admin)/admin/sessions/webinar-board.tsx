@@ -26,6 +26,8 @@ export type BoardWebinar = {
   /** 已在 server 端轉成台北時間字串，避免丟 Date 給 client */
   offlineLabel: string | null;
   requests: BoardWebinarRequest[];
+  /** 被防機器人擋下、還沒處理的送出筆數（處理入口在 /admin/webinars） */
+  blockedCount: number;
 };
 
 // 與 webinars-manager 同一套標籤；這裡只用得到「有問題」的那幾種，其餘顯示為淡色
@@ -135,6 +137,18 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
           </Link>
           <CopyPhonesButton requests={webinar.requests} />
         </div>
+      )}
+      {/* 有人按了送出、畫面顯示成功，但被防機器人擋下——這裡只提醒，
+          補寄的入口在「行銷推播 → 講座報名」（同一份資料只留一處可改） */}
+      {webinar.blockedCount > 0 && (
+        <p className="mb-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">
+          ⚠️ 有 <strong>{webinar.blockedCount}</strong> 筆送出被防機器人擋下（對方看到的是
+          「已寄出」，實際沒收到信也沒進名單）。請到{" "}
+          <Link href="/admin/webinars" className="underline">
+            行銷推播 → 講座報名
+          </Link>{" "}
+          補寄。
+        </p>
       )}
       {webinar.requests.length === 0 ? (
         <p className="text-sm text-gray-400">尚無人索取</p>

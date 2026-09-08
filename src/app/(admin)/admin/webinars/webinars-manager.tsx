@@ -15,7 +15,12 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
-import { BackfillPhonesButton, CopyPhonesButton } from "./webinar-actions";
+import {
+  BackfillPhonesButton,
+  BlockedAttempts,
+  CopyPhonesButton,
+  type BlockedAttemptRow,
+} from "./webinar-actions";
 
 // 圖片限制（與課程封面上傳一致；bytes 直傳 Storage 不經 server action body）
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -93,6 +98,8 @@ export type WebinarRow = {
   endDate: string | null; // 結束日：過了隔天（台北時間）看板下架＋報名頁自動關閉；null = 不自動結束
   unpublishAt: string | null; // 精確下架時間；到點立即從首頁/看板隱藏並關閉報名
   requests: WebinarRequestRow[];
+  /** 被蜜罐擋下且尚未處理的送出（以為登記成功、其實沒有的人） */
+  blockedAttempts: BlockedAttemptRow[];
 };
 
 const DEFAULT_EMAIL_BODY = `您好，感謝索取講座連結！
@@ -546,6 +553,10 @@ export function WebinarCard({
             </div>
           </form>
         )}
+
+        {/* 被擋下的送出擺在名單「上方」：這些人以為自己報名好了，
+            排在名單下面等於沒人看得到 */}
+        <BlockedAttempts rows={webinar.blockedAttempts} />
 
         {/* 名單工具列：一鍵帶去發提醒簡訊，或把號碼複製出去給站外用 */}
         {webinar.requests.length > 0 && (

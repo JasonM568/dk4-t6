@@ -8,6 +8,13 @@ import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { buildWebinarMail } from "@/lib/webinar-mail";
 import {
+  dismissBlockedWebinarAttempt,
+  HONEYPOT_SUCCESS_MESSAGE,
+  isHoneypotTripped,
+  recordBlockedWebinarAttempt,
+  resendBlockedWebinarAttempt,
+} from "@/lib/webinar-honeypot";
+import {
   backfillWebinarPhones,
   type BackfillReport,
 } from "@/lib/webinar-phone-backfill";
@@ -186,6 +193,29 @@ export async function backfillWebinarPhonesAction(
   return report;
 }
 
+/** 補寄給被蜜罐擋下的人（薄殼：權限＋快取失效，邏輯在 lib/webinar-honeypot）。
+ *
+ *  做成後台一鍵而不是叫對方「回登記頁再送一次」——同一台裝置、同一個密碼管理器，
+ *  他很可能再被擋一次，而且他已經看過一次「已寄出」，再叫他重送很難交代。 */
+export async function resendBlockedWebinarAttemptAction(
+  attemptId: string,
+): Promise<WebinarFormState> {
+  await requireEditor();
+  const result = await resendBlockedWebinarAttempt(attemptId);
+  revalidatePath("/admin/webinars");
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  return result;
+}
+
+/** 確認為機器人：不寄信，只把紀錄結案（後台預設只列未處理的，免得越積越長） */
+export async function dismissBlockedWebinarAttemptAction(attemptId: string) {
+  await requireEditor();
+  await dismissBlockedWebinarAttempt(attemptId);
+  revalidatePath("/admin/webinars");
+  revalidatePath("/admin/sessions");
+}
+
 /** 訪客索取講座連結：驗證 → 限流 → 記錄 → 進名單群組 → 寄信 */
 export async function requestWebinarLinkAction(
   slug: string,
@@ -193,14 +223,26 @@ export async function requestWebinarLinkAction(
   formData: FormData,
 ): Promise<WebinarRequestState> {
   // 蜜罐：真人看不到的欄位有值 = 機器人，裝作成功不寄信。
-  // 欄位名刻意用 autofill 字典外的怪名（曾因取名 website 被瀏覽器自動填入而誤殺真人）；
-  // 觸發時記 log，之後查「沒收到信」先看這裡。
-  if (String(formData.get("hp_extra_note") ?? "").trim() !== "") {
-    console.error("[webinar] 蜜罐觸發（機器人或 autofill 誤填）", {
-      slug,
-      email: String(formData.get("email") ?? ""),
+  // 欄位名刻意用 autofill 字典外的怪名，且設 readOnly、排在表單最後——
+  // 密碼管理器不寫入 readOnly 欄位，用腳本塞 value 的機器人照樣會中。
+  //
+  // **但誤殺一定還是會發生，所以這裡必須留下痕跡。** 以前只寫一行 console.error
+  // 就回「已寄出」，而 Vercel runtime log 保存期短到事後查不回來：被吞掉的真人
+  // 在資料庫、Resend、後台全部查無此人，只能靠刪去法推定（2026-09-03 fly.eagle、
+  // 2026-09-08 emilychi07 兩起都是這樣，後者是本人傳了成功截圖才確認得了）。
+  // 寫進 WebinarBlockedAttempt 之後，後台看得到、一鍵補寄得回來。
+  //
+  // 回應仍然假裝成功：告訴機器人「你被擋了」等於教它怎麼繞過。
+  if (isHoneypotTripped(formData.get("hp_extra_note"))) {
+    const blockedEmail = String(formData.get("email") ?? "").trim().toLowerCase();
+    console.error("[webinar] 蜜罐觸發（機器人或 autofill 誤填）", { slug, email: blockedEmail });
+    // 絕不 throw、絕不影響回應：這是防機器人路徑（實作與失敗處理都在 lib）
+    await recordBlockedWebinarAttempt(slug, {
+      email: blockedEmail,
+      name: String(formData.get("name") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
     });
-    return { success: "確認信已寄出，請到信箱查收！" };
+    return { success: HONEYPOT_SUCCESS_MESSAGE };
   }
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();

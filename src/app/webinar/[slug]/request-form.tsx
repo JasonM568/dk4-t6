@@ -165,17 +165,6 @@ export function WebinarRequestForm({
 
   return (
     <form action={action} className="space-y-3">
-      {/* 蜜罐欄位：真人看不到，機器人會填。
-          欄位名不能用 website/url/phone 等 autofill 認得的字（會被瀏覽器
-          自動填入而誤殺真人），一律用字典外怪名 */}
-      <input
-        type="text"
-        name="hp_extra_note"
-        tabIndex={-1}
-        autoComplete="off"
-        className="absolute -left-[9999px] h-0 w-0 opacity-0"
-        aria-hidden="true"
-      />
       <input
         type="text"
         name="name"
@@ -229,16 +218,38 @@ export function WebinarRequestForm({
           <span className="font-mono font-bold">{suggestion}</span>？點此修正
         </button>
       )}
+      {/* 錯誤訊息放在按鈕「上方」：手機上鍵盤一彈，按鈕下方的字常常在畫面外，
+          使用者按了送出、畫面沒動，就以為登記成功了 */}
+      {state?.error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          ⚠️ {state.error}
+        </p>
+      )}
       <button
         disabled={pending}
         className="w-full rounded-xl bg-black px-4 py-3 font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
       >
         {pending ? "寄送中…" : "索取講座連結"}
       </button>
-      {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
       <p className="text-center text-xs text-gray-400">
         送出後系統會將講座連結寄到你的信箱
       </p>
+      {/* 蜜罐欄位：真人看不到，機器人會填。
+          ① 欄位名不能用 website/url/phone 等 autofill 字典內的字（曾因取名 website
+             被瀏覽器自動填入而誤殺真人）
+          ② readOnly：密碼管理器不會寫入唯讀欄位，但用腳本設 .value 的機器人照樣會中
+             ——這是 2026-09-08 誤殺真人後補上的，防機器人的能力不變
+          ③ 放在表單最後：管理器多半只填前面幾個看起來像帳號的欄位
+          即使如此仍可能誤殺，所以 action 端一律留下 WebinarBlockedAttempt 紀錄 */}
+      <input
+        type="text"
+        name="hp_extra_note"
+        tabIndex={-1}
+        readOnly
+        autoComplete="off"
+        className="absolute -left-[9999px] h-0 w-0 opacity-0"
+        aria-hidden="true"
+      />
     </form>
   );
 }

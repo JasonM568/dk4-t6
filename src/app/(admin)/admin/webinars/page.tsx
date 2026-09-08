@@ -9,7 +9,15 @@ export default async function AdminWebinarsPage() {
   const [webinars, mailGroups, canEditNow] = await Promise.all([
     prisma.webinar.findMany({
       orderBy: { createdAt: "desc" },
-      include: { requests: { orderBy: { createdAt: "desc" } } },
+      include: {
+        requests: { orderBy: { createdAt: "desc" } },
+        // 只帶未處理的：被蜜罐擋下且還沒補寄／還沒判定為機器人的那些人。
+        // 這是「有人以為自己登記好了，其實沒有」的唯一線索，必須擺在管理員眼前。
+        blockedAttempts: {
+          where: { resolvedAt: null },
+          orderBy: { createdAt: "desc" },
+        },
+      },
     }),
     prisma.mailGroup.findMany({
       orderBy: { createdAt: "desc" },
@@ -69,6 +77,13 @@ export default async function AdminWebinarsPage() {
               isActive: w.isActive,
               endDate: w.endDate?.toISOString() ?? null,
               unpublishAt: w.unpublishAt?.toISOString() ?? null,
+              blockedAttempts: w.blockedAttempts.map((a) => ({
+                id: a.id,
+                email: a.email,
+                name: a.name,
+                phone: a.phone,
+                createdAt: a.createdAt.toISOString(),
+              })),
               requests: w.requests.map((r) => ({
                 id: r.id,
                 email: r.email,

@@ -38,6 +38,8 @@ export default async function AdminSessionsPage() {
             deliveryDetail: true,
           },
         },
+        // 被蜜罐擋下、還沒處理的送出：這裡只計數提醒，處理入口在 /admin/webinars
+        _count: { select: { blockedAttempts: { where: { resolvedAt: null } } } },
       },
     }),
     prisma.siteSetting.findUnique({ where: { key: "boardCode" } }),
@@ -76,6 +78,7 @@ export default async function AdminSessionsPage() {
         hour12: false,
       }) ?? null,
     requests: w.requests,
+    blockedCount: w._count.blockedAttempts,
   }));
 
   return (

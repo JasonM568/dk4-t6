@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { normalizeMobile, formatMobile } from "@/lib/sms/phone";
-import { backfillWebinarPhonesAction } from "@/actions/webinar";
+import {
+  backfillWebinarPhonesAction,
+  dismissBlockedWebinarAttemptAction,
+  resendBlockedWebinarAttemptAction,
+} from "@/actions/webinar";
 import type { BackfillReport } from "@/lib/webinar-phone-backfill";
 
 // 講座索取名單的兩顆共用按鈕：後台講座頁與場次看板的講座區塊都用這一份。
@@ -139,5 +143,82 @@ export function BackfillPhonesButton({ webinarId }: { webinarId: string }) {
         </div>
       )}
     </>
+  );
+}
+
+
+export type BlockedAttemptRow = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  phone: string | null;
+  createdAt: string;
+};
+
+/** 被蜜罐擋下的索取嘗試：這些人多半**看過一次「已寄出」**卻什麼也沒收到。
+ *
+ *  為什麼要擺在管理員眼前而不是靜靜記在資料庫：這批人自己不會知道要再試一次
+ *  （他們以為登記好了），除非有人主動看到並補寄，否則就是無聲流失一個報名。
+ *  2026-09-03 與 2026-09-08 各有一起，後者是本人傳成功截圖來問才發現的。 */
+export function BlockedAttempts({ rows }: { rows: BlockedAttemptRow[] }) {
+  const [done, setDone] = useState<Record<string, string>>({});
+  const [pending, start] = useTransition();
+  const remaining = rows.filter((r) => !done[r.id]);
+  if (remaining.length === 0 && Object.keys(done).length === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs">
+      <p className="mb-1 font-bold text-amber-900">
+        ⚠️ 有 {remaining.length} 筆送出被防機器人擋下
+      </p>
+      <p className="mb-2 text-amber-800">
+        這些人在登記頁按了送出、<strong>畫面顯示「已寄出」</strong>，但系統沒有寄信也沒有留名單
+        ——多半是密碼管理器填到了隱藏欄位，不是機器人。按「補寄連結信」會寄出與正常登記
+        一模一樣的信並補進名單；確認是機器人再按「忽略」。
+      </p>
+      {remaining.map((r) => (
+        <div key={r.id} className="flex flex-wrap items-center gap-2 border-t border-amber-200 py-1.5">
+          <span className="font-medium text-amber-900">{r.name || "（未填姓名）"}</span>
+          <span className="font-mono text-amber-800">{r.email || "（未填 Email）"}</span>
+          {r.phone && <span className="text-amber-700">{formatMobile(r.phone)}</span>}
+          <span className="text-amber-600">
+            {new Date(r.createdAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            disabled={pending || !r.email}
+            title={r.email ? "寄出與正常登記完全相同的連結信，並補進索取名單" : "沒有 Email，無法補寄"}
+            onClick={() =>
+              start(async () => {
+                const res = await resendBlockedWebinarAttemptAction(r.id);
+                setDone((d) => ({ ...d, [r.id]: res?.error ?? res?.success ?? "已處理" }));
+              })
+            }
+            className="rounded border border-amber-500 bg-white px-2 py-0.5 text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
+          >
+            ✉️ 補寄連結信
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                await dismissBlockedWebinarAttemptAction(r.id);
+                setDone((d) => ({ ...d, [r.id]: "已忽略" }));
+              })
+            }
+            className="rounded border border-gray-300 bg-white px-2 py-0.5 text-gray-500 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            忽略
+          </button>
+        </div>
+      ))}
+      {Object.entries(done).map(([id, msg]) => (
+        <div key={id} className="border-t border-amber-200 py-1 text-amber-900">
+          {msg}
+        </div>
+      ))}
+    </div>
   );
 }
