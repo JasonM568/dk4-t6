@@ -171,13 +171,15 @@ export default async function SmsPage({
         _count: { select: { signups: true } },
       },
     }),
-    // 講座索取名單：只列進行中的（已結束／已關閉的講座沒有再發提醒的意義）
+    // 講座索取名單：連已結束／已下架的一起撈。
+    // 舊講座的索取者是「對這個主題舉過手的人」，新講座開賣時正是要發給他們——
+    // 名單不該隨講座下架一起消失。表單預設仍只顯示進行中的，要勾舊的得自己打開開關。
     prisma.webinar.findMany({
-      where: { isActive: true },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
         title: true,
+        isActive: true,
         endDate: true,
         unpublishAt: true,
         requests: { select: { phone: true } },
@@ -191,19 +193,26 @@ export default async function SmsPage({
     prisma.smsBroadcast.count(),
   ]);
 
-  // 顯示條件與公開看板 /board 一致；withPhoneCount 讓操作者勾選前就看到「幾個人發不到」
+  // isEnded 的判定與公開看板 /board 一致（結束日過了、被下架、或手動停用）；
+  // 差別在這裡不把已結束的濾掉，只是標記起來交給表單決定顯不顯示。
+  // withPhoneCount 讓操作者勾選前就看到「幾個人發不到」——舊名單這個數字常常是 0
+  // （手機必填 2026-09-02 才上線），先看到才不會白發一輪。
   const nowTs = new Date();
   const webinarOptions = webinars
-    .filter(
-      (w) =>
-        !hasEndedInTaipei(w.endDate) && (!w.unpublishAt || w.unpublishAt > nowTs),
-    )
     .map((w) => ({
       id: w.id,
       title: w.title,
       requestCount: w.requests.length,
       withPhoneCount: w.requests.filter((r) => !!r.phone).length,
-    }));
+      isEnded:
+        !w.isActive ||
+        hasEndedInTaipei(w.endDate) ||
+        (!!w.unpublishAt && w.unpublishAt <= nowTs),
+      // 已結束的排序看的是「哪一場比較近」，用結束日；沒設就退回下架時間
+      endedAt: (w.endDate ?? w.unpublishAt)?.toISOString() ?? null,
+    }))
+    // 進行中的排前面，其餘維持 createdAt desc（新的在上）
+    .sort((a, b) => Number(a.isEnded) - Number(b.isEnded));
 
   // 從講座卡片「發提醒簡訊」進來：勾好講座並填好草稿
   const noticeWebinar = webinarParam

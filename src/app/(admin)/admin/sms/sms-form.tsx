@@ -20,11 +20,25 @@ type SessionOption = {
   accessCode: string | null; // 有值 = 這場已開放 /live 索取，{code} 才有東西可帶
 };
 
+/** 已結束講座的日期標籤（台北時間 MM/DD）。壞值就不顯示，不要為了一個標籤炸掉表單 */
+function endedLabel(iso: string | null): string {
+  if (!iso) return "已結束";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "已結束";
+  return `已結束 ${new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d)}`;
+}
+
 type WebinarOption = {
   id: string;
   title: string;
   requestCount: number; // 索取人數
   withPhoneCount: number; // 其中有手機的人數——差額就是「發不到的人」，勾選前就要看得到
+  isEnded: boolean; // 已結束／已下架／已停用；預設收起來，打開開關才列出
+  endedAt: string | null; // ISO；已結束的顯示日期，讓人判斷這份名單有多舊
 };
 
 type PreviewData = Awaited<ReturnType<typeof previewSmsAudienceAction>>;
@@ -89,6 +103,12 @@ export function SmsForm({
   );
   const [pickedSessions, setPickedSessions] = useState<string[]>(initial?.sessionIds ?? []);
   const [pickedWebinars, setPickedWebinars] = useState<string[]>(initial?.webinarIds ?? []);
+  // 已結束的講座預設收起來（一般情況是要發給正在跑的那場，不該被舊名單淹沒）。
+  // 但草稿／複製／從講座卡片帶進來的若本來就勾了已結束的那場，得先展開，
+  // 否則畫面上看不到勾選項，人會以為名單掉了。
+  const [showEndedWebinars, setShowEndedWebinars] = useState(() =>
+    webinars.some((w) => w.isEnded && (initial?.webinarIds ?? []).includes(w.id)),
+  );
   const [manualList, setManualList] = useState(initial?.manualList ?? "");
   const [noticeScope, setNoticeScope] = useState<"ALL" | "PENDING">(
     initial?.noticeScope ?? "ALL",
@@ -113,6 +133,13 @@ export function SmsForm({
     setPickedSessions((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  const endedWebinarCount = webinars.filter((w) => w.isEnded).length;
+  // 已勾選的一律留在畫面上——收起開關時若把它連 checkbox 一起移除，
+  // 送出的 FormData 就少了那個 webinarId，名單會無聲少一場。
+  const visibleWebinars = webinars.filter(
+    (w) => !w.isEnded || showEndedWebinars || pickedWebinars.includes(w.id),
+  );
+
   const toggleWebinar = (id: string) =>
     setPickedWebinars((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -447,17 +474,37 @@ export function SmsForm({
               </span>
             </label>
             {audience === "webinar" && (
-              <div className="ml-6 max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
-                {webinars.length === 0 ? (
+              <div className="ml-6">
+              {endedWebinarCount > 0 && (
+                <label className="mb-1.5 flex cursor-pointer items-center gap-2 text-xs text-gray-500">
+                  <input
+                    type="checkbox"
+                    checked={showEndedWebinars}
+                    onChange={() => setShowEndedWebinars((v) => !v)}
+                  />
+                  顯示已結束的講座（{endedWebinarCount} 場）
+                  <span className="text-gray-400">
+                    — 舊名單也能發，但請確認內容對這批人仍然合適
+                  </span>
+                </label>
+              )}
+              <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
+                {visibleWebinars.length === 0 ? (
                   <p className="px-3 py-2 text-xs text-gray-400">
-                    尚無講座，請先到
-                    <Link href="/admin/webinars" className="mx-1 text-indigo-600 underline">
-                      講座報名
-                    </Link>
-                    建立
+                    {webinars.length === 0 ? (
+                      <>
+                        尚無講座，請先到
+                        <Link href="/admin/webinars" className="mx-1 text-indigo-600 underline">
+                          講座報名
+                        </Link>
+                        建立
+                      </>
+                    ) : (
+                      "目前沒有進行中的講座，勾上方「顯示已結束的講座」可挑舊名單"
+                    )}
                   </p>
                 ) : (
-                  webinars.map((w) => {
+                  visibleWebinars.map((w) => {
                     // 沒有手機的人發不到。手機必填是 2026-09-02 才上線，
                     // 更早的索取紀錄一定是 0，勾選前就講清楚比送出後才發現好。
                     const noPhone = w.requestCount - w.withPhoneCount;
@@ -474,6 +521,11 @@ export function SmsForm({
                           onChange={() => toggleWebinar(w.id)}
                         />
                         {w.title}
+                        {w.isEnded && (
+                          <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">
+                            {endedLabel(w.endedAt)}
+                          </span>
+                        )}
                         <span className="text-xs text-gray-400">
                           （{w.requestCount} 人索取）
                         </span>
@@ -486,6 +538,7 @@ export function SmsForm({
                     );
                   })
                 )}
+              </div>
               </div>
             )}
 
