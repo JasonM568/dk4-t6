@@ -292,13 +292,16 @@ model EmailBroadcast {
   status        String    @default("SENT")
   scheduledAt   DateTime? // 預設發送時間（null = 立即寄出）
   sentAt        DateTime? // 實際寄出時間
-  audienceType  String    @default("ALL") // ALL / GROUP / MANUAL / FOLLOWUP（跟進信）
+  audienceType  String    @default("ALL") // ALL / GROUP / SESSION / WEBINAR / MANUAL / FOLLOWUP（跟進信）
   groupId       String? // 舊欄位（單選時代）；新寫入一律 = groupIds[0]，讀取請用 broadcastGroupIds()
   groupIds      String[]  @default([]) // audienceType=GROUP 的名單群組，可複選；寄出當下取聯集並以 email 去重
   // audienceType=SESSION 的場次（可複選）：與 SmsBroadcast.sessionIds 同義，
   // 一次匯入的場次名單同時餵 EDM 與簡訊兩個模組；寄出當下才取名單（新報名者自動涵蓋）
   sessionIds    String[]  @default([])
-  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 場次：xxx / 手動名單 N 筆 / 跟進：開信者（來源：xxx）
+  // audienceType=WEBINAR 的講座（可複選）：與 SmsBroadcast.webinarIds 同義，
+  // 名單來源同為 WebinarRequest；寄出當下才解析（發完才索取的人下次自動涵蓋）
+  webinarIds    String[]  @default([])
+  audienceLabel String? // 顯示用：全部會員 / 群組：xxx / 場次：xxx / 講座：xxx / 手動名單 N 筆 / 跟進：開信者（來源：xxx）
   manualRows    Json? // audienceType=MANUAL 時的名單 [{email,name}]
 
   sourceBroadcastId String? // audienceType=FOLLOWUP 時的來源群發 id（軟連結不加 FK，與 resendOfId 慣例一致）

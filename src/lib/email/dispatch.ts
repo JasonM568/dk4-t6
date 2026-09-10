@@ -13,9 +13,12 @@ import { buildUnsubscribePageUrl } from "./unsubscribe";
 import {
   broadcastGroupIds,
   broadcastSessionIds,
+  broadcastWebinarIds,
   EMPTY_SESSION_AUDIENCE_PREVIEW,
+  EMPTY_WEBINAR_AUDIENCE_PREVIEW,
   type GroupAudiencePreview,
   type SessionAudiencePreview,
+  type WebinarAudiencePreview,
 } from "./audience";
 import { isFollowUpFilter, resolveFollowUpEmails } from "./followup";
 
@@ -110,6 +113,21 @@ async function collectSessionSignups(sessionIds: string[]) {
   );
 }
 
+/** 講座索取名單：不看講座是否還在進行中——舊講座的索取者仍是有效名單，
+ *  新講座開賣時正是要寄給他們（同 sms/dispatch.ts 的 collectWebinarRequests）。
+ *  回傳依勾選順序排，跨講座重複索取的人姓名由排在前面的講座決定。 */
+async function collectWebinarRequests(webinarIds: string[]) {
+  const rows = await prisma.webinarRequest.findMany({
+    where: { webinarId: { in: webinarIds } },
+    select: { webinarId: true, email: true, name: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const rank = new Map(webinarIds.map((id, i) => [id, i]));
+  return rows.sort(
+    (a, b) => (rank.get(a.webinarId) ?? 0) - (rank.get(b.webinarId) ?? 0),
+  );
+}
+
 /** 統一過濾退訂名單（email 已於 dedupeByEmail 小寫）；寄送與人數預覽共用同一份實作，
  *  否則預覽的數字會跟實際寄出的數字對不起來。
  *
@@ -158,6 +176,7 @@ async function resolveFollowUpRecipients(record: {
       groupId: true,
       groupIds: true,
       sessionIds: true,
+      webinarIds: true,
       audienceType: true,
     },
   });
@@ -215,6 +234,10 @@ async function resolveFollowUpRecipients(record: {
     // 來源信若是場次名單，姓名沿用當初的勾選順序，跟進信才會叫同一個名字
     for (const s of await collectSessionSignups(broadcastSessionIds(source)))
       addName(s.email, s.name);
+  } else if (source.audienceType === "WEBINAR") {
+    // 同上，來源信若是講座索取名單
+    for (const q of await collectWebinarRequests(broadcastWebinarIds(source)))
+      addName(q.email, q.name);
   } else if (sourceGroupIds.length > 0) {
     // 來源信若是複選群組，姓名優先序沿用當初的勾選順序，跟進信才會叫同一個名字
     for (const m of await collectGroupMembers(sourceGroupIds)) addName(m.email, m.name);
@@ -237,6 +260,7 @@ async function resolveRecipients(record: {
   groupId: string | null;
   groupIds: string[];
   sessionIds: string[];
+  webinarIds?: string[];
   manualRows: unknown;
   sourceBroadcastId: string | null;
   followUpFilter: string | null;
@@ -282,6 +306,21 @@ async function resolveRecipients(record: {
       sessionIds.length > 1
         ? "所選場次的報名者都沒有可寄送的 Email"
         : "該場次沒有可寄送的 Email（報名者都沒留 Email）";
+  } else if (record.audienceType === "WEBINAR") {
+    // 講座索取名單：與簡訊吃同一份 WebinarRequest；寄出當下才取
+    const webinarIds = broadcastWebinarIds(record);
+    if (webinarIds.length === 0)
+      return { recipients: [], excludedCount: 0, error: "缺少講座" };
+    const requests = await collectWebinarRequests(webinarIds);
+    // 講座沒有 /live 上課碼（連結直接寄信），{code} 一律留空
+    deduped = dedupeByEmail(
+      requests.map((q) => ({ email: q.email, name: q.name ?? undefined })),
+    );
+    // 講座是軟連結：勾選後被刪掉的講座撈不到列，不影響其他講座照常寄出
+    emptyError =
+      webinarIds.length > 1
+        ? "所選講座的索取者都沒有可寄送的 Email"
+        : "該講座沒有可寄送的 Email";
   } else if (record.audienceType === "MANUAL") {
     deduped = dedupeByEmail((record.manualRows ?? []) as ManualRow[]);
     emptyError = "手動名單是空的";
@@ -399,6 +438,51 @@ export async function previewSessionAudience(
     uniqueCount: deduped.length,
     // 沒有 email 的已另計，剩下的差額才是「同一個 email 報名多場」
     duplicateCount: signups.length - noEmailCount - deduped.length,
+    unsubscribedCount: excludedCount,
+    sendableCount: recipients.length,
+  };
+}
+
+/** 複選講座的收件人數預覽（後台送出前顯示）。
+ *  與 resolveRecipients 走同一套 collectWebinarRequests → dedupeByEmail → filterUnsubscribed，
+ *  預覽的「實際可寄 N 人」就是寄出後的 sentCount（同 previewSessionAudience 的理由）。 */
+export async function previewWebinarAudience(
+  webinarIds: string[],
+  messageType = "MARKETING",
+): Promise<WebinarAudiencePreview> {
+  if (webinarIds.length === 0) return EMPTY_WEBINAR_AUDIENCE_PREVIEW;
+
+  const [found, requests] = await Promise.all([
+    prisma.webinar.findMany({
+      where: { id: { in: webinarIds } },
+      select: { id: true, title: true },
+    }),
+    collectWebinarRequests(webinarIds),
+  ]);
+
+  const rowsByWebinar = new Map<string, number>();
+  for (const q of requests)
+    rowsByWebinar.set(q.webinarId, (rowsByWebinar.get(q.webinarId) ?? 0) + 1);
+
+  const byId = new Map(found.map((w) => [w.id, w]));
+  const webinars = webinarIds
+    .map((id) => byId.get(id))
+    .filter((w): w is { id: string; title: string } => !!w)
+    .map((w) => ({ id: w.id, title: w.title, rowCount: rowsByWebinar.get(w.id) ?? 0 }));
+
+  const { recipients: deduped, noEmailCount } = dedupeByEmailCounted(
+    requests.map((q) => ({ email: q.email, name: q.name ?? undefined })),
+  );
+  const { recipients, excludedCount } = await filterUnsubscribed(deduped, messageType);
+
+  return {
+    webinars,
+    missingCount: webinarIds.length - webinars.length,
+    totalRows: requests.length,
+    noEmailCount,
+    uniqueCount: deduped.length,
+    // 沒有 email 的已另計，剩下的差額才是「同一個 email 索取多場」
+    duplicateCount: requests.length - noEmailCount - deduped.length,
     unsubscribedCount: excludedCount,
     sendableCount: recipients.length,
   };

@@ -26,12 +26,15 @@ import {
   executeBroadcast,
   previewGroupAudience,
   previewSessionAudience,
+  previewWebinarAudience,
 } from "@/lib/email/dispatch";
 import {
   EMPTY_GROUP_AUDIENCE_PREVIEW,
   EMPTY_SESSION_AUDIENCE_PREVIEW,
+  EMPTY_WEBINAR_AUDIENCE_PREVIEW,
   type GroupAudiencePreview,
   type SessionAudiencePreview,
+  type WebinarAudiencePreview,
 } from "@/lib/email/audience";
 import { FOLLOWUP_FILTER_LABEL, isFollowUpFilter } from "@/lib/email/followup";
 import { resolveMessageType } from "@/lib/email/message-type";
@@ -770,6 +773,7 @@ type BroadcastAudience = {
     groupId: string | null;
     groupIds: string[];
     sessionIds: string[];
+    webinarIds: string[];
     audienceLabel: string;
     manualRows: { email: string; name?: string; link?: string }[] | undefined;
     sourceBroadcastId: string | null;
@@ -836,6 +840,7 @@ async function resolveBroadcastAudience(
   audience: string,
   groupIds: string[],
   sessionIds: string[],
+  webinarIds: string[],
   manualRaw: string,
   lenient = false,
   followUp?: { sourceBroadcastId: string; filter: string },
@@ -845,6 +850,7 @@ async function resolveBroadcastAudience(
   let audienceGroupId: string | null = null;
   let audienceGroupIds: string[] = [];
   let audienceSessionIds: string[] = [];
+  let audienceWebinarIds: string[] = [];
   let manualRows: { email: string; name?: string; link?: string }[] | undefined;
   let sourceBroadcastId: string | null = null;
   let followUpFilter: string | null = null;
@@ -853,6 +859,7 @@ async function resolveBroadcastAudience(
     groupId: null,
     groupIds: [],
     sessionIds: [],
+    webinarIds: [],
     audienceLabel: "",
     manualRows,
     sourceBroadcastId: null,
@@ -983,6 +990,53 @@ async function resolveBroadcastAudience(
               titles.length > 3 ? ` 等${titles.length}場` : ""
             }`;
     }
+  } else if (audience === "webinar") {
+    // 講座索取者：與簡訊模組共用同一份 WebinarRequest（一次索取，兩邊都能發）。
+    // 結構刻意與上方 session 對稱——兩邊的「找不到就擋下重選」「照勾選順序排」
+    // 規則必須一致，否則其中一邊改了，另一邊會靜靜走偏。
+    //
+    // 這裡不濾掉已結束的講座：舊講座的索取者仍是有效名單，新講座開賣時
+    // 正是要寄給他們（同 /admin/sms 的講座選單）。
+    audienceType = "WEBINAR";
+    const ids = [...new Set(webinarIds.filter(Boolean))];
+    const found = ids.length
+      ? await prisma.webinar.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, title: true, _count: { select: { requests: true } } },
+        })
+      : [];
+    const byId = new Map(found.map((w) => [w.id, w]));
+    const picked = ids.map((id) => byId.get(id)).filter((w) => !!w);
+
+    if (picked.length === 0) {
+      if (!lenient)
+        return {
+          error: "請至少勾選一場講座",
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      audienceLabel = "講座：未選擇";
+    } else {
+      // 勾選後講座被刪掉：寧可擋下重選，也不要默默少寄一整批人
+      if (!lenient && picked.length < ids.length)
+        return {
+          error: `有 ${ids.length - picked.length} 場講座已不存在（可能剛被刪除），請重新勾選`,
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      const total = picked.reduce((n, w) => n + w._count.requests, 0);
+      if (!lenient && total === 0)
+        return {
+          error: `所選講座（${picked.map((w) => w.title).join("、")}）都沒有索取者`,
+          audienceData: { ...emptyAudience, audienceType },
+        };
+      audienceWebinarIds = picked.map((w) => w.id);
+      const titles = picked.map((w) => w.title);
+      audienceLabel =
+        titles.length === 1
+          ? `講座：${titles[0]}`
+          : `講座 ${titles.length} 場（已去重）：${titles.slice(0, 3).join("、")}${
+              titles.length > 3 ? ` 等${titles.length}場` : ""
+            }`;
+    }
   } else if (audience === "manual" || audience === "members") {
     // members = 從會員清單勾選；名單同樣走 MANUAL 流程（寄送/明細/補寄/存群組共用）
     audienceType = "MANUAL";
@@ -1012,6 +1066,7 @@ async function resolveBroadcastAudience(
       groupId: audienceGroupId,
       groupIds: audienceGroupIds,
       sessionIds: audienceSessionIds,
+      webinarIds: audienceWebinarIds,
       audienceLabel,
       manualRows: manualRows ?? undefined,
       sourceBroadcastId,
@@ -1080,6 +1135,19 @@ export async function previewSessionAudienceAction(
   return previewSessionAudience(ids, messageType === "NOTICE" ? "NOTICE" : "MARKETING");
 }
 
+/** 複選講座的收件人數預覽（勾選當下即時試算）。
+ *  比照 previewSessionAudienceAction：預覽與寄出共用 dispatch 的同一套解析。
+ *  講座不在 NOTICE_ALLOWED_AUDIENCES 內，一律以 MARKETING 試算——
+ *  索取講座資料不等於同意收後續行銷信，退訂名單必須整份擋。 */
+export async function previewWebinarAudienceAction(
+  webinarIds: string[],
+): Promise<WebinarAudiencePreview> {
+  await requireEditor();
+  const ids = [...new Set((webinarIds ?? []).map(String).filter(Boolean))].slice(0, 50);
+  if (ids.length === 0) return EMPTY_WEBINAR_AUDIENCE_PREVIEW;
+  return previewWebinarAudience(ids, "MARKETING");
+}
+
 /** 群發通知：mode=test 只寄給操作的管理員本人；mode=draft 存草稿；mode=all 正式群發並留紀錄。
  *  mode=template 把主旨/內文/關聯課程存成範本（不寄信、不留群發紀錄）。
  *  填了「預設發送時間」則建立排程紀錄，由 cron（/api/cron/broadcast，每 5 分鐘）到期寄出 */
@@ -1100,6 +1168,7 @@ export async function sendBroadcastAction(
   const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
   // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
+  const webinarIds = formData.getAll("webinarIds").map(String).filter(Boolean);
   // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉。比照簡訊需勾確認
   const wantsNotice = formData.get("isNotice") === "on";
   const noticeAck = formData.get("noticeAck") === "on";
@@ -1143,6 +1212,7 @@ export async function sendBroadcastAction(
       audience,
       groupIds,
       sessionIds,
+      webinarIds,
       manualRaw,
       true,
       followUp,
@@ -1202,7 +1272,14 @@ export async function sendBroadcastAction(
       code: testCode,
       link: firstManualLink(
         audience,
-        (await resolveBroadcastAudience(audience, groupIds, sessionIds, manualRaw, true))
+        (await resolveBroadcastAudience(
+          audience,
+          groupIds,
+          sessionIds,
+          webinarIds,
+          manualRaw,
+          true,
+        ))
           .audienceData.manualRows,
       ),
     };
@@ -1225,6 +1302,7 @@ export async function sendBroadcastAction(
     audience,
     groupIds,
     sessionIds,
+    webinarIds,
     manualRaw,
     false,
     followUp,
@@ -1346,6 +1424,7 @@ export async function updateBroadcastAction(
   const groupIds = formData.getAll("groupIds").map(String).filter(Boolean);
   // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
+  const webinarIds = formData.getAll("webinarIds").map(String).filter(Boolean);
   // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉。比照簡訊需勾確認
   const wantsNotice = formData.get("isNotice") === "on";
   const noticeAck = formData.get("noticeAck") === "on";
@@ -1410,7 +1489,14 @@ export async function updateBroadcastAction(
       code: testCode,
       link: firstManualLink(
         audience,
-        (await resolveBroadcastAudience(audience, groupIds, sessionIds, manualRaw, true))
+        (await resolveBroadcastAudience(
+          audience,
+          groupIds,
+          sessionIds,
+          webinarIds,
+          manualRaw,
+          true,
+        ))
           .audienceData.manualRows,
       ),
     };
@@ -1437,6 +1523,7 @@ export async function updateBroadcastAction(
       audience,
       groupIds,
       sessionIds,
+      webinarIds,
       manualRaw,
       true,
       followUp,
@@ -1467,6 +1554,7 @@ export async function updateBroadcastAction(
     audience,
     groupIds,
     sessionIds,
+    webinarIds,
     manualRaw,
     false,
     followUp,

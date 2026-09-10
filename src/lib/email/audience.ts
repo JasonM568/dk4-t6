@@ -27,6 +27,46 @@ export function broadcastSessionIds(record: {
   return [...new Set((record.sessionIds ?? []).filter(Boolean))];
 }
 
+/** 群發紀錄要寄給哪幾場講座的索取者（audienceType=WEBINAR）。
+ *
+ *  與 sms/audience.ts 的 broadcastWebinarIds 同義而刻意各留一份，理由同
+ *  broadcastSessionIds：兩個模組的 audience helper 是 client component 也會
+ *  import 的純模組，不互相牽連。
+ *  去重並保留勾選順序——跨講座重複索取的人，姓名由排在前面的講座決定
+ *  （dedupeByEmail 先到先贏）。 */
+export function broadcastWebinarIds(record: {
+  webinarIds?: string[] | null;
+}): string[] {
+  return [...new Set((record.webinarIds ?? []).filter(Boolean))];
+}
+
+/** 複選講座的收件人數試算結果。
+ *
+ *  刻意與 SessionAudiencePreview 分開而不共用：場次名單有 {code} 上課碼、
+ *  講座沒有（連結直接寄信），共用一個型別會留一個永遠是 0 的欄位在畫面上，
+ *  日後看的人分不清那是「沒設碼」還是「這種名單本來就沒有」。 */
+export type WebinarAudiencePreview = {
+  webinars: { id: string; title: string; rowCount: number }[]; // 各講座筆數（未去重）
+  missingCount: number; // 勾選了但已被刪除的講座數
+  totalRows: number;
+  noEmailCount: number; // 沒填 email／格式不合法（這些人收不到）
+  uniqueCount: number; // 去重後不重複人數
+  duplicateCount: number; // 跨講座重複索取的筆數
+  unsubscribedCount: number;
+  sendableCount: number;
+};
+
+export const EMPTY_WEBINAR_AUDIENCE_PREVIEW: WebinarAudiencePreview = {
+  webinars: [],
+  missingCount: 0,
+  totalRows: 0,
+  noEmailCount: 0,
+  uniqueCount: 0,
+  duplicateCount: 0,
+  unsubscribedCount: 0,
+  sendableCount: 0,
+};
+
 /** 複選場次的收件人數試算結果。
  *  與 GroupAudiencePreview 分開：場次名單多了「沒有 email 收不到」這個必須讓操作者看到的數字
  *  （團報名單常常只有訂購人 email，同行者是空的）。 */

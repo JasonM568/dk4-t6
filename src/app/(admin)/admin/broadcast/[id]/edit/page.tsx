@@ -11,7 +11,12 @@ import {
 import { toDatetimeLocal } from "../../datetime";
 import { buildFollowUpProp } from "../../followup-stats";
 import { isFollowUpFilter } from "@/lib/email/followup";
-import { broadcastGroupIds, broadcastSessionIds } from "@/lib/email/audience";
+import {
+  broadcastGroupIds,
+  broadcastSessionIds,
+  broadcastWebinarIds,
+} from "@/lib/email/audience";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 
 export const metadata = { title: "編輯群發 — Email群發" };
 
@@ -32,7 +37,7 @@ export default async function BroadcastEditPage({
     redirect(`/admin/broadcast/${id}`);
   }
 
-  const [courses, memberCount, groups, sessions, profiles, marketingPages] =
+  const [courses, memberCount, groups, sessions, webinars, profiles, marketingPages] =
     await Promise.all([
     prisma.course.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -50,6 +55,18 @@ export default async function BroadcastEditPage({
         id: true,
         title: true,
         _count: { select: { signups: { where: { deferredToSessionId: null } } } },
+      },
+    }),
+    // 講座索取名單：連已結束的一起撈（同 /admin/broadcast 與 /admin/sms）
+    prisma.webinar.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        isActive: true,
+        endDate: true,
+        unpublishAt: true,
+        requests: { select: { email: true } },
       },
     }),
     listProfiles(),
@@ -75,6 +92,22 @@ export default async function BroadcastEditPage({
   const manualRows = Array.isArray(record.manualRows)
     ? (record.manualRows as { email: string; name?: string; link?: string }[])
     : [];
+  // isEnded 判定與 /admin/broadcast、/admin/sms 一致
+  const nowTs = new Date();
+  const webinarOptions = webinars
+    .map((w) => ({
+      id: w.id,
+      title: w.title,
+      requestCount: w.requests.length,
+      withEmailCount: w.requests.filter((r) => !!r.email?.trim()).length,
+      isEnded:
+        !w.isActive ||
+        hasEndedInTaipei(w.endDate) ||
+        (!!w.unpublishAt && w.unpublishAt <= nowTs),
+      endedAt: (w.endDate ?? w.unpublishAt)?.toISOString() ?? null,
+    }))
+    .sort((a, b) => Number(a.isEnded) - Number(b.isEnded));
+
   const defaults: BroadcastFormDefaults = {
     subject: record.subject,
     body: record.body,
@@ -84,11 +117,14 @@ export default async function BroadcastEditPage({
         ? "group"
         : record.audienceType === "SESSION"
           ? "session"
-          : record.audienceType === "MANUAL"
-            ? "manual"
-            : "all",
+          : record.audienceType === "WEBINAR"
+            ? "webinar"
+            : record.audienceType === "MANUAL"
+              ? "manual"
+              : "all",
     groupIds: broadcastGroupIds(record), // 改版前的單選紀錄會回填成一個勾選
     sessionIds: broadcastSessionIds(record),
+    webinarIds: broadcastWebinarIds(record),
     isNotice: record.messageType === "NOTICE",
     manualList: manualRows
       .map((r) => [r.email, r.name, r.link].filter(Boolean).join(","))
@@ -122,6 +158,7 @@ export default async function BroadcastEditPage({
           title: s.title,
           signupCount: s._count.signups,
         }))}
+        webinars={webinarOptions}
         marketingPages={marketingPages}
         memberCount={memberCount}
         members={profiles

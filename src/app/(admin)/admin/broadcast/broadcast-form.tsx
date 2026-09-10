@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   previewGroupAudienceAction,
   previewSessionAudienceAction,
+  previewWebinarAudienceAction,
   requestCourseImageUploadUrl,
   saveBroadcastListToGroupAction,
   type BroadcastState,
@@ -13,6 +14,7 @@ import {
 import type {
   GroupAudiencePreview,
   SessionAudiencePreview,
+  WebinarAudiencePreview,
 } from "@/lib/email/audience";
 import { SubmitButton } from "@/components/admin/submit-button";
 import { createClient } from "@/lib/supabase/client";
@@ -43,14 +45,35 @@ type GroupOption = { id: string; name: string; memberCount: number };
 type MemberOption = { email: string; name: string };
 /** 場次看板的場次；signupCount 已扣掉延期到別場的人（與寄出時的名單條件一致） */
 type SessionOption = { id: string; title: string; signupCount: number };
+type WebinarOption = {
+  id: string;
+  title: string;
+  requestCount: number; // 索取人數
+  withEmailCount: number; // 其中有 email 的人數
+  isEnded: boolean; // 已結束／已下架／已停用；預設收起，打開開關才列出
+  endedAt: string | null; // ISO；已結束的顯示日期，讓人判斷這份名單有多舊
+};
+
+/** 已結束講座的日期標籤（台北時間 MM/DD）。壞值就不顯示，不要為了標籤炸掉表單 */
+function endedLabel(iso: string | null): string {
+  if (!iso) return "已結束";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "已結束";
+  return `已結束 ${new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d)}`;
+}
 
 export type BroadcastFormDefaults = {
   subject: string;
   body: string;
   courseId: string;
-  audience: "all" | "group" | "session" | "manual";
+  audience: "all" | "group" | "session" | "webinar" | "manual";
   groupIds: string[]; // 名單群組可複選
   sessionIds: string[]; // 場次可複選
+  webinarIds?: string[]; // 講座可複選
   isNotice: boolean; // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉
   manualList: string;
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
@@ -69,6 +92,7 @@ type BroadcastFormProps = {
   courses: { id: string; title: string }[];
   groups: GroupOption[];
   sessions: SessionOption[];
+  webinars: WebinarOption[];
   /** 已發佈的行銷頁（/p/<slug>）：工具列「插入行銷頁」下拉用 */
   marketingPages: { slug: string; title: string }[];
   memberCount: number;
@@ -84,6 +108,7 @@ export function BroadcastForm({
   courses,
   groups,
   sessions,
+  webinars,
   marketingPages,
   memberCount,
   members,
@@ -100,7 +125,7 @@ export function BroadcastForm({
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const tplNameRef = useRef<HTMLInputElement>(null);
   const [audience, setAudience] = useState<
-    "all" | "group" | "session" | "manual" | "members"
+    "all" | "group" | "session" | "webinar" | "manual" | "members"
   >(defaultValues?.audience ?? "all");
   const [picked, setPicked] = useState<Map<string, MemberOption>>(new Map());
   // 勾選的名單群組；用 append 保留勾選順序——與伺服器端去重的姓名優先序一致
@@ -144,12 +169,42 @@ export function BroadcastForm({
       ? sessionPreviewState.data
       : null;
 
+  // 講座索取者（與簡訊模組同一份 WebinarRequest）：規則對照場次名單
+  const [pickedWebinars, setPickedWebinars] = useState<string[]>(
+    defaultValues?.webinarIds ?? [],
+  );
+  // 已結束的講座預設收起來（同 /admin/sms）；草稿本來就勾了舊場次的話先展開
+  const [showEndedWebinars, setShowEndedWebinars] = useState(() =>
+    webinars.some(
+      (w) => w.isEnded && (defaultValues?.webinarIds ?? []).includes(w.id),
+    ),
+  );
+  const [webinarPreviewState, setWebinarPreviewState] = useState<{
+    key: string;
+    data: WebinarAudiencePreview;
+  } | null>(null);
+  const [webinarPreviewing, startWebinarPreview] = useTransition();
+  const webinarPreviewKey = pickedWebinars.join(",");
+  // 講座不能標履約通知，試算固定 MARKETING，key 不必帶 messageType
+  const webinarPreview =
+    webinarPreviewState?.key === webinarPreviewKey ? webinarPreviewState.data : null;
+  const endedWebinarCount = webinars.filter((w) => w.isEnded).length;
+  // 已勾選的一律留在畫面上——收起開關時若連 checkbox 一起移除，
+  // 送出的 FormData 就少了那個 webinarId，名單會無聲少一場
+  const visibleWebinars = webinars.filter(
+    (w) => !w.isEnded || showEndedWebinars || pickedWebinars.includes(w.id),
+  );
+
   const toggleGroup = (id: string) =>
     setPickedGroups((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   const toggleSession = (id: string) =>
     setPickedSessions((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  const toggleWebinar = (id: string) =>
+    setPickedWebinars((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
@@ -191,6 +246,23 @@ export function BroadcastForm({
       clearTimeout(timer);
     };
   }, [audience, pickedSessions, sessionPreviewKey, messageType]);
+
+  // 講座名單試算（同上：debounce + 擋過期回應）
+  useEffect(() => {
+    if (audience !== "webinar" || pickedWebinars.length === 0) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      startWebinarPreview(async () => {
+        const result = await previewWebinarAudienceAction(pickedWebinars);
+        if (alive)
+          setWebinarPreviewState({ key: webinarPreviewKey, data: result });
+      });
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [audience, pickedWebinars, webinarPreviewKey]);
 
   // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
   // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
@@ -281,6 +353,16 @@ export function BroadcastForm({
       return titles.length === 1
         ? `場次「${titles[0]}」的報名者${dedup}`
         : `${titles.length} 個場次（${titles.join("、")}）的報名者${dedup}`;
+    }
+    if (audience === "webinar") {
+      const titles = pickedWebinars
+        .map((id) => webinars.find((w) => w.id === id)?.title)
+        .filter((t): t is string => !!t);
+      if (titles.length === 0) return "（尚未勾選講座）";
+      const dedup = webinarPreview ? `，去重後 ${webinarPreview.sendableCount} 人` : "";
+      return titles.length === 1
+        ? `講座「${titles[0]}」的索取者${dedup}`
+        : `${titles.length} 場講座（${titles.join("、")}）的索取者${dedup}`;
     }
     if (audience === "members") return `勾選的 ${picked.size} 位會員`;
     return "手動貼入的名單";
@@ -766,6 +848,134 @@ export function BroadcastForm({
               <input
                 type="radio"
                 name="audience"
+                value="webinar"
+                checked={audience === "webinar"}
+                onChange={() => setAudience("webinar")}
+              />
+              講座索取者
+              <span className="text-xs text-gray-400">
+                （可複選，重複索取多場的人只會收到一封）
+              </span>
+            </label>
+            {audience === "webinar" && (
+              <div className="ml-6 space-y-2">
+                {endedWebinarCount > 0 && (
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={showEndedWebinars}
+                      onChange={() => setShowEndedWebinars((v) => !v)}
+                    />
+                    顯示已結束的講座（{endedWebinarCount} 場）
+                    <span className="text-gray-400">
+                      — 舊名單也能寄，但請確認內容對這批人仍然合適
+                    </span>
+                  </label>
+                )}
+                <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300">
+                  {visibleWebinars.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-gray-400">
+                      {webinars.length === 0 ? (
+                        <>
+                          尚無講座，請先到
+                          <Link
+                            href="/admin/webinars"
+                            className="mx-1 text-indigo-600 underline"
+                          >
+                            講座報名
+                          </Link>
+                          建立
+                        </>
+                      ) : (
+                        "目前沒有進行中的講座，勾上方「顯示已結束的講座」可挑舊名單"
+                      )}
+                    </p>
+                  ) : (
+                    visibleWebinars.map((w) => {
+                      const noEmail = w.requestCount - w.withEmailCount;
+                      return (
+                        <label
+                          key={w.id}
+                          className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            name="webinarIds"
+                            value={w.id}
+                            checked={pickedWebinars.includes(w.id)}
+                            onChange={() => toggleWebinar(w.id)}
+                          />
+                          {w.title}
+                          {w.isEnded && (
+                            <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">
+                              {endedLabel(w.endedAt)}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400">
+                            （{w.requestCount} 人索取）
+                          </span>
+                          {noEmail > 0 && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                              {noEmail} 人沒 Email
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {/* 名單試算：與寄出走同一套解析（previewWebinarAudience） */}
+                {pickedWebinars.length > 0 && (
+                  <div className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+                    {webinarPreviewing || !webinarPreview ? (
+                      "計算名單中…"
+                    ) : (
+                      <>
+                        <div>
+                          已選 {webinarPreview.webinars.length} 場，索取合計{" "}
+                          {webinarPreview.totalRows} 人
+                          {webinarPreview.noEmailCount > 0 && (
+                            <span className="font-bold text-amber-700">
+                              {" "}
+                              · 沒有 Email {webinarPreview.noEmailCount} 人收不到 ⚠️
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          去重後{" "}
+                          <span className="font-bold">
+                            {webinarPreview.uniqueCount} 人
+                          </span>
+                          {webinarPreview.duplicateCount > 0 &&
+                            `（跨講座重複 ${webinarPreview.duplicateCount} 筆）`}
+                          {webinarPreview.unsubscribedCount > 0 &&
+                            ` · 已退訂 ${webinarPreview.unsubscribedCount} 人`}
+                          {" → "}實際可寄{" "}
+                          <span className="font-bold">
+                            {webinarPreview.sendableCount} 人
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-indigo-600">
+                          {webinarPreview.webinars
+                            .map((w) => `${w.title} ${w.rowCount}`)
+                            .join("・")}
+                          {webinarPreview.missingCount > 0 &&
+                            `（有 ${webinarPreview.missingCount} 場已被刪除）`}
+                        </div>
+                        <div className="mt-1 border-t border-indigo-200 pt-1 text-indigo-700">
+                          講座名單一律以行銷推播寄出，退訂電子報的人整份排除——
+                          索取講座資料不等於同意收後續行銷信。
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="audience"
                 value="manual"
                 checked={audience === "manual"}
                 onChange={() => setAudience("manual")}
@@ -891,6 +1101,11 @@ export function BroadcastForm({
               if (!followUp && audience === "session" && pickedSessions.length === 0) {
                 e.preventDefault();
                 alert("請至少勾選一個場次");
+                return;
+              }
+              if (!followUp && audience === "webinar" && pickedWebinars.length === 0) {
+                e.preventDefault();
+                alert("請至少勾選一場講座");
                 return;
               }
               const when = (

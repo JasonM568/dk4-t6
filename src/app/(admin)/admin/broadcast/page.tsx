@@ -16,6 +16,7 @@ import { toDatetimeLocal } from "./datetime";
 import { isFollowUpFilter } from "@/lib/email/followup";
 import { BROADCAST_PRESETS } from "@/lib/email/presets";
 import { buildClassNoticeEmail } from "@/lib/class-notice";
+import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { DeleteTemplateButton } from "./delete-template-button";
 
 export const metadata = { title: "Email群發 — 管理後台" };
@@ -102,6 +103,7 @@ export default async function BroadcastPage({
     totalCount,
     groups,
     sessions,
+    webinars,
     profiles,
     templates,
     marketingPages,
@@ -134,6 +136,20 @@ export default async function BroadcastPage({
         meetingUrl: true,
         meetingInfo: true,
         _count: { select: { signups: { where: { deferredToSessionId: null } } } },
+      },
+    }),
+    // 講座索取名單：連已結束／已下架的一起撈（同 /admin/sms 的講座選單）。
+    // 舊講座的索取者是「對這個主題舉過手的人」，新講座開賣時正是要寄給他們——
+    // 名單不該隨講座下架一起消失。表單預設只顯示進行中的，要勾舊的得自己打開開關。
+    prisma.webinar.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        isActive: true,
+        endDate: true,
+        unpublishAt: true,
+        requests: { select: { email: true } },
       },
     }),
     listProfiles(),
@@ -183,6 +199,25 @@ export default async function BroadcastPage({
     title: s.title,
     signupCount: s._count.signups,
   }));
+  // isEnded 的判定與 /admin/sms 一致（結束日過了、被下架、或手動停用）；
+  // 這裡不濾掉，只是標記起來交給表單決定顯不顯示。
+  // WebinarRequest.email 是必填欄位，理論上人人都收得到——但 withEmailCount
+  // 還是照算，壞資料（空字串）要在勾選前就看得到，不是寄出後才發現。
+  const nowTs = new Date();
+  const webinarOptions = webinars
+    .map((w) => ({
+      id: w.id,
+      title: w.title,
+      requestCount: w.requests.length,
+      withEmailCount: w.requests.filter((r) => !!r.email?.trim()).length,
+      isEnded:
+        !w.isActive ||
+        hasEndedInTaipei(w.endDate) ||
+        (!!w.unpublishAt && w.unpublishAt <= nowTs),
+      endedAt: (w.endDate ?? w.unpublishAt)?.toISOString() ?? null,
+    }))
+    // 進行中的排前面，其餘維持 createdAt desc（新的在上）
+    .sort((a, b) => Number(a.isEnded) - Number(b.isEnded));
 
   // 從場次看板「發課前通知」進來：勾好場次、填好主旨與內文，
   // 並預設標為履約通知（課前通知本來就是——退訂電子報的學員仍該收到）。
@@ -337,6 +372,7 @@ export default async function BroadcastPage({
         courses={courses}
         groups={groupOptions}
         sessions={sessionOptions}
+        webinars={webinarOptions}
         marketingPages={marketingPages}
         memberCount={memberCount}
         members={memberOptions}
