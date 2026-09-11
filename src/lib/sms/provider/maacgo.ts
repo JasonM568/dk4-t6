@@ -30,7 +30,9 @@ export function getMaacGoConfig(): MaacGoConfig {
   // 改由 send() 逐筆回失敗＋中文原因，紀錄頁在最需要查看的當下仍看得到
   return {
     apiKey: process.env.MAACGO_API_KEY ?? "",
-    team: process.env.MAACGO_TEAM || undefined,
+    // 與惠邦後台共用同一個 MAAC Go 錢包，一定要帶成本歸屬標籤，
+    // 否則兩邊的用量會全部混進「(未分類)」，帳分不開也看不出誰花的
+    team: process.env.MAACGO_TEAM || "希望學院",
     apiBase: process.env.MAACGO_API_BASE || undefined,
   };
 }
