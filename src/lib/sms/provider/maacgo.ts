@@ -200,6 +200,23 @@ export class MaacGoProvider implements SmsProvider {
     return { ok: false, reason: describeError(res.status, data) };
   }
 
+  /** 查共用錢包餘額（分）。查不到回 null——呼叫端據此略過地板檢查而不是擋死。
+   *
+   *  回傳格式沒寫進 openapi（只有 Wallet tag），所以容錯幾種常見寫法。 */
+  async queryBalance(): Promise<number | null> {
+    if (!this.keyValid) return null;
+    const raw = await this.fetchJson("/wallet");
+    const d = (raw ?? {}) as Record<string, unknown>;
+    const wallet = (d.wallet ?? {}) as Record<string, unknown>;
+    const cents =
+      d.balance_cents ?? d.balanceCents ?? wallet.balance_cents ?? wallet.balanceCents;
+    if (typeof cents === "number") return cents;
+    const dollars = d.balance ?? wallet.balance;
+    if (typeof dollars === "number") return Math.round(dollars * 100);
+    console.error("[sms/maacgo] 錢包回應格式不認得，略過餘額檢查");
+    return null;
+  }
+
   /** 批次查送達狀態。先用 GET /sms/list 一次撈近期（最多 200 筆）比對 id，
    *  剩下沒對到的（較早的發送）才逐筆 GET /sms/{id}——省請求數又不漏掉舊的。 */
   async queryDelivery(messageIds: string[]): Promise<SmsDeliveryState[]> {

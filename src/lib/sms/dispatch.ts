@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { normalizeMobile } from "./phone";
 import { countSms, composeSmsText, applySmsMergeTags } from "./message";
-import { getSmsSettings, toCents } from "./settings";
+import { getSmsSettings, toCents, formatCents } from "./settings";
 import { getSmsProvider } from "./provider";
 import { sendSms } from "./send";
 import {
@@ -541,6 +541,29 @@ export async function executeSmsBroadcast(broadcastId: string) {
     return fail(
       `本次需 ${totalSegments} 則，今日已用 ${used} 則，超過每日上限 ${settings.dailyLimit} 則，已取消發送`,
     );
+
+  // 共用錢包地板：本平台與惠邦後台（huibang）用同一個 MAAC Go 帳號，
+  // 簡訊商不支援錢包分割，所以雙方各自守住對方的保留額。
+  // 查不到餘額時放行而不是擋死——上面兩道上限已經把單次花費鎖住了，
+  // 再因為簡訊商 API 打嗝就全面停發並不划算。
+  if (provider.queryBalance) {
+    let balanceCents: number | null = null;
+    try {
+      balanceCents = await provider.queryBalance();
+    } catch (e) {
+      console.error("[sms] 查詢共用錢包餘額失敗：", e);
+    }
+    if (balanceCents !== null) {
+      const costCents = totalSegments * toCents(settings.pricePerSegment);
+      const reserveCents =
+        settings.partnerReserveSegments * toCents(settings.pricePerSegment);
+      if (balanceCents - costCents < reserveCents)
+        return fail(
+          `共用錢包餘額 ${formatCents(balanceCents)}，扣掉本次 ${formatCents(costCents)} 後` +
+            `會低於保留給惠邦後台的 ${formatCents(reserveCents)}（${settings.partnerReserveSegments} 則），已取消發送`,
+        );
+    }
+  }
 
   const r = await sendSms(recipients, renderText);
 

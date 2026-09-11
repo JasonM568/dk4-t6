@@ -13,6 +13,10 @@ export const SMS_SETTING_KEYS = {
   dailyLimit: "sms:dailyLimit",
   singleSendLimit: "sms:singleSendLimit",
   brandPrefix: "sms:brandPrefix",
+  // 共用錢包：本平台與惠邦後台（huibang）用同一個 MAAC Go 帳號。
+  // 簡訊商不支援錢包分割（team 只是報表分類），所以雙方各自守地板：
+  // 餘額扣掉本次花費後若低於這個保留額，整批不送。
+  partnerReserveSegments: "sms:partnerReserveSegments",
 } as const;
 
 export type SmsSettings = {
@@ -20,6 +24,7 @@ export type SmsSettings = {
   dailyLimit: number; // 單日則數上限
   singleSendLimit: number; // 單次發送則數上限
   brandPrefix: string; // 簡訊開頭的品牌標示
+  partnerReserveSegments: number; // 保留給惠邦後台的則數，本平台不得動用
 };
 
 export const SMS_SETTING_DEFAULTS: SmsSettings = {
@@ -27,6 +32,7 @@ export const SMS_SETTING_DEFAULTS: SmsSettings = {
   dailyLimit: 2000,
   singleSendLimit: 500,
   brandPrefix: "【希望學院】",
+  partnerReserveSegments: 1000,
 };
 
 /** SiteSetting.value 是自由文字，解析一律 clamp + fallback。
@@ -63,6 +69,12 @@ export async function getSmsSettings(): Promise<SmsSettings> {
     ),
     brandPrefix:
       map.get(SMS_SETTING_KEYS.brandPrefix) ?? SMS_SETTING_DEFAULTS.brandPrefix,
+    partnerReserveSegments: parseNum(
+      map.get(SMS_SETTING_KEYS.partnerReserveSegments),
+      SMS_SETTING_DEFAULTS.partnerReserveSegments,
+      0,
+      1_000_000,
+    ),
   };
 }
 
