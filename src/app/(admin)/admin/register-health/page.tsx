@@ -6,17 +6,13 @@ import {
   REGISTER_ATTEMPT_RETENTION_DAYS,
   REGISTER_REASON,
   REGISTER_REASON_LABEL,
+  registerSilence,
 } from "@/lib/auth/register-log";
 
 export const metadata = { title: "註冊狀況 — 管理後台" };
 
 const TPE = { timeZone: "Asia/Taipei", hour12: false } as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** 多久沒有人註冊成功就該當成事故。
- *  2026-08-29 那次壞了 14 天沒人發現；平常每天 2–3 人註冊，
- *  連 3 天掛零已經明顯不對勁了。 */
-const SILENT_DAYS_WARN = 3;
 
 function fmt(d: Date) {
   return d.toLocaleString("zh-TW", { ...TPE, dateStyle: "short", timeStyle: "short" });
@@ -72,12 +68,12 @@ export default async function RegisterHealthPage() {
     .filter((r) => !isUserSideReason(r.reason))
     .reduce((n, r) => n + r._count._all, 0);
 
-  // 多久沒有人成功註冊了。完全沒有紀錄時不報警——這張表是 2026-09-12 才開始記的，
-  // 拿「查無資料」當事故會在上線當天就叫一次狼來了。
-  const daysSilent = lastSuccess
-    ? Math.floor((now - lastSuccess.createdAt.getTime()) / DAY_MS)
-    : null;
-  const alarm = daysSilent !== null && daysSilent >= SILENT_DAYS_WARN;
+  // 多久沒有人成功註冊了。門檻與判定都在 lib，由 test-register-log-db 覆蓋——
+  // 告警這條分支不能靠「等它真的壞掉」來驗證。
+  const { daysSilent, alarm } = registerSilence(
+    lastSuccess?.createdAt ?? null,
+    new Date(now),
+  );
 
   return (
     <div className="max-w-4xl">

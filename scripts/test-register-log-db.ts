@@ -13,6 +13,8 @@ import {
   purgeOldRegisterAttempts,
   REGISTER_ATTEMPT_RETENTION_DAYS,
   REGISTER_REASON,
+  registerSilence,
+  SILENT_DAYS_WARN,
 } from "../src/lib/auth/register-log";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -109,10 +111,10 @@ async function main() {
       select: { createdAt: true },
     });
     check("查得到最後一次成功", !!lastSuccess);
-    const days = lastSuccess
-      ? Math.floor((Date.now() - lastSuccess.createdAt.getTime()) / 86_400_000)
-      : -1;
-    check("剛寫入的那筆算出 0 天", days === 0, `實得 ${days}`);
+    // 走監控板同一支函式，不在測試裡重算一遍——複製公式等於沒驗到
+    const { daysSilent, alarm } = registerSilence(lastSuccess?.createdAt ?? null);
+    check("剛寫入的那筆算出 0 天", daysSilent === 0, `實得 ${daysSilent}`);
+    check("剛註冊成功不報警", alarm === false);
   }
 
   console.log(`\n保存期限清理（${REGISTER_ATTEMPT_RETENTION_DAYS} 天）`);
@@ -137,6 +139,40 @@ async function main() {
     });
     check("超過保存期限的被刪掉", oldStill === null);
     check("期限內的沒被誤刪", freshStill !== null);
+  }
+
+  console.log("\n掛零幾天就轉紅字告警（板子存在的理由，正式站不能靠真的壞掉來驗）");
+  {
+    const now = new Date("2026-09-12T12:00:00+08:00");
+    const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+
+    const none = registerSilence(null, now);
+    check("完全沒有紀錄時不報警（表剛上線不該叫狼來了）", none.alarm === false);
+    check("完全沒有紀錄時天數為 null", none.daysSilent === null);
+
+    const today = registerSilence(daysAgo(0), now);
+    check("今天才有人註冊成功：0 天、不報警", today.daysSilent === 0 && !today.alarm);
+
+    const two = registerSilence(daysAgo(2), now);
+    check(
+      `掛零 2 天（未達 ${SILENT_DAYS_WARN} 天門檻）不報警`,
+      two.daysSilent === 2 && !two.alarm,
+    );
+
+    const three = registerSilence(daysAgo(3), now);
+    check(
+      `掛零 ${SILENT_DAYS_WARN} 天就報警 ← 這一格當初是缺的`,
+      three.daysSilent === 3 && three.alarm === true,
+    );
+
+    const fourteen = registerSilence(daysAgo(14), now);
+    check(
+      "掛零 14 天報警（2026-08-29 那次事故的長度）",
+      fourteen.daysSilent === 14 && fourteen.alarm === true,
+    );
+
+    const future = registerSilence(new Date(now.getTime() + 3_600_000), now);
+    check("時鐘誤差導致的未來時間不會算成負天數", future.daysSilent === 0 && !future.alarm);
   }
 
   await cleanup();

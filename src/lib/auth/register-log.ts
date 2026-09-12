@@ -92,3 +92,27 @@ export async function purgeOldRegisterAttempts(): Promise<number> {
   });
   return r.count;
 }
+
+/** 多久沒有人註冊成功就該當成事故。
+ *  2026-08-29 那次壞了 14 天沒人發現；平常每天 2–3 人註冊，
+ *  連 3 天掛零已經明顯不對勁了。 */
+export const SILENT_DAYS_WARN = 3;
+
+/** 監控板最重要的一格：距離上次成功註冊幾天、要不要轉紅字。
+ *
+ *  抽成純函式是因為這條分支正是板子存在的理由，卻最不容易在正式站
+ *  被自然觸發到——不能用「等它真的壞掉」來驗證告警會不會亮。
+ *
+ *  lastSuccessAt 為 null（表剛上線、還沒有任何成功紀錄）時不報警：
+ *  拿「查無資料」當事故會在上線當天就叫一次狼來了。 */
+export function registerSilence(
+  lastSuccessAt: Date | null,
+  now: Date = new Date(),
+): { daysSilent: number | null; alarm: boolean } {
+  if (!lastSuccessAt) return { daysSilent: null, alarm: false };
+  const days = Math.floor(
+    (now.getTime() - lastSuccessAt.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  const daysSilent = Math.max(0, days); // 時鐘誤差造成的未來時間不該算成負數
+  return { daysSilent, alarm: daysSilent >= SILENT_DAYS_WARN };
+}
