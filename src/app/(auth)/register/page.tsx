@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { registerAction, type ActionState } from "@/actions/auth";
 import { PrivacyNotice } from "@/components/privacy-notice";
 import { PRIVACY_CONSENT_LABEL } from "@/lib/privacy";
+import { REGISTER_NAME_FIELD } from "@/lib/auth/form-fields";
 
 /** 註冊完成轉換事件（GA4 sign_up / Meta Pixel CompleteRegistration / GTM dataLayer）。
  *  只在成功畫面掛載時觸發一次；追蹤碼未啟用時 window.gtag/fbq 為 undefined，安全略過。
@@ -66,7 +67,7 @@ function RegisterForm() {
         <div>
           <label className="mb-1 block text-sm font-medium">姓名</label>
           <input
-            name="displayName"
+            name={REGISTER_NAME_FIELD}
             type="text"
             required
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"

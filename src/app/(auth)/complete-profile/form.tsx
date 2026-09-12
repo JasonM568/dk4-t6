@@ -7,6 +7,7 @@ import {
 } from "@/actions/auth";
 import { PrivacyNotice } from "@/components/privacy-notice";
 import { PRIVACY_CONSENT_LABEL } from "@/lib/privacy";
+import { PROFILE_NAME_FIELD } from "@/lib/auth/form-fields";
 
 export function CompleteProfileForm({
   next,
@@ -34,7 +35,7 @@ export function CompleteProfileForm({
         <div>
           <label className="mb-1 block text-sm font-medium">姓名</label>
           <input
-            name="name"
+            name={PROFILE_NAME_FIELD}
             required
             maxLength={50}
             placeholder="請填真實姓名"

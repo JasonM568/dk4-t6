@@ -10,6 +10,11 @@ import { claimPendingEnrollments } from "@/lib/pending-enroll";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/course-access";
 import { explainMobile } from "@/lib/sms/phone";
+import {
+  PROFILE_NAME_FIELD,
+  REGISTER_NAME_FIELD,
+  type NameField,
+} from "@/lib/auth/form-fields";
 import { PRIVACY_POLICY_VERSION } from "@/lib/privacy";
 import { getAuthUser } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-redirect";
@@ -69,8 +74,17 @@ function parsePhoneField(raw: unknown): { phone?: string; error?: string } {
   }
 }
 
-/** 個資同意 checkbox（必勾）＋手機的共同驗證，註冊與補填共用 */
-function parseProfileFields(formData: FormData): {
+/** 個資同意 checkbox（必勾）＋姓名＋手機的共同驗證，註冊與補填共用。
+ *
+ *  姓名欄位名稱由呼叫端指定，不在這裡寫死：註冊頁叫 displayName
+ *  （同時要當 Supabase 的 display_name），補填頁叫 name。
+ *  2026-08-29 這裡寫死讀 "name"，註冊頁根本沒有那個欄位——每一次註冊都回
+ *  「請填寫姓名」，整整 14 天沒有人註冊得成功。欄位名一律走 form-fields.ts
+ *  的常數，表單與這裡才不可能再各寫各的。 */
+function parseProfileFields(
+  formData: FormData,
+  nameField: NameField = PROFILE_NAME_FIELD,
+): {
   phone?: string;
   name?: string;
   error?: string;
@@ -78,7 +92,7 @@ function parseProfileFields(formData: FormData): {
   if (formData.get("privacyConsent") !== "on") {
     return { error: "請閱讀並勾選同意個人資料蒐集告知事項" };
   }
-  const name = String(formData.get("name") ?? "").trim();
+  const name = String(formData.get(nameField) ?? "").trim();
   if (!name) return { error: "請填寫姓名（訂單與發票需要）" };
   if (name.length > 50) return { error: "姓名長度過長" };
   const phone = parsePhoneField(formData.get("phone"));
@@ -242,8 +256,9 @@ export async function registerAction(
 
   const { displayName, email, password } = parsed.data;
 
-  // 手機必填＋個資同意必勾（2026-08-15 起）：先驗完才建帳號
-  const profileFields = parseProfileFields(formData);
+  // 手機必填＋個資同意必勾（2026-08-15 起）：先驗完才建帳號。
+  // 姓名讀註冊頁的 displayName（同一個欄位，見 form-fields.ts）
+  const profileFields = parseProfileFields(formData, REGISTER_NAME_FIELD);
   if (profileFields.error) return { error: profileFields.error };
   const phone = profileFields.phone!;
 
@@ -294,12 +309,16 @@ export async function registerAction(
       await prisma.memberProfile.upsert({
         where: { userId: data.user.id },
         update: {
+          // 姓名一併寫入：漏了的話結帳閘門會把剛註冊完的人彈去 /complete-profile
+          // 重打一次同樣的姓名（f34cbb5 只補了補填頁那條路）
+          name: displayName,
           phone,
           privacyConsentAt: new Date(),
           privacyConsentVersion: PRIVACY_POLICY_VERSION,
         },
         create: {
           userId: data.user.id,
+          name: displayName,
           phone,
           privacyConsentAt: new Date(),
           privacyConsentVersion: PRIVACY_POLICY_VERSION,
