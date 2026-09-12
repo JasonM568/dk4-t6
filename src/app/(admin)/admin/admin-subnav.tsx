@@ -47,6 +47,8 @@ const FINANCE_TABS = [
 const SYSTEM_TABS = [
   { href: "/admin/settings", label: "分頁管理" },
   { href: "/admin/staff", label: "權限管理" },
+  // adminOnly：失敗紀錄帶著未成功註冊者的 email 與手機
+  { href: "/admin/register-health", label: "註冊狀況", adminOnly: true },
 ];
 
 const PLATFORM_PREFIXES = [
@@ -69,7 +71,7 @@ const MARKETING_PREFIXES = [
 const ORDERS_PREFIXES = ["/admin/orders"];
 const SESSION_PREFIXES = ["/admin/sessions"];
 const FINANCE_PREFIXES = ["/admin/finance"];
-const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff"];
+const SYSTEM_PREFIXES = ["/admin/settings", "/admin/staff", "/admin/register-health"];
 
 function isUnder(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));

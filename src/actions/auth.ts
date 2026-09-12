@@ -15,6 +15,11 @@ import {
   REGISTER_NAME_FIELD,
   type NameField,
 } from "@/lib/auth/form-fields";
+import {
+  logRegisterAttempt,
+  REGISTER_REASON,
+  type RegisterReason,
+} from "@/lib/auth/register-log";
 import { PRIVACY_POLICY_VERSION } from "@/lib/privacy";
 import { getAuthUser } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-redirect";
@@ -88,15 +93,25 @@ function parseProfileFields(
   phone?: string;
   name?: string;
   error?: string;
+  /** 失敗分類：給註冊監控板分組用，不外露給使用者 */
+  reason?: RegisterReason;
 } {
   if (formData.get("privacyConsent") !== "on") {
-    return { error: "請閱讀並勾選同意個人資料蒐集告知事項" };
+    return {
+      error: "請閱讀並勾選同意個人資料蒐集告知事項",
+      reason: REGISTER_REASON.CONSENT,
+    };
   }
   const name = String(formData.get(nameField) ?? "").trim();
-  if (!name) return { error: "請填寫姓名（訂單與發票需要）" };
-  if (name.length > 50) return { error: "姓名長度過長" };
+  if (!name)
+    return {
+      error: "請填寫姓名（訂單與發票需要）",
+      reason: REGISTER_REASON.NAME,
+    };
+  if (name.length > 50)
+    return { error: "姓名長度過長", reason: REGISTER_REASON.NAME };
   const phone = parsePhoneField(formData.get("phone"));
-  if (phone.error) return phone;
+  if (phone.error) return { ...phone, reason: REGISTER_REASON.PHONE };
   return { ...phone, name };
 }
 
@@ -250,8 +265,25 @@ export async function registerAction(
     email: formData.get("email"),
     password: formData.get("password"),
   });
+  // 每一次註冊嘗試都留痕（成功也記）。2026-08-29 註冊壞掉 14 天卻零告警，
+  // 就是因為失敗只回給使用者一行紅字、伺服器端什麼都沒留下。
+  // 這裡先把使用者填的值撈出來備用——parse 失敗時它們才是唯一的線索。
+  const rawEmail = String(formData.get("email") ?? "").trim();
+  const rawName = String(formData.get(REGISTER_NAME_FIELD) ?? "").trim();
+  const rawPhone = String(formData.get("phone") ?? "").trim();
+  const logAttempt = (reason: RegisterReason, detail?: string) =>
+    logRegisterAttempt({
+      reason,
+      email: rawEmail,
+      name: rawName,
+      phone: rawPhone,
+      detail,
+    });
+
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "輸入有誤" };
+    const message = parsed.error.issues[0]?.message ?? "輸入有誤";
+    await logAttempt(REGISTER_REASON.SCHEMA, message);
+    return { error: message };
   }
 
   const { displayName, email, password } = parsed.data;
@@ -259,7 +291,10 @@ export async function registerAction(
   // 手機必填＋個資同意必勾（2026-08-15 起）：先驗完才建帳號。
   // 姓名讀註冊頁的 displayName（同一個欄位，見 form-fields.ts）
   const profileFields = parseProfileFields(formData, REGISTER_NAME_FIELD);
-  if (profileFields.error) return { error: profileFields.error };
+  if (profileFields.error) {
+    await logAttempt(profileFields.reason ?? REGISTER_REASON.SCHEMA, profileFields.error);
+    return { error: profileFields.error };
+  }
   const phone = profileFields.phone!;
 
   // 企業專區邀請碼（選填）：先驗證再建帳號，碼無效就不註冊，
@@ -268,7 +303,10 @@ export async function registerAction(
   let invite = null;
   if (inviteRaw) {
     const result = await validateInviteCode(inviteRaw);
-    if (!result.ok) return { error: result.error };
+    if (!result.ok) {
+      await logAttempt(REGISTER_REASON.INVITE, result.error);
+      return { error: result.error };
+    }
     invite = result.invite;
   }
 
@@ -290,17 +328,26 @@ export async function registerAction(
   });
 
   if (error) {
+    // detail 記 Supabase 的錯誤碼而不是使用者輸入：整批出現同一個碼
+    // 就是平台端出事（流量限制、關閉註冊…），監控板一眼看得出來
+    await logAttempt(REGISTER_REASON.AUTH, `${error.code ?? "?"} / ${error.status ?? "?"}`);
     return { error: mapAuthError(error.code, error.status) };
   }
 
   // 已註冊過的 email：signUp 不報錯但回傳 identities 為空陣列
   if (data.user && data.user.identities?.length === 0) {
+    await logAttempt(REGISTER_REASON.EMAIL_TAKEN);
     return {
       error: invite
         ? "此 Email 已被註冊。請直接登入，再到專區頁輸入邀請碼即可加入專區"
         : "此 Email 已被註冊，請直接登入或使用忘記密碼",
     };
   }
+
+  // 帳號確實建立了＝這次註冊成功。在這裡記而不是等到最後，是因為底下
+  // 兩條出口一條 return、一條 redirect()（會 throw），擺在後面必漏一條。
+  // 成功的紀錄刻意不存 email／姓名／手機，只留時間軸（見 register-log.ts）。
+  await logRegisterAttempt({ reason: REGISTER_REASON.SUCCESS });
 
   // 手機＋個資同意紀錄：帳號建立成功即寫入（Confirm email 前寫入也沒關係，
   // 以 userId 為鍵）。寫入失敗不擋註冊——登入閘門會再要求補填，記 log 即可。

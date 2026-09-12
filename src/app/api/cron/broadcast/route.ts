@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { processDueBroadcasts } from "@/lib/email/dispatch";
 import { processDueSmsBroadcasts, refreshSmsDelivery } from "@/lib/sms/dispatch";
+import { purgeOldRegisterAttempts } from "@/lib/auth/register-log";
 
 // 大量群發（數百封分批＋退避重試）可能超過平台預設時限，明確給足 300s
 export const maxDuration = 300;
@@ -33,9 +34,30 @@ export async function GET(request: Request) {
     console.error("[sms cron] 更新送達狀態時發生例外：", e);
   }
 
+  // 註冊嘗試紀錄的保存期限清理：每日一次就夠，借這條 5 分鐘 tick 跑，
+  // 不另外開一條 vercel.json cron（同 email/簡訊共用這個 tick 的理由）。
+  // 只在台北時間 03:00–03:05 這個窗口動作 → 一天剛好命中一次。
+  let purged = 0;
+  const tpeHour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Taipei",
+      hour: "2-digit",
+      hour12: false,
+    }).format(new Date()),
+  );
+  const tpeMinute = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCMinutes();
+  if (tpeHour === 3 && tpeMinute < 5) {
+    try {
+      purged = await purgeOldRegisterAttempts();
+    } catch (e) {
+      console.error("[cron] 清理註冊嘗試紀錄時發生例外：", e);
+    }
+  }
+
   return NextResponse.json({
     email: { processed: email.length, results: email },
     sms: { processed: sms.length, results: sms },
     smsDelivery: delivery,
+    registerAttemptsPurged: purged,
   });
 }

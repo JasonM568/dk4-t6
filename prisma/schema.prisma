@@ -336,6 +336,33 @@ model EmailBroadcastRecipient {
   @@index([broadcastId, status])
 }
 
+// 註冊嘗試紀錄：每一次註冊的結果都留一筆，成功也記。
+//
+// 為什麼要有這張表：2026-08-29～09-12 註冊功能整整壞了 14 天（姓名欄位名對不上），
+// 期間沒有任何告警——失敗只回給使用者一行紅字，伺服器這邊什麼都沒留下，
+// 是靠學員回報才發現的。「連續 N 天零成功註冊」本來應該是刺眼的訊號。
+//
+// 個資最小化：
+//   - 絕不存密碼（連雜湊都不存，這裡不需要）
+//   - 成功的那筆不存 email／姓名／手機（auth.users 已經有了，這裡只要時間軸）
+//   - 失敗的才存聯絡方式，因為那正是「要把人找回來」的用途
+//   - 90 天自動清除（cron 每日一次），查案夠用又不囤積
+model RegisterAttempt {
+  id        String   @id @default(cuid())
+  // SUCCESS 或各種失敗原因代碼，見 src/lib/auth/register-log.ts
+  reason    String
+  // 失敗才填；成功一律 null（見上面的個資最小化）
+  email     String?
+  name      String?
+  phone     String?
+  // 補充說明（例如 Supabase 回的錯誤碼）；不放使用者輸入的原始值
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([reason, createdAt])
+}
+
 // 電子報退訂名單：寄送前統一過濾（resolveRecipients），測試信不過濾
 model MailUnsubscribe {
   email     String   @id // 存入前一律 toLowerCase().trim()
