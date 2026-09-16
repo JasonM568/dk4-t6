@@ -114,10 +114,60 @@ export function computeRosterStats(signups: RosterSignup[]): RosterStats {
 
 export const MIN_GROUPS = 6; // 總組數從 6 組起跳（Jason 定的規則）
 
-/** 組數 = max(6, ⌈有效人數/每組上限⌉) */
-export function groupCountFor(activeCount: number, cap: number): number {
-  const safeCap = Math.max(1, Math.floor(cap));
-  return Math.max(MIN_GROUPS, Math.ceil(activeCount / safeCap));
+/** 場次的固定組數：場地桌次固定時鎖死組數。null／0／不合法 = 自動推導。
+ *  合法範圍與每組上限一致（1〜99）。 */
+export function normalizeFixedCount(fixed: number | null | undefined): number | null {
+  if (fixed == null) return null;
+  const n = Math.floor(Number(fixed));
+  return Number.isFinite(n) && n >= 1 && n <= 99 ? n : null;
+}
+
+/** N 組總共裝得下幾個人：逐組上限覆寫要算進去，不是 N × 預設上限。
+ *  「塞不塞得下」與錯誤訊息裡的「尚差幾席」都靠這支。 */
+export function groupCapacity(
+  groupCount: number,
+  cap: number,
+  groupCaps: number[] = [],
+): number {
+  let total = 0;
+  for (let g = 1; g <= groupCount; g++) total += capForGroup(g, cap, groupCaps);
+  return total;
+}
+
+/** 組數 = 固定值（若有）否則 max(6, 容量裝得下所有人的最小組數)。
+ *
+ *  注意：固定值**優先於**下限 6——場地只有 4 張桌子時就是 4 組。
+ *  逐組上限不同時不能用 ⌈人數/預設上限⌉ 硬算，得逐組累加容量，
+ *  否則後台顯示的預估組數會跟實際分組結果對不起來。 */
+export function groupCountFor(
+  activeCount: number,
+  cap: number,
+  groupCaps: number[] = [],
+  fixedCount?: number | null,
+): number {
+  const fixed = normalizeFixedCount(fixedCount);
+  if (fixed !== null) return fixed;
+  let groupCount = MIN_GROUPS;
+  while (groupCapacity(groupCount, cap, groupCaps) < activeCount) groupCount++;
+  return groupCount;
+}
+
+/** 已分組但組號超過 N 的人（把固定組數改小時會出現）。
+ *  這些人不能靠補分組救——補分組不動已分好的組別，得全量重分。 */
+export function signupsBeyondGroup(
+  signups: { groupNo: number | null; deferredToSessionId: string | null; isStaff?: boolean }[],
+  groupCount: number,
+): { count: number; maxGroupNo: number } {
+  let count = 0;
+  let maxGroupNo = 0;
+  for (const s of signups) {
+    if (s.deferredToSessionId || s.isStaff || s.groupNo == null) continue;
+    if (s.groupNo > groupCount) {
+      count++;
+      if (s.groupNo > maxGroupNo) maxGroupNo = s.groupNo;
+    }
+  }
+  return { count, maxGroupNo };
 }
 
 export type GroupableSignup = {
@@ -144,13 +194,17 @@ export function assignRemaining(
   signups: (GroupableSignup & { groupNo: number | null })[],
   cap: number,
   groupCaps: number[] = [],
+  fixedCount?: number | null,
 ): { assignments: Map<string, number>; groupCount: number } {
+  const fixed = normalizeFixedCount(fixedCount);
   const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
   const grouped = active.filter((s) => s.groupNo != null);
   // 還沒分過組 → 等同全量分組
-  if (grouped.length === 0) return assignGroups(active, cap, groupCaps);
+  if (grouped.length === 0) return assignGroups(active, cap, groupCaps, fixed);
 
-  let groupCount = Math.max(MIN_GROUPS, ...grouped.map((s) => s.groupNo!));
+  // 固定組數時鎖死；否則沿用「既有最大組號與下限 6 取大」
+  let groupCount =
+    fixed ?? Math.max(MIN_GROUPS, ...grouped.map((s) => s.groupNo!));
   const stats = new Map<number, { total: number; fresh: number; retrain: number }>();
   for (let g = 1; g <= groupCount; g++) stats.set(g, { total: 0, fresh: 0, retrain: 0 });
   for (const s of grouped) {
@@ -184,6 +238,9 @@ export function assignRemaining(
       if (cat(st) < cat(bs) || (cat(st) === cat(bs) && st.total < bs.total)) best = g;
     }
     if (best === null) {
+      // 固定組數時不准開新組：呼叫端應先用 groupCapacity 擋下並報錯，
+      // 真的走到這裡就讓這個人維持未分組，也不要默默超收。
+      if (fixed !== null) continue;
       // 全滿 → 開新組（新組吃預設上限）
       groupCount++;
       stats.set(groupCount, { total: 0, fresh: 0, retrain: 0 });
@@ -207,16 +264,11 @@ export function assignGroups(
   signups: GroupableSignup[],
   cap: number,
   groupCaps: number[] = [],
+  fixedCount?: number | null,
 ): { assignments: Map<string, number>; groupCount: number } {
   const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
-  // 組數：至少 6 組，容量累計到裝得下所有人
-  let groupCount = MIN_GROUPS;
-  let capacity = 0;
-  for (let g = 1; g <= groupCount; g++) capacity += capForGroup(g, cap, groupCaps);
-  while (capacity < active.length) {
-    groupCount++;
-    capacity += capForGroup(groupCount, cap, groupCaps);
-  }
+  // 組數：固定值優先；否則至少 6 組、容量累計到裝得下所有人
+  const groupCount = groupCountFor(active.length, cap, groupCaps, fixedCount);
 
   const byTime = (a: GroupableSignup, b: GroupableSignup) => {
     const ta = a.orderedAt?.getTime() ?? a.createdAt.getTime();
@@ -230,7 +282,8 @@ export function assignGroups(
   const counts = Array.from({ length: groupCount + 1 }, () => 0);
   let cursor = 0;
   for (const s of [...fresh, ...retrain]) {
-    // 循環找下一個未滿的組（容量足夠，必有）
+    // 循環找下一個未滿的組。容量足夠時必定找得到；固定組數且容量不足時
+    // hops 會用盡並落回當下這組（呼叫端應先用 groupCapacity 擋下，不該走到這）
     let g = (cursor % groupCount) + 1;
     let hops = 0;
     while (counts[g] >= capForGroup(g, cap, groupCaps) && hops < groupCount) {

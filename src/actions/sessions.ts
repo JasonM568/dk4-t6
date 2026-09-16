@@ -12,7 +12,11 @@ import {
   isRetrainProduct,
   assignGroups,
   assignRemaining,
+  groupCapacity,
+  groupCountFor,
   isSamePerson,
+  normalizeFixedCount,
+  signupsBeyondGroup,
   type Meal,
 } from "@/lib/session-roster";
 
@@ -455,13 +459,42 @@ export async function setGroupCapAction(sessionId: string, groupNo: number, cap:
   revalidatePath("/admin/sessions");
 }
 
-/** 手動指定單人組別（自動分組後的微調；null = 改回未分組） */
+/** 手動指定單人組別（自動分組後的微調；null = 改回未分組）。
+ *
+ *  上界收斂到該場次的有效組數：場次設了固定 8 組，手動就不該塞得出第 9 組——
+ *  否則自動分組擋下的超收，會從這個側門進來。 */
 export async function setSignupGroupAction(id: string, groupNo: number | null) {
   await requireEditor();
-  const value =
-    typeof groupNo === "number" && Number.isInteger(groupNo) && groupNo >= 1 && groupNo <= 99
-      ? groupNo
-      : null;
+  if (groupNo == null || !Number.isInteger(groupNo) || groupNo < 1) {
+    await prisma.sessionSignup
+      .update({ where: { id }, data: { groupNo: null } })
+      .catch(() => undefined);
+    revalidatePath("/admin/sessions");
+    revalidatePath("/board");
+    return;
+  }
+
+  const signup = await prisma.sessionSignup.findUnique({
+    where: { id },
+    select: { sessionId: true },
+  });
+  if (!signup) return;
+  const [session, signups] = await Promise.all([
+    prisma.courseSession.findUnique({
+      where: { id: signup.sessionId },
+      select: { groupCap: true, groupCaps: true, groupCountFixed: true },
+    }),
+    prisma.sessionSignup.findMany({
+      where: { sessionId: signup.sessionId },
+      select: { deferredToSessionId: true, isStaff: true },
+    }),
+  ]);
+  const activeCount = signups.filter((s) => !s.deferredToSessionId && !s.isStaff).length;
+  const maxGroup = session
+    ? groupCountFor(activeCount, session.groupCap, session.groupCaps, session.groupCountFixed)
+    : 99;
+  const value = groupNo <= maxGroup ? groupNo : null;
+
   await prisma.sessionSignup
     .update({ where: { id }, data: { groupNo: value } })
     .catch(() => undefined);
@@ -481,6 +514,11 @@ export async function autoGroupAction(
   const cap = Math.floor(Number(formData.get("cap")));
   if (!Number.isFinite(cap) || cap < 1 || cap > 99)
     return { error: "每組人數上限請填 1〜99" };
+  // 固定組數：留空＝自動推導（維持原行為）
+  const fixedRaw = String(formData.get("fixedCount") ?? "").trim();
+  const fixed = fixedRaw === "" ? null : normalizeFixedCount(Number(fixedRaw));
+  if (fixedRaw !== "" && fixed === null)
+    return { error: "固定組數請填 1〜99，或留空改回自動" };
   const fillOnly = String(formData.get("mode")) === "fill";
 
   const [session, signups] = await Promise.all([
@@ -497,9 +535,27 @@ export async function autoGroupAction(
   if (signups.every((s) => s.deferredToSessionId || s.isStaff))
     return { error: "沒有可分組的學員" };
 
+  // 固定組數的兩道閘門：**先算清楚再動任何資料**，擋下時名單零變動。
+  if (fixed !== null) {
+    const activeCount = signups.filter((s) => !s.deferredToSessionId && !s.isStaff).length;
+    const capacity = groupCapacity(fixed, cap, groupCaps);
+    if (capacity < activeCount)
+      return {
+        error: `固定 ${fixed} 組最多容納 ${capacity} 人，目前 ${activeCount} 人，尚差 ${activeCount - capacity} 席。請調高每組上限或增加組數`,
+      };
+    // 把固定組數改小時，原本在第 9 組的人補分組救不回來（補分組不動已分好的組別）
+    if (fillOnly) {
+      const beyond = signupsBeyondGroup(signups, fixed);
+      if (beyond.count > 0)
+        return {
+          error: `有 ${beyond.count} 人在第 ${beyond.maxGroupNo} 組，已超過固定的 ${fixed} 組，請先全量重分`,
+        };
+    }
+  }
+
   const { assignments, groupCount } = fillOnly
-    ? assignRemaining(signups, cap, groupCaps)
-    : assignGroups(signups, cap, groupCaps);
+    ? assignRemaining(signups, cap, groupCaps, fixed)
+    : assignGroups(signups, cap, groupCaps, fixed);
   if (fillOnly && assignments.size === 0) return { error: "沒有未分組的學員" };
   // 反轉成「組 → 成員 id 清單」，一組一個 updateMany，交易內一次寫完
   const byGroup = new Map<number, string[]>();
@@ -507,7 +563,10 @@ export async function autoGroupAction(
     byGroup.set(groupNo, [...(byGroup.get(groupNo) ?? []), id]);
   }
   await prisma.$transaction([
-    prisma.courseSession.update({ where: { id: sessionId }, data: { groupCap: cap } }),
+    prisma.courseSession.update({
+      where: { id: sessionId },
+      data: { groupCap: cap, groupCountFixed: fixed },
+    }),
     ...[...byGroup.entries()].map(([groupNo, ids]) =>
       prisma.sessionSignup.updateMany({ where: { id: { in: ids } }, data: { groupNo } }),
     ),

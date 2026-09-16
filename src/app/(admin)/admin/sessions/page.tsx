@@ -153,6 +153,7 @@ export default async function AdminSessionsPage() {
               adminNote: s.adminNote,
               groupCap: s.groupCap,
               groupCaps: s.groupCaps,
+              groupCountFixed: s.groupCountFixed,
               accessCode: s.accessCode,
               meetingUrl: s.meetingUrl,
               meetingId: s.meetingId,

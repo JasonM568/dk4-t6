@@ -86,6 +86,7 @@ export type SessionRow = {
   adminNote: string | null;
   groupCap: number;
   groupCaps: number[]; // 逐組上限覆寫（index 0 = 第 1 組；0 = 用預設）
+  groupCountFixed: number | null; // 固定組數；null = 自動推導
   // 上課連結（/live 憑碼索取）；accessCode 有值 = 這場已開放索取
   accessCode: string | null;
   meetingUrl: string | null;
@@ -766,6 +767,10 @@ function GroupPanel({ session }: { session: SessionRow }) {
     null,
   );
   const [cap, setCap] = useState(String(session.groupCap));
+  // 固定組數：留空＝自動推導。場地桌次固定時鎖死組數，塞不下由後端擋
+  const [fixedCount, setFixedCount] = useState(
+    session.groupCountFixed == null ? "" : String(session.groupCountFixed),
+  );
   // 工作人員不列入分組
   const active = session.signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
   const grouped = active.filter((s) => s.groupNo != null);
@@ -808,8 +813,22 @@ function GroupPanel({ session }: { session: SessionRow }) {
           />
           人
         </label>
+        <label className="flex items-center gap-1.5 text-gray-600">
+          固定組數
+          <input
+            name="fixedCount"
+            inputMode="numeric"
+            value={fixedCount}
+            onChange={(e) => setFixedCount(e.target.value)}
+            placeholder="自動"
+            className="w-14 rounded-lg border border-gray-300 px-2 py-1 text-center text-sm focus:border-black focus:outline-none"
+          />
+          組
+        </label>
         <span className="text-xs text-gray-400">
-          組數 = max(6, ⌈{active.length}÷上限⌉)；新舊生依報名順序平均散進各組
+          {fixedCount.trim() === ""
+            ? `組數 = max(6, 容量裝得下 ${active.length} 人的最小組數)；新舊生依報名順序平均散進各組`
+            : `鎖定 ${fixedCount.trim()} 組（場地桌次固定時用）；人數塞不下會擋下不分組，留空改回自動`}
         </span>
         {/* 每日更新名單後的新報名：只補未分組的人進現有組，已分好的完全不動 */}
         {grouped.length > 0 && grouped.length < active.length && (
@@ -1084,11 +1103,13 @@ export function SessionCard({
   // 講座型場次：不供餐、不分組——名單列表隱藏葷素與組別欄（版面也不再擠爆）
   const isSeminar =
     (session.financeTemplate ?? deriveFinanceTemplate(session.title)) === "SEMINAR";
-  // 手動指定組別的選單範圍：已用到的最大組號與公式組數取大者
-  const maxGroupNo = Math.max(
-    groupCountFor(stats.total, session.groupCap),
-    ...session.signups.map((s) => s.groupNo ?? 0),
-  );
+  // 手動指定組別的選單範圍。設了固定組數就以它為準——多列出第 N+1 組是個陷阱，
+  // 送出去後端也會擋（上界一致收斂到有效組數）。
+  // 沒固定時：已用到的最大組號與公式組數取大者。
+  const autoGroupNo = groupCountFor(stats.total, session.groupCap, session.groupCaps);
+  const maxGroupNo =
+    session.groupCountFixed ??
+    Math.max(autoGroupNo, ...session.signups.map((s) => s.groupNo ?? 0));
 
   // 名單搜尋（client 端過濾，不打 DB）。只影響表格顯示——
   // 上方統計、分組面板、簽到表匯出一律走完整名單，數字不會被搜尋條件帶偏。

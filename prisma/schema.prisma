@@ -789,6 +789,7 @@ model CourseSession {
   sortOrder Int       @default(0)
   groupCap  Int       @default(8) // 每組人數上限預設值（自動分組用；組數 = max(6, ⌈人數/上限⌉)）
   groupCaps Int[]     @default([]) // 逐組上限覆寫（index 0 = 第 1 組；0 或缺值 = 用 groupCap）——場地桌子大小不一時逐組調
+  groupCountFixed Int? // 固定組數（場地桌次固定時用）；null = 自動推導 max(6, ⌈人數/上限⌉)。有值時優先於下限 6，塞不下由 action 擋下
 
   // ── 上課連結（/live 憑碼索取）──
   // 發簡訊給學員後，他們到 /live 輸入這場的 4 位上課碼即可看到會議連結與課程資料。
