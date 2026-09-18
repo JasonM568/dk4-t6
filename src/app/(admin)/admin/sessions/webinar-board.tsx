@@ -99,16 +99,12 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
   ).length;
 
   return (
-    <div className="rounded-xl border border-gray-200 p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    // 預設收起：索取者是逐筆 inline 印出來的，四場小聚加起來 400 多個名字
+    // 全部攤開，整頁會長到難以操作。摘要列保留「人數／退信／被擋下」這些
+    // 一眼要看到的訊號，細節點開再看。
+    <details className="rounded-xl border border-gray-200">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2 p-4">
         <span className="font-medium">{webinar.title}</span>
-        <Link
-          href={`/webinar/${webinar.slug}`}
-          target="_blank"
-          className="font-mono text-xs text-gray-400 hover:text-blue-600 hover:underline"
-        >
-          /webinar/{webinar.slug}
-        </Link>
         {webinar.offlineLabel && (
           <span className="text-xs text-gray-400">{webinar.offlineLabel} 下架</span>
         )}
@@ -117,75 +113,92 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
             {problemCount} 筆退信/失敗
           </span>
         )}
+        {/* 被防機器人擋下的筆數：收起狀態也要看得到，否則沒人會去點開發現 */}
+        {webinar.blockedCount > 0 && (
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-900">
+            ⚠️ {webinar.blockedCount} 筆被擋下
+          </span>
+        )}
         <span className="ml-auto rounded-full bg-black px-3 py-1 text-sm font-bold text-white">
           {webinar.requests.length} 人索取
         </span>
+      </summary>
+      <div className="border-t border-gray-100 p-4">
+        <div className="mb-2">
+          <Link
+            href={`/webinar/${webinar.slug}`}
+            target="_blank"
+            className="font-mono text-xs text-gray-400 hover:text-blue-600 hover:underline"
+          >
+            /webinar/{webinar.slug} ↗
+          </Link>
+        </div>
+        {webinar.requests.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Link
+              href={`/admin/webinars/${webinar.id}/preview`}
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-50"
+            >
+              ✉️ 預覽索取信
+            </Link>
+            <Link
+              href={`/admin/sms?webinar=${webinar.id}`}
+              className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700 transition hover:bg-indigo-50"
+            >
+              📱 發提醒簡訊
+            </Link>
+            <CopyPhonesButton requests={webinar.requests} />
+          </div>
+        )}
+        {/* 有人按了送出、畫面顯示成功，但被防機器人擋下——這裡只提醒，
+            補寄的入口在「行銷推播 → 講座報名」（同一份資料只留一處可改） */}
+        {webinar.blockedCount > 0 && (
+          <p className="mb-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">
+            ⚠️ 有 <strong>{webinar.blockedCount}</strong> 筆送出被防機器人擋下（對方看到的是
+            「已寄出」，實際沒收到信也沒進名單）。請到{" "}
+            <Link href="/admin/webinars" className="underline">
+              行銷推播 → 講座報名
+            </Link>{" "}
+            補寄。
+          </p>
+        )}
+        {webinar.requests.length === 0 ? (
+          <p className="text-sm text-gray-400">尚無人索取</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {webinar.requests.map((r) => {
+              const badge = r.deliveryStatus ? DELIVERY_BADGES[r.deliveryStatus] : null;
+              const isProblem = !!r.deliveryStatus && PROBLEM_STATUSES.has(r.deliveryStatus);
+              return (
+                <span
+                  key={r.id}
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm ${
+                    isProblem ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700"
+                  }`}
+                  title={r.deliveryDetail ?? undefined}
+                >
+                  {r.name ?? r.email}
+                  {r.name && <span className="text-xs text-gray-400">{r.email}</span>}
+                  {r.phone && (
+                    <span
+                      className="font-mono text-xs text-gray-400"
+                      title={isOverseasPhone(r.phone) ? "海外門號，不發簡訊" : undefined}
+                    >
+                      {formatMobile(r.phone)}
+                      {isOverseasPhone(r.phone) && " 🌏"}
+                    </span>
+                  )}
+                  {badge && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-xs ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
-      {webinar.requests.length > 0 && (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Link
-            href={`/admin/webinars/${webinar.id}/preview`}
-            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-50"
-          >
-            ✉️ 預覽索取信
-          </Link>
-          <Link
-            href={`/admin/sms?webinar=${webinar.id}`}
-            className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700 transition hover:bg-indigo-50"
-          >
-            📱 發提醒簡訊
-          </Link>
-          <CopyPhonesButton requests={webinar.requests} />
-        </div>
-      )}
-      {/* 有人按了送出、畫面顯示成功，但被防機器人擋下——這裡只提醒，
-          補寄的入口在「行銷推播 → 講座報名」（同一份資料只留一處可改） */}
-      {webinar.blockedCount > 0 && (
-        <p className="mb-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">
-          ⚠️ 有 <strong>{webinar.blockedCount}</strong> 筆送出被防機器人擋下（對方看到的是
-          「已寄出」，實際沒收到信也沒進名單）。請到{" "}
-          <Link href="/admin/webinars" className="underline">
-            行銷推播 → 講座報名
-          </Link>{" "}
-          補寄。
-        </p>
-      )}
-      {webinar.requests.length === 0 ? (
-        <p className="text-sm text-gray-400">尚無人索取</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {webinar.requests.map((r) => {
-            const badge = r.deliveryStatus ? DELIVERY_BADGES[r.deliveryStatus] : null;
-            const isProblem = !!r.deliveryStatus && PROBLEM_STATUSES.has(r.deliveryStatus);
-            return (
-              <span
-                key={r.id}
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm ${
-                  isProblem ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700"
-                }`}
-                title={r.deliveryDetail ?? undefined}
-              >
-                {r.name ?? r.email}
-                {r.name && <span className="text-xs text-gray-400">{r.email}</span>}
-                {r.phone && (
-                  <span
-                    className="font-mono text-xs text-gray-400"
-                    title={isOverseasPhone(r.phone) ? "海外門號，不發簡訊" : undefined}
-                  >
-                    {formatMobile(r.phone)}
-                    {isOverseasPhone(r.phone) && " 🌏"}
-                  </span>
-                )}
-                {badge && (
-                  <span className={`rounded-full px-1.5 py-0.5 text-xs ${badge.className}`}>
-                    {badge.label}
-                  </span>
-                )}
-              </span>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    </details>
   );
 }
