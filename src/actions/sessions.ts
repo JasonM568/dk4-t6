@@ -63,9 +63,44 @@ export async function createSessionAction(
   if (parsed.keywords.length === 0)
     return { error: "請至少填一個產品關鍵字（訂單歸類依據）" };
 
-  await prisma.courseSession.create({ data: parsed });
+  // 新場次排到最上面：sortOrder 一律給「目前最小值 − 1」。
+  // 留 default 0 會跟已手動排過序的場次（0…n−1）打平，順序由日期兜底、看起來像亂跳。
+  const top = await prisma.courseSession.aggregate({ _min: { sortOrder: true } });
+  const sortOrder = (top._min.sortOrder ?? 0) - 1;
+
+  await prisma.courseSession.create({ data: { ...parsed, sortOrder } });
   revalidatePath("/admin/sessions");
   return { success: `已建立場次「${parsed.title}」` };
+}
+
+/** 場次手動排序：前端送整串 id（由上到下），一次寫回 sortOrder = 0…n−1。
+ *
+ *  刻意收整串而不是「交換兩個」：拖曳一次可能跨好幾個位置，
+ *  而且整串重寫是冪等的——重送同一串結果一樣，不會愈點愈亂。
+ *  沒送到的場次不動（維持原 sortOrder），只是會排在這批之後。 */
+export async function reorderSessionsAction(
+  orderedIds: string[],
+): Promise<{ error?: string; success?: string }> {
+  await requireEditor();
+  const ids = orderedIds.filter((id) => typeof id === "string" && id.length > 0);
+  if (ids.length === 0) return { error: "沒有可排序的場次" };
+  if (new Set(ids).size !== ids.length) return { error: "場次順序有重複，請重新整理頁面" };
+
+  const existing = await prisma.courseSession.findMany({
+    where: { id: { in: ids } },
+    select: { id: true },
+  });
+  if (existing.length !== ids.length)
+    return { error: "有場次已被刪除，請重新整理頁面" };
+
+  await prisma.$transaction(
+    ids.map((id, i) =>
+      prisma.courseSession.update({ where: { id }, data: { sortOrder: i } }),
+    ),
+  );
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+  return { success: "已更新場次順序" };
 }
 
 export async function updateSessionAction(

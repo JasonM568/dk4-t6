@@ -6,7 +6,7 @@ import {
   BoardCodeForm,
   CreateSessionForm,
   UploadOrdersForm,
-  SessionCard,
+  SessionList,
 } from "./sessions-manager";
 
 export const metadata = { title: "場次看板 — 管理後台" };
@@ -130,57 +130,53 @@ export default async function AdminSessionsPage() {
 
       {/* 場次列表 */}
       <h2 className="mb-3 text-lg font-bold text-gray-700">📚 課程場次</h2>
-      <div className="space-y-3">
-        {sessions.length === 0 && (
-          <p className="rounded-xl border border-gray-200 px-4 py-6 text-center text-sm text-gray-400">
-            還沒有場次——先建立場次並設定產品關鍵字，再上傳訂單檔
-          </p>
-        )}
-        {sessions.map((s) => (
-          <SessionCard
-            key={s.id}
-            canEdit={canEditNow}
-            isAdmin={isAdminNow}
-            // 延期目標選單與「延期→/延期自」徽章要能解析其他場次的名稱
-            sessionOptions={sessions.map((o) => ({ id: o.id, title: o.title }))}
-            session={{
-              id: s.id,
-              title: s.title,
-              eventDate: s.eventDate?.toISOString() ?? null,
-              endDate: s.endDate?.toISOString() ?? null,
-              keywords: s.keywords,
-              isVisible: s.isVisible,
-              adminNote: s.adminNote,
-              groupCap: s.groupCap,
-              groupCaps: s.groupCaps,
-              groupCountFixed: s.groupCountFixed,
-              accessCode: s.accessCode,
-              meetingUrl: s.meetingUrl,
-              meetingId: s.meetingId,
-              meetingPassword: s.meetingPassword,
-              meetingInfo: s.meetingInfo,
-              financeTemplate: s.financeTemplate,
-              signups: s.signups.map((g) => ({
-                id: g.id,
-                orderNo: g.orderNo,
-                name: g.name,
-                email: g.email,
-                phone: g.phone,
-                product: g.product,
-                orderedAt: g.orderedAt?.toISOString() ?? null,
-                meal: g.meal,
-                groupNo: g.groupNo,
-                isStaff: g.isStaff,
-                isRetrain: g.isRetrain,
-                deferredToSessionId: g.deferredToSessionId,
-                deferredFromSessionId: g.deferredFromSessionId,
-                smsNoticeAt: g.smsNoticeAt?.toISOString() ?? null,
-                emailNoticeAt: g.emailNoticeAt?.toISOString() ?? null,
-              })),
-            }}
-          />
-        ))}
-      </div>
+      {sessions.length === 0 ? (
+        <p className="rounded-xl border border-gray-200 px-4 py-6 text-center text-sm text-gray-400">
+          還沒有場次——先建立場次並設定產品關鍵字，再上傳訂單檔
+        </p>
+      ) : (
+        <SessionList
+          canEdit={canEditNow}
+          isAdmin={isAdminNow}
+          // 延期目標選單與「延期→/延期自」徽章要能解析其他場次的名稱
+          sessionOptions={sessions.map((o) => ({ id: o.id, title: o.title }))}
+          sessions={sessions.map((s) => ({
+            id: s.id,
+            title: s.title,
+            eventDate: s.eventDate?.toISOString() ?? null,
+            endDate: s.endDate?.toISOString() ?? null,
+            keywords: s.keywords,
+            isVisible: s.isVisible,
+            adminNote: s.adminNote,
+            groupCap: s.groupCap,
+            groupCaps: s.groupCaps,
+            groupCountFixed: s.groupCountFixed,
+            accessCode: s.accessCode,
+            meetingUrl: s.meetingUrl,
+            meetingId: s.meetingId,
+            meetingPassword: s.meetingPassword,
+            meetingInfo: s.meetingInfo,
+            financeTemplate: s.financeTemplate,
+            signups: s.signups.map((g) => ({
+              id: g.id,
+              orderNo: g.orderNo,
+              name: g.name,
+              email: g.email,
+              phone: g.phone,
+              product: g.product,
+              orderedAt: g.orderedAt?.toISOString() ?? null,
+              meal: g.meal,
+              groupNo: g.groupNo,
+              isStaff: g.isStaff,
+              isRetrain: g.isRetrain,
+              deferredToSessionId: g.deferredToSessionId,
+              deferredFromSessionId: g.deferredFromSessionId,
+              smsNoticeAt: g.smsNoticeAt?.toISOString() ?? null,
+              emailNoticeAt: g.emailNoticeAt?.toISOString() ?? null,
+            })),
+          }))}
+        />
+      )}
     </div>
   );
 }

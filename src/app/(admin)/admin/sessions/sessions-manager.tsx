@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   createSessionAction,
+  reorderSessionsAction,
   updateSessionAction,
   deleteSessionAction,
   addSignupAction,
@@ -55,6 +56,7 @@ import {
 } from "@/lib/roster-search";
 // 講座型場次判斷與收支表模板共用同一條規則（人工指定優先、否則看名稱）
 import { deriveFinanceTemplate } from "@/lib/finance/labels";
+import { moveByDelta, moveToTarget } from "@/lib/session-order";
 import { computeNoticeProgress } from "@/lib/session-notice";
 
 export type SignupRow = {
@@ -1075,16 +1077,175 @@ function SaveToMailGroupForm({ session }: { session: SessionRow }) {
   );
 }
 
+/** 場次清單：手動排序（拖曳或上下箭頭）＋「全部展開／收起」總開關。
+ *
+ *  排序存在 CourseSession.sortOrder。這個欄位一直存在卻沒有入口可以改，
+ *  所以實際上全部是 0、只能退回開課日排——沒填日期的場次就卡在中間。
+ *
+ *  樂觀更新：先動畫面再送出，失敗才回捲並顯示錯誤。排序是低風險操作，
+ *  每拖一次等一個 round-trip 才動會很難用。 */
+export function SessionList({
+  sessions,
+  canEdit,
+  isAdmin,
+  sessionOptions,
+}: {
+  sessions: SessionRow[];
+  canEdit: boolean;
+  isAdmin: boolean;
+  sessionOptions: { id: string; title: string }[];
+}) {
+  const [order, setOrder] = useState(sessions);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, startSaving] = useTransition();
+  // 展開狀態靠重新掛載卡片來套用；tick 變動＝強制重掛
+  const [expandTick, setExpandTick] = useState(0);
+  const [expandAll, setExpandAll] = useState(false);
+
+  // 伺服器端資料換了（新增/刪除場次、重新整理）就以它為準
+  const serverKey = sessions.map((s) => s.id).join(",");
+  const lastServerKey = useRef(serverKey);
+  useEffect(() => {
+    if (lastServerKey.current !== serverKey) {
+      lastServerKey.current = serverKey;
+      setOrder(sessions);
+    }
+  }, [serverKey, sessions]);
+
+  const persist = (next: SessionRow[]) => {
+    const prev = order;
+    setOrder(next);
+    setError(null);
+    startSaving(async () => {
+      const r = await reorderSessionsAction(next.map((s) => s.id));
+      if (r?.error) {
+        setOrder(prev); // 失敗就回捲，別讓畫面說謊
+        setError(r.error);
+      }
+    });
+  };
+
+  const move = (id: string, delta: number) => {
+    const next = moveByDelta(order, id, delta);
+    if (next !== order) persist(next);
+  };
+
+  const dropOn = (targetId: string) => {
+    if (!dragId) return;
+    const next = moveToTarget(order, dragId, targetId);
+    if (next !== order) persist(next);
+  };
+
+  const toggleExpandAll = () => {
+    setExpandAll((v) => !v);
+    setExpandTick((n) => n + 1);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <button
+          type="button"
+          onClick={toggleExpandAll}
+          className="rounded-lg border border-gray-300 px-2.5 py-1 font-medium text-gray-600 transition hover:bg-gray-100"
+        >
+          {expandAll ? "全部收起" : "全部展開"}
+        </button>
+        {canEdit && (
+          <span className="text-gray-400">
+            拖曳左側 ⠿ 或按 ↑↓ 調整場次順序{saving && "（儲存中…）"}
+          </span>
+        )}
+        {error && <span className="font-medium text-red-600">{error}</span>}
+      </div>
+
+      {order.map((s, i) => (
+        <div
+          key={s.id}
+          onDragOver={(e) => {
+            if (!dragId) return;
+            e.preventDefault();
+            setOverId(s.id);
+          }}
+          onDragLeave={() => setOverId((v) => (v === s.id ? null : v))}
+          onDrop={(e) => {
+            e.preventDefault();
+            dropOn(s.id);
+            setDragId(null);
+            setOverId(null);
+          }}
+          className={`flex items-start gap-1.5 rounded-xl transition ${
+            overId === s.id && dragId !== s.id ? "ring-2 ring-indigo-400" : ""
+          } ${dragId === s.id ? "opacity-50" : ""}`}
+        >
+          {canEdit && (
+            <div className="flex shrink-0 flex-col items-center gap-0.5 pt-3">
+              <span
+                draggable
+                onDragStart={(e) => {
+                  setDragId(s.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", s.id);
+                }}
+                onDragEnd={() => {
+                  setDragId(null);
+                  setOverId(null);
+                }}
+                title="拖曳調整順序"
+                className="cursor-grab select-none px-1 text-gray-300 transition hover:text-gray-500 active:cursor-grabbing"
+              >
+                ⠿
+              </span>
+              <button
+                type="button"
+                onClick={() => move(s.id, -1)}
+                disabled={i === 0 || saving}
+                title="往上移"
+                className="px-1 text-xs leading-none text-gray-400 transition hover:text-black disabled:opacity-20"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                onClick={() => move(s.id, 1)}
+                disabled={i === order.length - 1 || saving}
+                title="往下移"
+                className="px-1 text-xs leading-none text-gray-400 transition hover:text-black disabled:opacity-20"
+              >
+                ▼
+              </button>
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <SessionCard
+              key={`${s.id}:${expandTick}`}
+              canEdit={canEdit}
+              isAdmin={isAdmin}
+              sessionOptions={sessionOptions}
+              session={s}
+              defaultOpen={expandAll}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** 場次卡片：報名名單 + 編輯 + 刪除 + 分組 + 延期 */
 export function SessionCard({
   session,
   canEdit,
   isAdmin = false,
   sessionOptions,
+  defaultOpen = false,
 }: {
   session: SessionRow;
   canEdit: boolean;
   isAdmin?: boolean; // 收支入口僅管理員（分潤金額是內部薪酬）
+  defaultOpen?: boolean; // 「全部展開／收起」用；之後仍可各自點開點關
   sessionOptions: { id: string; title: string }[];
 }) {
   const [editState, editAction, editing] = useActionState<SessionFormState, FormData>(
@@ -1156,7 +1317,7 @@ export function SessionCard({
   }, [session.signups]);
 
   return (
-    <details className="rounded-xl border border-gray-200">
+    <details className="rounded-xl border border-gray-200" open={defaultOpen}>
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
         <span className="font-medium">{session.title}</span>
         {session.eventDate && (
