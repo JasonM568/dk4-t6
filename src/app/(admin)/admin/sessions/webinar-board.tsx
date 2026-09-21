@@ -148,6 +148,13 @@ function WebinarBoardCard({ webinar }: { webinar: BoardWebinar }) {
               📱 發提醒簡訊
             </Link>
             <CopyPhonesButton requests={webinar.requests} />
+          {/* CSV 含 email 與「被擋下」標記欄；複製手機名單只給有手機的那些 */}
+          <a
+            href={`/api/admin/webinars/${webinar.id}/requests.csv`}
+            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-50"
+          >
+            ⬇ 匯出名單 CSV
+          </a>
           </div>
         )}
         {/* 有人按了送出、畫面顯示成功，但被防機器人擋下——這裡只提醒，

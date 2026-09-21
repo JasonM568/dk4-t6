@@ -568,6 +568,13 @@ export function WebinarCard({
               📱 發提醒簡訊
             </Link>
             <CopyPhonesButton requests={webinar.requests} />
+            {/* CSV 含 email 與「被擋下」標記欄；複製手機名單只給有手機的那些 */}
+            <a
+              href={`/api/admin/webinars/${webinar.id}/requests.csv`}
+              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-50"
+            >
+              ⬇ 匯出名單 CSV
+            </a>
             {/* 缺手機的才需要比對；補齊了就不顯示，避免一顆按不出東西的按鈕 */}
             {webinar.requests.some((r) => !r.phone) && (
               <BackfillPhonesButton webinarId={webinar.id} />
