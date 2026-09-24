@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
 import {
   batchEnrollAction,
@@ -35,6 +35,21 @@ export function CourseMembersManager({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  // 名單文字框必須是「受控」的。用 defaultValue 會壞在這條路上：
+  // 進頁面時還沒選場次 → initialList 是空字串 → textarea 掛載成空的；
+  // 按「載入場次名單」是軟導航，client 元件實例被沿用，React 不會回頭改
+  // 非受控 input 的值，所以文字框仍是空的。接著按送出，textarea 的 required
+  // 讓瀏覽器擋下來——沒有任何請求送出，畫面也沒有錯誤，看起來就像「匯入沒反應」。
+  // 2026-09-24 就是這樣讓 0919 台北場整批 26 人一個都沒開通。
+  const [list, setList] = useState(initialList);
+  const lastInitial = useRef(initialList);
+  useEffect(() => {
+    // 只在伺服器送來不同的名單時覆寫，不洗掉使用者手動編輯的內容
+    if (lastInitial.current !== initialList) {
+      lastInitial.current = initialList;
+      setList(initialList);
+    }
+  }, [initialList]);
   const [addState, addAction, adding] = useActionState<BatchState, FormData>(
     batchEnrollAction,
     null,
@@ -85,23 +100,34 @@ export function CourseMembersManager({
           {sourceLabel ? `一鍵處理「${sourceLabel}」課後影片權限` : "新增觀看名單（一行一個 email，可「email,姓名」格式）"}
         </label>
         <textarea
+          id="batch-enroll-list"
           name="list"
           rows={4}
           required
-          defaultValue={initialList}
+          value={list}
+          onChange={(e) => setList(e.target.value)}
           placeholder={"student1@example.com\nstudent2@example.com,王小明"}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
         />
         <p className="text-xs text-gray-400">
           已註冊者直接開通；未註冊者建立待開通，日後以同一 Email 註冊會自動取得影片；同 Email 不同姓名會停止並要求人工確認。
         </p>
-        <button
-          type="submit"
-          disabled={adding}
-          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
-        >
-          {adding ? "處理中，請勿關閉頁面…" : sourceLabel ? "確認並一鍵處理" : "新增到觀看名單"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={adding || list.trim().length === 0}
+            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+          >
+            {adding ? "處理中，請勿關閉頁面…" : sourceLabel ? "確認並一鍵處理" : "新增到觀看名單"}
+          </button>
+          {/* 名單筆數顯示在按鈕旁：文字框沒帶到名單時一眼看得出來，
+              不必等按下去才被瀏覽器的驗證泡泡擋 */}
+          <span className="text-xs text-gray-500">
+            {list.trim().length === 0
+              ? "名單是空的——請先「載入場次名單」或直接貼上"
+              : `待處理 ${list.split("\n").filter((l) => l.trim()).length} 筆`}
+          </span>
+        </div>
         {addState?.error && (
           <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {addState.error}
