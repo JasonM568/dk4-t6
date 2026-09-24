@@ -104,9 +104,24 @@ export default async function CourseMembersPage({
       </p>
 
       {canEditNow && <form className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
-        <label className="block text-sm font-medium text-blue-900">從場次名單處理課後影片權限</label>
-        <p className="mt-1 text-xs text-blue-700/70">選定場次後，系統帶入有效報名者（排除工作人員與延期原列），先顯示缺漏與衝突，再由你確認一鍵開通。</p>
-        <div className="mt-2 flex flex-wrap gap-2"><select name="sessionId" defaultValue={sourceSession?.id ?? ""} className="min-w-72 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm"><option value="">— 選擇上課場次 —</option>{sessions.map((s) => <option key={s.id} value={s.id}>{s.title}{s.eventDate ? `（${s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}）` : ""}</option>)}</select><button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white">載入場次名單</button>{sourceSession && <Link href={`/admin/courses/${id}/members`} className="rounded-lg border border-blue-300 px-4 py-2 text-sm text-blue-700">清除場次</Link>}</div>
+        <label className="block text-sm font-medium text-blue-900">
+          步驟 1／2：從場次名單帶入名單
+        </label>
+        {/* 這顆按鈕以前叫「載入場次名單」，管理員讀成「匯入」，按完看到下方
+            「可能漏開通」的紅字就以為失敗了——實際上它只把名單帶進表單，
+            真正開通是步驟 2。2026-09-24 整批 26 人零開通就是這樣來的。 */}
+        <p className="mt-1 text-xs text-blue-700/70">
+          帶入有效報名者（排除工作人員與延期原列）到下方表單。
+          <strong className="text-blue-900">這一步還不會開通任何人</strong>，
+          要再按下方的「確認並一鍵處理」才會真的開通。
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2"><select name="sessionId" defaultValue={sourceSession?.id ?? ""} className="min-w-72 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm"><option value="">— 選擇上課場次 —</option>{sessions.map((s) => <option key={s.id} value={s.id}>{s.title}{s.eventDate ? `（${s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}）` : ""}</option>)}</select><button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white">帶入名單到下方表單 ↓</button>{sourceSession && <Link href={`/admin/courses/${id}/members`} className="rounded-lg border border-blue-300 px-4 py-2 text-sm text-blue-700">清除場次</Link>}</div>
+        {sourceSession && (
+          <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs font-medium text-blue-900">
+            ✓ 已帶入 {initialList ? initialList.split("\n").filter((l) => l.trim()).length : 0} 筆到下方表單
+            —— <strong>還沒開通</strong>，請按下方「確認並一鍵處理」完成步驟 2。
+          </p>
+        )}
       </form>}
 
       {/* 動作緊跟著流程：選場次 → 載入名單 → 就在這裡按確認。

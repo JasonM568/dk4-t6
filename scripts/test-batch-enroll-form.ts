@@ -74,6 +74,19 @@ console.log("\n★ 送出按鈕必須跟「載入場次名單」在同一段流�
   check("匯入表單排在下方名單元件之前", formAt < managerAt);
 }
 
+console.log("\n兩步驟必須標示清楚：帶入名單不等於開通");
+{
+  check(
+    "帶入鈕不得再叫「載入場次名單」——會被讀成匯入",
+    !/載入場次名單<\/button>/.test(PAGE),
+    "管理員按完以為開通好了，看到紅字才以為失敗",
+  );
+  check("帶入鈕明示會帶到下方表單", /帶入名單到下方表單/.test(PAGE));
+  check("說明文字明講這一步不會開通", /這一步還不會開通任何人/.test(PAGE));
+  check("帶入後顯示筆數與下一步指示", /已帶入 \{/.test(PAGE) && /請按下方「確認並一鍵處理」/.test(PAGE));
+  check("兩個區塊都有步驟標示", /步驟 1／2/.test(PAGE) && /步驟 2／2/.test(SRC));
+}
+
 console.log("\n頁面仍須把場次名單組成 email,姓名 傳進元件");
 {
   check("page 有組 initialList", /const initialList = sourceSession\?\.signups/.test(PAGE));

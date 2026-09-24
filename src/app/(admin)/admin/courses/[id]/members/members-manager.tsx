@@ -63,7 +63,9 @@ export function BatchEnrollForm({
       >
         <input type="hidden" name="courseId" value={courseId} />
         <label className="block text-sm font-medium">
-          {sourceLabel ? `一鍵處理「${sourceLabel}」課後影片權限` : "新增觀看名單（一行一個 email，可「email,姓名」格式）"}
+          {sourceLabel
+            ? `步驟 2／2：確認開通「${sourceLabel}」課後影片權限`
+            : "新增觀看名單（一行一個 email，可「email,姓名」格式）"}
         </label>
         <textarea
           id="batch-enroll-list"
