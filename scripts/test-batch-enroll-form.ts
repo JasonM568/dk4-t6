@@ -57,12 +57,29 @@ console.log("\n名單空的時候要看得出來，不能只靠瀏覽器的驗�
   check("畫面上有提示或筆數", /名單是空的/.test(SRC) && /待處理/.test(SRC));
 }
 
+console.log("\n★ 送出按鈕必須跟「載入場次名單」在同一段流程裡（2026-09-24 事故的真正原因）");
+{
+  const pickerAt = PAGE.indexOf("從場次名單處理課後影片權限");
+  const formAt = PAGE.indexOf("<BatchEnrollForm");
+  const rosterAt = PAGE.indexOf("<RosterOverview");
+  const managerAt = PAGE.indexOf("<CourseMembersManager");
+  check("匯入表單是獨立元件 BatchEnrollForm", /export function BatchEnrollForm/.test(SRC));
+  check("頁面有渲染 BatchEnrollForm", formAt > 0);
+  check("匯入表單排在「載入場次名單」之後", formAt > pickerAt);
+  check(
+    "匯入表單排在「開通作業總覽」表格之前 —— 不可再被推到頁面下方",
+    formAt < rosterAt,
+    "被 28 列的總覽表格推下去，管理員就看不到那顆確認鈕了",
+  );
+  check("匯入表單排在下方名單元件之前", formAt < managerAt);
+}
+
 console.log("\n頁面仍須把場次名單組成 email,姓名 傳進元件");
 {
   check("page 有組 initialList", /const initialList = sourceSession\?\.signups/.test(PAGE));
   check("過濾掉沒有 email 的人", /\.filter\(\(s\) => s\.email\?\.trim\(\)\)/.test(PAGE));
   check("email 一律小寫", /\.toLowerCase\(\)/.test(PAGE));
-  check("initialList 有傳給元件", /initialList=\{initialList\}/.test(PAGE));
+  check("initialList 有傳給匯入表單", /<BatchEnrollForm[\s\S]*?initialList=\{initialList\}/.test(PAGE));
 }
 
 console.log(`\n${pass} 過 / ${fail} 失敗`);

@@ -6,7 +6,7 @@ import { enrollmentSource, formatDate } from "@/lib/format";
 import { createGroupFromCourseAction, deletePendingEnrollmentAction } from "@/actions/admin";
 import { currentCanEdit } from "@/lib/auth/staff";
 import { SubmitButton } from "@/components/admin/submit-button";
-import { CourseMembersManager } from "./members-manager";
+import { BatchEnrollForm, CourseMembersManager } from "./members-manager";
 import { buildCourseRoster } from "@/lib/course-roster";
 import { RosterOverview } from "./roster-overview";
 
@@ -108,6 +108,15 @@ export default async function CourseMembersPage({
         <p className="mt-1 text-xs text-blue-700/70">選定場次後，系統帶入有效報名者（排除工作人員與延期原列），先顯示缺漏與衝突，再由你確認一鍵開通。</p>
         <div className="mt-2 flex flex-wrap gap-2"><select name="sessionId" defaultValue={sourceSession?.id ?? ""} className="min-w-72 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm"><option value="">— 選擇上課場次 —</option>{sessions.map((s) => <option key={s.id} value={s.id}>{s.title}{s.eventDate ? `（${s.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}）` : ""}</option>)}</select><button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white">載入場次名單</button>{sourceSession && <Link href={`/admin/courses/${id}/members`} className="rounded-lg border border-blue-300 px-4 py-2 text-sm text-blue-700">清除場次</Link>}</div>
       </form>}
+
+      {/* 動作緊跟著流程：選場次 → 載入名單 → 就在這裡按確認。
+          不可以再被「開通作業總覽」那張表推到頁面下方（2026-09-24 事故）。 */}
+      <BatchEnrollForm
+        courseId={course.id}
+        canEdit={canEditNow}
+        initialList={initialList}
+        sourceLabel={sourceSession?.title ?? null}
+      />
 
       <RosterOverview rows={rosterRows} />
 
@@ -228,8 +237,6 @@ export default async function CourseMembersPage({
       <CourseMembersManager
         courseId={course.id}
         canEdit={canEditNow}
-        initialList={initialList}
-        sourceLabel={sourceSession?.title ?? null}
         members={enrollments.map((e) => {
           const p = profById.get(e.userId);
           return {

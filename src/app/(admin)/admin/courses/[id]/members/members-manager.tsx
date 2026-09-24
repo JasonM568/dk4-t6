@@ -20,77 +20,43 @@ export type CourseMemberRow = {
   createdAt: string;
 };
 
-export function CourseMembersManager({
+/** 匯入表單：獨立元件，放在「載入場次名單」正下方。
+ *
+ *  2026-09-24 的事故：這段本來長在 CourseMembersManager 裡，而那個元件被排在
+ *  「開通作業總覽」28 列表格、待開通名單、EDM 同步、來源統計之後——
+ *  藍色區塊寫著「選定場次後…再由你確認一鍵開通」，但那顆確認鈕在幾百像素之外。
+ *  管理員載完名單、看到表格說「可能漏開通」，合理地以為匯入失敗了。
+ *  整批 26 人一個都沒開通，而且不是第一次；Vercel log 顯示零筆 POST，
+ *  因為那顆按鈕從來沒被按到。動作要跟它所屬的流程放在一起。
+ */
+export function BatchEnrollForm({
   courseId,
-  members,
   canEdit = true,
   initialList = "",
   sourceLabel = null,
 }: {
   courseId: string;
-  members: CourseMemberRow[];
-  canEdit?: boolean; // 總教練(唯讀)為 false：只看名單，隱藏新增/移除/勾選
+  canEdit?: boolean;
   initialList?: string;
   sourceLabel?: string | null;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
-  // 名單文字框必須是「受控」的。用 defaultValue 會壞在這條路上：
-  // 進頁面時還沒選場次 → initialList 是空字串 → textarea 掛載成空的；
-  // 按「載入場次名單」是軟導航，client 元件實例被沿用，React 不會回頭改
-  // 非受控 input 的值，所以文字框仍是空的。接著按送出，textarea 的 required
-  // 讓瀏覽器擋下來——沒有任何請求送出，畫面也沒有錯誤，看起來就像「匯入沒反應」。
-  // 2026-09-24 就是這樣讓 0919 台北場整批 26 人一個都沒開通。
+  const [addState, addAction, adding] = useActionState<BatchState, FormData>(
+    batchEnrollAction,
+    null,
+  );
+  // 名單文字框必須受控：伺服器換了名單要跟著換，
+  // 但不能洗掉使用者手動編輯的內容
   const [list, setList] = useState(initialList);
   const lastInitial = useRef(initialList);
   useEffect(() => {
-    // 只在伺服器送來不同的名單時覆寫，不洗掉使用者手動編輯的內容
     if (lastInitial.current !== initialList) {
       lastInitial.current = initialList;
       setList(initialList);
     }
   }, [initialList]);
-  const [addState, addAction, adding] = useActionState<BatchState, FormData>(
-    batchEnrollAction,
-    null,
-  );
-  const [revokeState, revokeAction, revoking] = useActionState<
-    RevokeState,
-    FormData
-  >(batchRevokeEnrollmentAction.bind(null, courseId), null);
 
-  // 搜尋：姓名/email 子字串即時過濾（名單已全量在前端，不需重新查詢）
-  const query = search.trim().toLowerCase();
-  const visible = query
-    ? members.filter(
-        (m) =>
-          (m.name ?? "").toLowerCase().includes(query) ||
-          (m.email ?? "").toLowerCase().includes(query),
-      )
-    : members;
-
-  // 全選只作用在目前搜尋結果上
-  const allSelected =
-    visible.length > 0 && visible.every((m) => selected.has(m.userId));
-  const toggle = (id: string) =>
-    setSelected((cur) => {
-      const next = new Set(cur);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const toggleAll = () =>
-    setSelected((cur) => {
-      const next = new Set(cur);
-      if (allSelected) visible.forEach((m) => next.delete(m.userId));
-      else visible.forEach((m) => next.add(m.userId));
-      return next;
-    });
-
+  if (!canEdit) return null;
   return (
-    <>
-      {/* 新增觀看名單（總教練唯讀時隱藏） */}
-      {canEdit && (
       <form
         action={addAction}
         className="mb-6 space-y-2 rounded-xl border border-dashed border-gray-300 p-4"
@@ -142,8 +108,75 @@ export function CourseMembersManager({
           </div>
         )}
       </form>
-      )}
+  );
+}
 
+export function CourseMembersManager({
+  courseId,
+  members,
+  canEdit = true,
+  initialList = "",
+  sourceLabel = null,
+}: {
+  courseId: string;
+  members: CourseMemberRow[];
+  canEdit?: boolean; // 總教練(唯讀)為 false：只看名單，隱藏新增/移除/勾選
+  initialList?: string;
+  sourceLabel?: string | null;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  // 名單文字框必須是「受控」的。用 defaultValue 會壞在這條路上：
+  // 進頁面時還沒選場次 → initialList 是空字串 → textarea 掛載成空的；
+  // 按「載入場次名單」是軟導航，client 元件實例被沿用，React 不會回頭改
+  // 非受控 input 的值，所以文字框仍是空的。接著按送出，textarea 的 required
+  // 讓瀏覽器擋下來——沒有任何請求送出，畫面也沒有錯誤，看起來就像「匯入沒反應」。
+  // 2026-09-24 就是這樣讓 0919 台北場整批 26 人一個都沒開通。
+  const [list, setList] = useState(initialList);
+  const lastInitial = useRef(initialList);
+  useEffect(() => {
+    // 只在伺服器送來不同的名單時覆寫，不洗掉使用者手動編輯的內容
+    if (lastInitial.current !== initialList) {
+      lastInitial.current = initialList;
+      setList(initialList);
+    }
+  }, [initialList]);
+  const [revokeState, revokeAction, revoking] = useActionState<
+    RevokeState,
+    FormData
+  >(batchRevokeEnrollmentAction.bind(null, courseId), null);
+
+  // 搜尋：姓名/email 子字串即時過濾（名單已全量在前端，不需重新查詢）
+  const query = search.trim().toLowerCase();
+  const visible = query
+    ? members.filter(
+        (m) =>
+          (m.name ?? "").toLowerCase().includes(query) ||
+          (m.email ?? "").toLowerCase().includes(query),
+      )
+    : members;
+
+  // 全選只作用在目前搜尋結果上
+  const allSelected =
+    visible.length > 0 && visible.every((m) => selected.has(m.userId));
+  const toggle = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (allSelected) visible.forEach((m) => next.delete(m.userId));
+      else visible.forEach((m) => next.add(m.userId));
+      return next;
+    });
+
+  return (
+    <>
+      {/* 新增觀看名單（總教練唯讀時隱藏） */}
       {/* 搜尋：即時過濾名單（放在 form 外，避免 Enter 誤觸移除送出） */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
