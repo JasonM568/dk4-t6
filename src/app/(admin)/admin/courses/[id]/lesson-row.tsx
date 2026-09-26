@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import type { LessonFormState } from "@/actions/admin";
 
 type Lesson = {
   id: string;
@@ -13,7 +14,7 @@ type Lesson = {
 
 type LessonRowProps = {
   lesson: Lesson;
-  updateAction: (formData: FormData) => Promise<void>; // 已綁定 lessonId/courseId
+  updateAction: (prev: LessonFormState, formData: FormData) => Promise<LessonFormState>; // 已綁定 lessonId/courseId
   deleteAction: () => Promise<void>; // 已綁定 lessonId/courseId
 };
 
@@ -21,6 +22,25 @@ type LessonRowProps = {
 export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps) {
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [state, formAction, saving] = useActionState<LessonFormState, FormData>(
+    updateAction,
+    null,
+  );
+  // 受控欄位：存檔失敗時保留使用者改的內容
+  const [form, setForm] = useState(() => toForm(lesson));
+  const set = (k: keyof ReturnType<typeof toForm>) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // 存檔成功才收起編輯列（失敗留在原地顯示原因）
+  useEffect(() => {
+    if (state?.ok) setEditing(false);
+  }, [state]);
+
+  function startEditing() {
+    setForm(toForm(lesson));
+    setEditing(true);
+  }
 
   if (!editing) {
     return (
@@ -32,7 +52,7 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
         </span>
         <button
           type="button"
-          onClick={() => setEditing(true)}
+          onClick={startEditing}
           className="text-indigo-600 hover:underline"
         >
           編輯
@@ -56,12 +76,8 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
   return (
     <li className="px-4 py-3">
       <form
-        action={(formData) => {
-          startTransition(async () => {
-            await updateAction(formData);
-            setEditing(false);
-          });
-        }}
+        action={formAction}
+        data-unsaved-lesson="true"
         className="flex flex-wrap items-end gap-2"
       >
         <div className="w-14">
@@ -69,7 +85,8 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
           <input
             name="order"
             type="number"
-            defaultValue={lesson.order}
+            value={form.order}
+            onChange={set("order")}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -78,7 +95,8 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
           <input
             name="title"
             required
-            defaultValue={lesson.title}
+            value={form.title}
+            onChange={set("title")}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -89,7 +107,8 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
           <input
             name="youtubeId"
             required
-            defaultValue={lesson.youtubeId}
+            value={form.youtubeId}
+            onChange={set("youtubeId")}
             placeholder="可直接貼影片網址或嵌入碼"
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
@@ -99,7 +118,8 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
           <input
             name="durationSec"
             type="number"
-            defaultValue={lesson.durationSec ?? ""}
+            value={form.durationSec}
+            onChange={set("durationSec")}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -110,17 +130,23 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
           <input
             name="slideUrl"
             type="url"
-            defaultValue={lesson.slideUrl ?? ""}
+            value={form.slideUrl}
+            onChange={set("slideUrl")}
             placeholder="https://docs.google.com/presentation/…"
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
         </div>
+        {state?.error && (
+          <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {state.error}
+          </p>
+        )}
         <button
           type="submit"
-          disabled={pending}
+          disabled={saving}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
-          {pending ? "儲存中…" : "儲存"}
+          {saving ? "儲存中…" : "儲存"}
         </button>
         <button
           type="button"
@@ -132,4 +158,14 @@ export function LessonRow({ lesson, updateAction, deleteAction }: LessonRowProps
       </form>
     </li>
   );
+}
+
+function toForm(lesson: Lesson) {
+  return {
+    order: String(lesson.order),
+    title: lesson.title,
+    youtubeId: lesson.youtubeId,
+    durationSec: lesson.durationSec == null ? "" : String(lesson.durationSec),
+    slideUrl: lesson.slideUrl ?? "",
+  };
 }

@@ -79,6 +79,17 @@ export function CourseForm({
 
   const busy = pending || coverUploading || introUploading;
 
+  // 同頁的章節表單是獨立的：章節欄位填了卻按這顆「儲存變更」，章節不會存、內容還會被清掉。
+  // 第一次攔下來提醒；使用者看過提醒再按一次才放行。
+  const [lessonWarning, setLessonWarning] = useState(false);
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const unsaved = document.querySelector("[data-unsaved-lesson]");
+    if (!unsaved || lessonWarning) return;
+    e.preventDefault();
+    setLessonWarning(true);
+    unsaved.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   const toTaipeiDatetimeLocal = (value: Date | null | undefined) => {
     if (!value) return "";
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -137,7 +148,7 @@ export function CourseForm({
   }
 
   return (
-    <form action={formAction} className="max-w-2xl space-y-4">
+    <form action={formAction} onSubmit={onSubmit} className="max-w-2xl space-y-4">
       <Field label="標題">
         <input
           name="title"
@@ -390,6 +401,13 @@ export function CourseForm({
       {state?.error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {state.error}
+        </div>
+      )}
+      {lessonWarning && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          ⚠ 下方「章節管理」還有填了但沒存的內容。這顆「{submitLabel}」只存課程資料，
+          章節要按章節區塊裡的「新增章節」／「儲存」才會存進去。
+          確定只存課程資料的話，再按一次「{submitLabel}」。
         </div>
       )}
 

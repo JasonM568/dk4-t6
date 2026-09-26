@@ -389,9 +389,14 @@ export async function deleteCourse(id: string) {
   redirect("/admin/courses");
 }
 
-export async function addLesson(courseId: string, formData: FormData) {
-  await requireEditor();
-  const title = String(formData.get("title") ?? "");
+export type LessonFormState = { error?: string; ok?: boolean } | null;
+
+const LESSON_VIDEO_ERROR =
+  "認不出 YouTube 影片：請貼 youtu.be/… 或 youtube.com/watch?v=… 的網址（Zoom 錄影、雲端硬碟、Vimeo 連結不支援）";
+
+/** 章節表單共用解析；失敗回錯誤訊息（不可無聲略過，否則使用者以為存了） */
+function parseLessonForm(formData: FormData) {
+  const title = String(formData.get("title") ?? "").trim();
   // 容錯：貼完整網址或 iframe 嵌入碼也能自動抽出 11 碼影片 ID
   const youtubeId = extractYoutubeId(String(formData.get("youtubeId") ?? ""));
   const order = Number(formData.get("order") ?? 0);
@@ -400,33 +405,36 @@ export async function addLesson(courseId: string, formData: FormData) {
     : null;
   // 線上簡報：分享網址自動轉嵌入格式（Google Slides/Canva）
   const slideUrl = toSlideEmbedUrl(String(formData.get("slideUrl") ?? "")) || null;
-  if (!title || !youtubeId) return;
-  await prisma.lesson.create({
-    data: { courseId, title, youtubeId, slideUrl, order, durationSec },
-  });
+  if (!title) return { error: "請填章節標題" } as const;
+  if (!youtubeId) return { error: LESSON_VIDEO_ERROR } as const;
+  return { data: { title, youtubeId, slideUrl, order, durationSec } } as const;
+}
+
+export async function addLesson(
+  courseId: string,
+  _prev: LessonFormState,
+  formData: FormData,
+): Promise<LessonFormState> {
+  await requireEditor();
+  const parsed = parseLessonForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  await prisma.lesson.create({ data: { courseId, ...parsed.data } });
   revalidatePath(`/admin/courses/${courseId}`);
+  return { ok: true };
 }
 
 export async function updateLesson(
   lessonId: string,
   courseId: string,
+  _prev: LessonFormState,
   formData: FormData,
-) {
+): Promise<LessonFormState> {
   await requireEditor();
-  const title = String(formData.get("title") ?? "").trim();
-  // 與 addLesson 相同容錯：網址/嵌入碼/純 ID 皆可
-  const youtubeId = extractYoutubeId(String(formData.get("youtubeId") ?? ""));
-  const order = Number(formData.get("order") ?? 0);
-  const durationSec = formData.get("durationSec")
-    ? Number(formData.get("durationSec"))
-    : null;
-  const slideUrl = toSlideEmbedUrl(String(formData.get("slideUrl") ?? "")) || null;
-  if (!title || !youtubeId) return;
-  await prisma.lesson.update({
-    where: { id: lessonId },
-    data: { title, youtubeId, slideUrl, order, durationSec },
-  });
+  const parsed = parseLessonForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  await prisma.lesson.update({ where: { id: lessonId }, data: parsed.data });
   revalidatePath(`/admin/courses/${courseId}`);
+  return { ok: true };
 }
 
 export async function deleteLesson(lessonId: string, courseId: string) {

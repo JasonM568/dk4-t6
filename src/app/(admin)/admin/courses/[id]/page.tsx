@@ -13,6 +13,7 @@ import {
 import { CourseForm } from "@/components/course-form";
 import { pageGuardEditor } from "@/lib/auth/staff";
 import { LessonRow } from "./lesson-row";
+import { AddLessonForm } from "./add-lesson-form";
 import { MaterialsSection } from "./materials-section";
 
 export default async function EditCoursePage({
@@ -89,61 +90,10 @@ export default async function EditCoursePage({
           ))}
         </ul>
 
-        <form
+        <AddLessonForm
           action={addLesson.bind(null, course.id)}
-          className="flex flex-wrap items-end gap-2 rounded-xl border border-dashed border-gray-300 p-4"
-        >
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">章節標題</label>
-            <input
-              name="title"
-              required
-              className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">
-              YouTube 網址或影片 ID
-            </label>
-            <input
-              name="youtubeId"
-              required
-              placeholder="可直接貼影片網址或嵌入碼"
-              className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="w-16">
-            <label className="mb-1 block text-xs text-gray-500">順序</label>
-            <input
-              name="order"
-              type="number"
-              defaultValue={course.lessons.length + 1}
-              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="w-24">
-            <label className="mb-1 block text-xs text-gray-500">秒數</label>
-            <input
-              name="durationSec"
-              type="number"
-              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="w-full">
-            <label className="mb-1 block text-xs text-gray-500">
-              線上簡報網址（選填，貼 Google Slides / Canva 分享連結即可）
-            </label>
-            <input
-              name="slideUrl"
-              type="url"
-              placeholder="https://docs.google.com/presentation/…"
-              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-            />
-          </div>
-          <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white">
-            新增章節
-          </button>
-        </form>
+          nextOrder={course.lessons.length + 1}
+        />
       </div>
 
       {/* 講義管理 */}
