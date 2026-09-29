@@ -680,6 +680,9 @@ model Webinar {
   meetingPassword String? // 會議密碼；連結無 pwd 參數時自動附加 ?pwd=
   meetingInfo     String?   @db.Text // 會議補充資訊（時間/注意事項，附在信末資訊區塊）
   dmImage         String? // 講座 DM 圖（瀏覽器直傳 Storage 的公開網址，頁面說明上方顯示）
+  // WEBINAR = 線上講座（寄會議連結）／RESOURCE = 素材索取（寄影片、講義、檔案）。
+  // 兩者共用同一套表單、蜜罐、名單與寄送狀態追蹤，只有後台文案與欄位顯示不同。
+  kind            String    @default("WEBINAR")
   emailSubject    String
   emailBody       String    @db.Text // 支援 {link}=講座連結、[按鈕文字](網址) CTA
   groupId         String? // 索取者自動加入的 MailGroup；null = 不加名單
@@ -689,6 +692,8 @@ model Webinar {
 
   requests        WebinarRequest[]
   blockedAttempts WebinarBlockedAttempt[]
+  assets          WebinarAsset[]
+  questions       WebinarQuestion[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -714,11 +719,47 @@ model WebinarRequest {
   deliveryStatus String?
   deliveryDetail String? // 退信/寄送失敗原因（訊息前 500 字）
   deliveryAt     DateTime? // 最後一次狀態更新時間
+  // 問卷答案快照：[{ questionId, label, type, value }]。
+  // 存當下的題目文字而不只是 questionId——題目可以被改被刪，
+  // 但半年前收到的答案仍然要看得懂是在回答什麼。
+  answers        Json?
 
   createdAt DateTime @default(now())
 
   @@unique([webinarId, email])
   @@index([webinarId])
+}
+
+// 素材清單：取代單一的 lectureUrl，一頁可掛多個影片／講義／檔案。
+// 改素材只要動這張表，不必重編信件內文（buildWebinarMail 自動渲染成按鈕列）。
+model WebinarAsset {
+  id        String   @id @default(cuid())
+  webinarId String
+  webinar   Webinar  @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  title     String // 按鈕文字，例：完整影片、課程講義 PDF
+  url       String // YouTube 未列出連結、Supabase Storage 公開網址皆可
+  note      String? // 選填說明，顯示在按鈕下方
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([webinarId, sortOrder])
+}
+
+// 問卷題目。上限 10 題（由 action 擋，不只擋 UI）。
+// 刪題一律軟刪 isActive=false：硬刪會讓已收到的答案失去題目脈絡。
+model WebinarQuestion {
+  id        String   @id @default(cuid())
+  webinarId String
+  webinar   Webinar  @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  label     String
+  type      String   @default("SINGLE") // SINGLE 單選 / MULTI 複選 / TEXT 簡答
+  options   String[] @default([]) // SINGLE / MULTI 的選項；TEXT 不用
+  required  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([webinarId, sortOrder])
 }
 
 // 蜜罐擋下的索取嘗試：**顯示成功卻什麼都不做**的那條路，現在留下痕跡。

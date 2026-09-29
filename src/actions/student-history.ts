@@ -7,6 +7,9 @@ import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { normalizeMobile } from "@/lib/sms/phone";
+// 學員記錄卡的找／建入口抽到 lib：名單收集模組也要用同一支，
+// 同行者鐵則（姓名不同＝不同人）只能有一份實作
+import { upsertStudent } from "@/lib/student-upsert";
 export type StudentImportState={error?:string;success?:string; imported?:number; histories?:number; noPhone?:number}|null;
 const aliases={email:["email","信箱","電子信箱","e-mail"],name:["姓名","name","學員姓名"],phone:["電話","手機","phone"],course:["課程","課程名稱","course"],date:["上課日期","日期","date"],note:["備註","note"]};
 const val=(row:string[],headers:string[],key:keyof typeof aliases)=>{const i=headers.findIndex(h=>aliases[key].includes(h.toLowerCase()));return i<0?"":(row[i]??"").trim()};
@@ -35,58 +38,6 @@ export async function importStudentHistory(_p:StudentImportState,fd:FormData):Pr
   }
   revalidatePath("/admin/students");
   return{success:"匯入完成",imported,histories,noPhone};
-}
-
-/** 空白與大小寫不影響同名判定；任一方沒填姓名視為相容（可補空） */
-const sameStudentName = (a: string | null | undefined, b: string | null | undefined) => {
-  const na = (a ?? "").replace(/\s+/g, "").toLowerCase();
-  const nb = (b ?? "").replace(/\s+/g, "").toLowerCase();
-  return !na || !nb || na === nb;
-};
-
-/** 依手機（優先）→ email 找/建學員檔。
- *  鐵則：姓名不同＝不同人，絕不併卡、絕不覆蓋姓名——訂購人常幫同行者填
- *  自己的電話/信箱（一個信箱兩個姓名），舊版直接併卡還覆蓋姓名，
- *  同行者的紀錄會黏到訂購人卡上（2026-08-29 徐裕森/潘月時案）。
- *  姓名/信箱一律只補空；撞到別人的手機 → 退回信箱路徑（新卡不帶那支手機）；
- *  同信箱不同姓名 → 各自一張卡（夫妻共用信箱模式），重匯時按姓名找回同一張（冪等）。 */
-async function upsertStudent(
-  phone: string | null,
-  email: string | null,
-  name: string | null,
-): Promise<{ id: string } | null> {
-  if (phone) {
-    const byPhone = await prisma.studentRecord.findUnique({
-      where: { phone },
-      select: { id: true, name: true, email: true },
-    });
-    if (!byPhone)
-      return prisma.studentRecord.create({ data: { phone, name, email }, select: { id: true } });
-    if (sameStudentName(byPhone.name, name)) {
-      const fill: { name?: string; email?: string } = {};
-      if (!byPhone.name && name) fill.name = name;
-      if (!byPhone.email && email) fill.email = email;
-      if (Object.keys(fill).length)
-        await prisma.studentRecord.update({ where: { id: byPhone.id }, data: fill });
-      return { id: byPhone.id };
-    }
-    // 同號不同名：這支手機是別人的（同行者填了訂購人的號碼），改走信箱路徑
-  }
-  if (email) {
-    const candidates = await prisma.studentRecord.findMany({
-      where: { email },
-      select: { id: true, name: true },
-      orderBy: { createdAt: "asc" },
-    });
-    const hit = candidates.find((c) => sameStudentName(c.name, name));
-    if (hit) {
-      if (!hit.name && name)
-        await prisma.studentRecord.update({ where: { id: hit.id }, data: { name } });
-      return { id: hit.id };
-    }
-    return prisma.studentRecord.create({ data: { email, name }, select: { id: true } });
-  }
-  return null;
 }
 
 /** 已有同鍵紀錄就跳過（防重複匯入把記錄卡灌成十筆一樣的） */

@@ -23,7 +23,12 @@ export default async function WebinarMailPreviewPage({
 }) {
   await requireStaff();
   const { id } = await params;
-  const webinar = await prisma.webinar.findUnique({ where: { id } });
+  // 一併帶出素材清單：預覽必須跟實際寄出的信一模一樣，
+  // 少帶 assets 就會變成「預覽沒有按鈕、實際有」——比沒有預覽更糟
+  const webinar = await prisma.webinar.findUnique({
+    where: { id },
+    include: { assets: { orderBy: { sortOrder: "asc" } } },
+  });
   if (!webinar) notFound();
 
   const { subject, body, joinUrl } = buildWebinarMail(webinar, WEBINAR_MAIL_SAMPLE);

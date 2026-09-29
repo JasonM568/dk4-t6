@@ -18,7 +18,15 @@ import {
   backfillWebinarPhones,
   type BackfillReport,
 } from "@/lib/webinar-phone-backfill";
-import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
+import {
+  explainMobile,
+  normalizeContactPhone,
+  normalizeMobile,
+  MOBILE_REJECT_LABEL,
+} from "@/lib/sms/phone";
+// 學員記錄卡的找／建入口（與訂單匯入共用，同行者鐵則只有一份實作）。
+// 海外門號 normalizeMobile 會回 null → upsertStudent 自動退回信箱路徑，正確。
+import { upsertStudent } from "@/lib/student-upsert";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
 
@@ -265,7 +273,10 @@ export async function requestWebinarLinkAction(
     };
   }
 
-  const webinar = await prisma.webinar.findUnique({ where: { slug } });
+  const webinar = await prisma.webinar.findUnique({
+    where: { slug },
+    include: { assets: { orderBy: { sortOrder: "asc" } } },
+  });
   if (!webinar || !webinar.isActive || hasEndedInTaipei(webinar.endDate) ||
     (!!webinar.unpublishAt && webinar.unpublishAt <= new Date()))
     return { error: "此講座報名已結束" };
@@ -355,6 +366,34 @@ export async function requestWebinarLinkAction(
     }
   } catch (e) {
     console.error("[webinar] 索取紀錄/名單寫入失敗", { slug, email, e });
+  }
+
+  // 學員記錄卡：索取者也是潛在名單，進卡之後才算得出「索取 → 報名正式課程」的轉換。
+  // 走與訂單匯入同一支 upsertStudent，同行者鐵則（姓名不同＝不同人）只能有一份實作。
+  // 整段包在 try 裡：記錄卡寫失敗絕不能讓已經寄出的信變成「失敗」。
+  try {
+    const student = await upsertStudent(normalizeMobile(phone), email, name);
+    if (student) {
+      // 接觸紀錄不是上課史，不得計入「上過幾堂課」
+      const exists = await prisma.studentEngagement.findFirst({
+        where: { studentId: student.id, sourceRef: webinar.id },
+        select: { id: true },
+      });
+      if (!exists) {
+        await prisma.studentEngagement.create({
+          data: {
+            studentId: student.id,
+            type: webinar.kind === "RESOURCE" ? "OTHER" : "SEMINAR",
+            title: webinar.title,
+            occurredAt: new Date(),
+            source: "LEAD_CAPTURE",
+            sourceRef: webinar.id,
+          },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[webinar] 學員記錄卡寫入失敗（不影響寄信）", { slug, email, e });
   }
 
   return { success: "確認信已寄出，請到信箱查收（也請檢查垃圾郵件夾）！" };
