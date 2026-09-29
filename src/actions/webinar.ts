@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
-import { buildWebinarMail } from "@/lib/webinar-mail";
+import { buildWebinarMail, defaultEmailBody } from "@/lib/webinar-mail";
 import {
   dismissBlockedWebinarAttempt,
   HONEYPOT_SUCCESS_MESSAGE,
@@ -45,15 +45,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_RE = /^[a-z0-9-]+$/;
 const RESEND_COOLDOWN_MS = 60 * 1000; // 同 email 重寄限流，防轟炸他人信箱
 
-const DEFAULT_EMAIL_BODY = `您好，感謝索取講座連結！
-
-點擊下方按鈕即可進入講座：
-
-[▶️ 進入講座]({link})
-
-若按鈕無法點擊，請直接開啟：{link}
-
-希望學院 敬上`;
+// 預設信件內文改由 lib/webinar-mail 的 defaultEmailBody(kind) 提供，只能有一份
 
 type AssetInput = { title: string; url: string; note: string | null };
 type QuestionInput = { id: string | null; label: string; type: string; options: string[]; required: boolean };
@@ -121,7 +113,7 @@ async function parseWebinarForm(formData: FormData) {
   // DM 圖：瀏覽器已直傳 Storage，這裡只收公開網址字串（同課程封面模式）
   const dmImage = String(formData.get("dmImage") ?? "").trim() || null;
   const emailSubject = String(formData.get("emailSubject") ?? "").trim();
-  const emailBody = String(formData.get("emailBody") ?? "").trim() || DEFAULT_EMAIL_BODY;
+  const emailBody = String(formData.get("emailBody") ?? "").trim() || defaultEmailBody(kind);
   const isActive = formData.get("isActive") === "on";
   const endStr = String(formData.get("endDate") ?? "").trim();
   const endDate = endStr ? new Date(endStr) : null;

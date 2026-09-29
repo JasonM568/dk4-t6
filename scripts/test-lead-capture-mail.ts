@@ -5,7 +5,7 @@
  * 其次才是素材清單要正確渲染成按鈕列。
  *
  * 跑法：npx tsx scripts/test-lead-capture-mail.ts */
-import { buildWebinarMail, type WebinarMailSource } from "../src/lib/webinar-mail";
+import { buildWebinarMail, defaultEmailBody, type WebinarMailSource } from "../src/lib/webinar-mail";
 
 let pass = 0;
 let fail = 0;
@@ -71,6 +71,35 @@ console.log("\n素材清單的邊界");
     assets: [{ title: "影片", url: "https://y.co/1" }],
   }, TO);
   check("有素材時 {link} 指向第一筆素材", single.body.includes("你的檔案：https://y.co/1"));
+}
+
+console.log("\n★ 內文含 {link}（講座版預設模板）時，素材清單仍必須渲染——2026-09-29 測試頁抓到的 bug");
+{
+  const r = buildWebinarMail({
+    ...base, kind: "RESOURCE",
+    emailBody: defaultEmailBody("WEBINAR"), // 舊模板：有 {link} 與「進入講座」
+    assets: [
+      { title: "完整影片", url: "https://youtu.be/abc", note: "請勿外流" },
+      { title: "講義", url: "https://x.co/a.pdf" },
+    ],
+  }, TO);
+  check("第一筆素材按鈕有渲染", r.body.includes("[完整影片](https://youtu.be/abc)"));
+  check("第二筆素材按鈕有渲染", r.body.includes("[講義](https://x.co/a.pdf)"));
+  check("素材說明有渲染", r.body.includes("請勿外流"));
+  check("{link} 仍指向第一筆素材", r.body.includes("請直接開啟：https://youtu.be/abc"));
+}
+
+console.log("\n預設內文依類型，且只有 lib 這一份");
+{
+  const res = defaultEmailBody("RESOURCE");
+  check("素材索取版含 {assets}", res.includes("{assets}"));
+  check("素材索取版不寫「進入講座」", !res.includes("進入講座"));
+  const web = defaultEmailBody("WEBINAR");
+  check("講座版含「進入講座」與 {link}（既有行為不變）", web.includes("[▶️ 進入講座]({link})"));
+  check("沒給類型＝講座版", defaultEmailBody(undefined) === web);
+  const rendered = buildWebinarMail({ ...base, kind: "RESOURCE", emailBody: res,
+    assets: [{ title: "影片", url: "https://y.co/1" }] }, TO);
+  check("素材索取版預設內文渲染後只有一份清單、沒有重複追加", rendered.body.split("[影片]").length === 2);
 }
 
 console.log("\nRESOURCE 但沒有素材清單時，CTA 文案改成取得資料");

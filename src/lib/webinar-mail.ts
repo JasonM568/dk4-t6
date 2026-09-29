@@ -26,6 +26,27 @@ export type WebinarMailSource = {
   assets?: WebinarAssetLite[]; // 有素材清單時取代單一連結的 CTA
 };
 
+/** 預設信件內文，依類型。只能有這一份：後台表單與 action 以前各抄一份講座版，
+ *  素材索取頁也套到「進入講座」的模板，結果清單整個沒渲染（2026-09-29 測試頁抓到）。 */
+export function defaultEmailBody(kind?: string): string {
+  if (kind === "RESOURCE") {
+    return `您好，感謝索取！
+
+你要的資料都在下面，點按鈕即可取得：
+
+{assets}
+
+若按鈕無法點擊，請直接開啟：{link}`;
+  }
+  return `您好，感謝索取講座連結！
+
+點擊下方按鈕即可進入講座：
+
+[▶️ 進入講座]({link})
+
+若按鈕無法點擊，請直接開啟：{link}`;
+}
+
 /** 預覽用的假收件人：畫面要看得出 {name}/{email} 帶入後的樣子 */
 export const WEBINAR_MAIL_SAMPLE: Recipient = {
   name: "王小明",
@@ -49,8 +70,10 @@ export function buildWebinarMail(
   // 有素材清單就渲染成按鈕列，沒有才退回原本的單一連結行為。
   // 這樣既有 5 個講座頁（沒有素材、只有 lectureUrl）行為完全不變。
   if (assets.length > 0) {
-    // 內文沒自己放連結時才自動補；管理員手動排版的信不覆寫他的安排
-    if (!body.includes("{link}") && !body.includes("{assets}")) body += "\n\n{assets}";
+    // 內文沒放 {assets} 就補在信末。**不能**因為內文有 {link} 就不補：
+    // 講座版預設模板本來就含 {link}，那樣素材索取頁的清單永遠渲染不出來
+    // （2026-09-29 測試頁：只剩一顆「進入講座」指向第一筆素材，講義與說明全不見）。
+    if (!body.includes("{assets}")) body += "\n\n{assets}";
     const block = assets
       .map((a) => `[${a.title}](${a.url})${a.note?.trim() ? `\n${a.note.trim()}` : ""}`)
       .join("\n\n");

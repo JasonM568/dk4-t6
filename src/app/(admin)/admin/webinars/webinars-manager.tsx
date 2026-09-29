@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { MAX_QUESTIONS, QUESTION_TYPE_LABEL, QUESTION_TYPES } from "@/lib/webinar-survey";
+import { defaultEmailBody } from "@/lib/webinar-mail";
 import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
 import {
   BackfillPhonesButton,
@@ -106,15 +107,7 @@ export type WebinarRow = {
   blockedAttempts: BlockedAttemptRow[];
 };
 
-const DEFAULT_EMAIL_BODY = `您好，感謝索取講座連結！
-
-點擊下方按鈕即可進入講座：
-
-[▶️ 進入講座]({link})
-
-若按鈕無法點擊，請直接開啟：{link}
-
-希望學院 敬上`;
+// 預設信件內文由 lib/webinar-mail 的 defaultEmailBody(kind) 提供，依類型切換
 
 function Feedback({ state }: { state: WebinarFormState }) {
   if (!state) return null;
@@ -427,9 +420,11 @@ function WebinarFields({
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
       <textarea
+        // 建立時切換類型要換成該類型的模板（非受控欄位靠 key 重掛）；編輯既有頁面則保留原內文
+        key={initial ? "edit" : kind}
         name="emailBody"
         rows={8}
-        defaultValue={initial?.emailBody ?? DEFAULT_EMAIL_BODY}
+        defaultValue={initial?.emailBody ?? defaultEmailBody(kind)}
         placeholder="信件內文"
         className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
       />
