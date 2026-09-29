@@ -26,8 +26,16 @@ export default async function WebinarPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const webinar = await prisma.webinar.findUnique({ where: { slug } });
+  // 一併帶出啟用中的題目：問卷與基本資料同一頁、一次送出（分兩步會流失名單）
+  const webinar = await prisma.webinar.findUnique({
+    where: { slug },
+    include: { questions: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } },
+  });
   if (!webinar) notFound();
+  const isResource = webinar.kind === "RESOURCE";
+  const questions = webinar.questions.map((q) => ({
+    id: q.id, label: q.label, type: q.type, options: q.options, required: q.required,
+  }));
 
   // 寄件者顯示給訪客「加入通訊錄」用；EMAIL_FROM 格式可能是 "名稱 <a@b>"，取角括號內
   const from = process.env.EMAIL_FROM ?? "course@huangxi.info";
@@ -40,7 +48,7 @@ export default async function WebinarPage({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={webinar.dmImage}
-            alt={`${webinar.title} 講座 DM`}
+            alt={`${webinar.title} ${isResource ? "主視覺" : "講座 DM"}`}
             className="mb-5 w-full rounded-xl"
           />
         )}
@@ -52,10 +60,10 @@ export default async function WebinarPage({
         )}
         {webinar.isActive && !hasEndedInTaipei(webinar.endDate) &&
         (!webinar.unpublishAt || webinar.unpublishAt > new Date()) ? (
-          <WebinarRequestForm slug={slug} senderEmail={senderEmail} />
+          <WebinarRequestForm slug={slug} senderEmail={senderEmail} kind={webinar.kind} questions={questions} />
         ) : (
           <p className="rounded-xl bg-gray-50 px-4 py-6 text-center text-gray-500">
-            此講座報名已結束
+            {isResource ? "此活動已結束" : "此講座報名已結束"}
           </p>
         )}
       </div>

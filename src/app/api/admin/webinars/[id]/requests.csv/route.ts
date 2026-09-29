@@ -2,6 +2,7 @@ import { requireEditor } from "@/lib/auth/staff";
 import { buildCsv } from "@/lib/csv-export";
 import { prisma } from "@/lib/db";
 import { formatMobile } from "@/lib/sms/phone";
+import { answerText, readAnswers } from "@/lib/webinar-survey";
 
 /** 講座索取名單 CSV。
  *
@@ -29,6 +30,13 @@ export async function GET(
   });
   if (!webinar) return new Response("Not found", { status: 404 });
 
+  // 題目欄：含已軟刪的舊題（歷史答案還在），依 sortOrder；再補上答案快照裡出現、
+  // 但題目表已找不到的 label（極端情況，例如題目被硬刪過）
+  const questionRows = await prisma.webinarQuestion.findMany({
+    where: { webinarId: id },
+    orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }],
+    select: { id: true, label: true },
+  });
   const [requests, blocked] = await Promise.all([
     prisma.webinarRequest.findMany({
       where: { webinarId: id },
@@ -42,6 +50,7 @@ export async function GET(
         deliveryStatus: true,
         deliveryDetail: true,
         smsNoticeAt: true,
+        answers: true,
       },
     }),
     // 未處理的才列：已補寄／已確認是機器人的（resolvedAt 有值）不該再混進名單
@@ -62,6 +71,25 @@ export async function GET(
         })
       : "";
 
+  // 欄位順序：題目表的順序，再接快照裡多出來的 label
+  const columns: { id: string | null; label: string }[] = questionRows.map((q) => ({ id: q.id, label: q.label }));
+  const known = new Set(columns.map((c) => c.id));
+  const knownLabels = new Set(columns.map((c) => c.label));
+  for (const r of requests)
+    for (const a of readAnswers(r.answers))
+      if (!known.has(a.questionId) && !knownLabels.has(a.label)) {
+        columns.push({ id: null, label: a.label });
+        knownLabels.add(a.label);
+      }
+  const answerCells = (raw: unknown) => {
+    const list = readAnswers(raw);
+    return columns.map((c) => {
+      const hit = list.find((a) => (c.id && a.questionId === c.id) || a.label === c.label);
+      return hit ? answerText(hit) : "";
+    });
+  };
+  const blankCells = columns.map(() => "");
+
   const csv = buildCsv([
     [
       "姓名",
@@ -73,6 +101,7 @@ export async function GET(
       "寄送次數",
       "簡訊已通知",
       "被擋下",
+      ...columns.map((c) => c.label),
     ],
     ...requests.map((r) => [
       r.name ?? "",
@@ -85,6 +114,7 @@ export async function GET(
       r.sentCount,
       r.smsNoticeAt ? tpe(r.smsNoticeAt) : "",
       "",
+      ...answerCells(r.answers),
     ]),
     ...blocked.map((b) => [
       b.name ?? "",
@@ -97,6 +127,7 @@ export async function GET(
       "",
       // 這一欄就是差別：對方看到「已寄出」，實際沒收到信也沒進名單
       `⚠️ 被擋下（${b.reason}）未補寄`,
+      ...blankCells,
     ]),
   ]);
 

@@ -27,11 +27,19 @@ import {
 // 學員記錄卡的找／建入口（與訂單匯入共用，同行者鐵則只有一份實作）。
 // 海外門號 normalizeMobile 會回 null → upsertStudent 自動退回信箱路徑，正確。
 import { upsertStudent } from "@/lib/student-upsert";
+import {
+  parseSurveyAnswers,
+  validateQuestions,
+  QUESTION_TYPES,
+} from "@/lib/webinar-survey";
 
 // 講座報名頁：後台 CRUD ＋ 訪客索取講座連結信
 
 export type WebinarFormState = { error?: string; success?: string } | null;
-export type WebinarRequestState = { error?: string; success?: string } | null;
+// questionId：問卷必填未答時回報是哪一題，前端據此把該題標紅、捲到定位
+export type WebinarRequestState =
+  | { error?: string; success?: string; questionId?: string }
+  | null;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_RE = /^[a-z0-9-]+$/;
@@ -47,11 +55,66 @@ const DEFAULT_EMAIL_BODY = `您好，感謝索取講座連結！
 
 希望學院 敬上`;
 
+type AssetInput = { title: string; url: string; note: string | null };
+type QuestionInput = { id: string | null; label: string; type: string; options: string[]; required: boolean };
+
+/** 素材清單／問卷由前端編輯器序列化成 JSON 藏在表單裡；壞掉的 JSON 當空清單 */
+function readJsonField<T>(formData: FormData, field: string, fallback: T): T {
+  try {
+    const raw = String(formData.get(field) ?? "");
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function parseWebinarForm(formData: FormData) {
   const slug = String(formData.get("slug") ?? "").trim().toLowerCase();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  const lectureUrl = String(formData.get("lectureUrl") ?? "").trim();
+  // WEBINAR／RESOURCE：共用同一套流程，只影響文案與欄位顯示。亂值一律當 WEBINAR
+  const kindRaw = String(formData.get("kind") ?? "WEBINAR");
+  const kind = kindRaw === "RESOURCE" ? "RESOURCE" : "WEBINAR";
+
+  // 素材清單：標題與網址都要有才算一筆；網址須 http(s)
+  const assets: AssetInput[] = (readJsonField<unknown>(formData, "assetsJson", []) as unknown[])
+    .flatMap((x) => {
+      if (!x || typeof x !== "object") return [];
+      const o = x as Record<string, unknown>;
+      const t = String(o.title ?? "").trim();
+      const u = String(o.url ?? "").trim();
+      if (!t || !u) return [];
+      return [{ title: t.slice(0, 120), url: u, note: String(o.note ?? "").trim().slice(0, 300) || null }];
+    });
+  for (const a of assets)
+    if (!/^https?:\/\//.test(a.url))
+      return { error: `素材「${a.title}」的網址須為 http(s) 網址` as const };
+
+  // 問卷題目：上限與題型在 lib 擋（表單可被繞過，不能只擋 UI）
+  const questions: QuestionInput[] = (readJsonField<unknown>(formData, "questionsJson", []) as unknown[])
+    .flatMap((x) => {
+      if (!x || typeof x !== "object") return [];
+      const o = x as Record<string, unknown>;
+      const label = String(o.label ?? "").trim();
+      if (!label) return [];
+      const type = String(o.type ?? "SINGLE");
+      const options = Array.isArray(o.options)
+        ? o.options.map((v) => String(v).trim()).filter(Boolean).slice(0, 20)
+        : [];
+      return [{
+        id: typeof o.id === "string" && o.id ? o.id : null,
+        label: label.slice(0, 200),
+        type: (QUESTION_TYPES as readonly string[]).includes(type) ? type : "SINGLE",
+        options: type === "TEXT" ? [] : options,
+        required: o.required === true,
+      }];
+    });
+  const qCheck = validateQuestions(questions);
+  if (!qCheck.ok) return { error: qCheck.error as string };
+
+  // 素材索取頁可以只給素材清單、不填單一連結；資料表的 lectureUrl 非空，用第一筆素材補
+  let lectureUrl = String(formData.get("lectureUrl") ?? "").trim();
+  if (!lectureUrl && kind === "RESOURCE" && assets.length > 0) lectureUrl = assets[0].url;
   const meetingId = String(formData.get("meetingId") ?? "").trim() || null;
   const meetingPassword = String(formData.get("meetingPassword") ?? "").trim() || null;
   const meetingInfo = String(formData.get("meetingInfo") ?? "").trim() || null;
@@ -70,8 +133,13 @@ async function parseWebinarForm(formData: FormData) {
     return { error: "下架時間格式錯誤" as const };
 
   if (!SLUG_RE.test(slug)) return { error: "網址代稱只能用小寫英數與連字號（例：ai-webinar-0815）" as const };
-  if (!title) return { error: "請填寫講座標題" as const };
-  if (!/^https?:\/\//.test(lectureUrl)) return { error: "講座連結須為 http(s) 網址" as const };
+  if (!title) return { error: "請填寫標題" as const };
+  if (!/^https?:\/\//.test(lectureUrl))
+    return {
+      error: (kind === "RESOURCE"
+        ? "請至少加一筆素材（或填一個 http(s) 連結）"
+        : "講座連結須為 http(s) 網址") as string,
+    };
   if (dmImage && !/^https?:\/\//.test(dmImage)) return { error: "DM 圖網址格式錯誤" as const };
   if (!emailSubject) return { error: "請填寫信件主旨" as const };
 
@@ -88,6 +156,10 @@ async function parseWebinarForm(formData: FormData) {
   }
 
   return {
+    assets,
+    questions,
+    data: {
+    kind,
     slug,
     title,
     description,
@@ -102,7 +174,41 @@ async function parseWebinarForm(formData: FormData) {
     isActive,
     endDate,
     unpublishAt,
+    },
   };
+}
+
+/** 素材與問卷的同步。
+ *  素材沒有任何東西引用它，整批替換最簡單也最不會出錯。
+ *  問卷**不可硬刪**：已收到的答案要保留題目脈絡——表單裡沒出現的舊題目改成 isActive=false，
+ *  出現的依 id 更新，沒 id 的新建。 */
+async function syncWebinarRelations(
+  webinarId: string,
+  assets: AssetInput[],
+  questions: QuestionInput[],
+) {
+  await prisma.$transaction(async (tx) => {
+    await tx.webinarAsset.deleteMany({ where: { webinarId } });
+    if (assets.length > 0)
+      await tx.webinarAsset.createMany({
+        data: assets.map((a, i) => ({ webinarId, title: a.title, url: a.url, note: a.note, sortOrder: i })),
+      });
+
+    const keepIds = questions.map((q) => q.id).filter((id): id is string => !!id);
+    await tx.webinarQuestion.updateMany({
+      where: { webinarId, isActive: true, ...(keepIds.length ? { id: { notIn: keepIds } } : {}) },
+      data: { isActive: false },
+    });
+    for (const [i, q] of questions.entries()) {
+      const data = { label: q.label, type: q.type, options: q.options, required: q.required, sortOrder: i, isActive: true };
+      if (q.id) {
+        // 只更新屬於這個頁面的題目：id 是公開表單送上來的，不能信任
+        await tx.webinarQuestion.updateMany({ where: { id: q.id, webinarId }, data });
+      } else {
+        await tx.webinarQuestion.create({ data: { webinarId, ...data } });
+      }
+    }
+  });
 }
 
 export async function createWebinarAction(
@@ -112,11 +218,13 @@ export async function createWebinarAction(
   await requireEditor();
   const parsed = await parseWebinarForm(formData);
   if ("error" in parsed) return { error: parsed.error };
+  let created: { id: string };
   try {
-    await prisma.webinar.create({ data: parsed });
+    created = await prisma.webinar.create({ data: parsed.data, select: { id: true } });
   } catch {
-    return { error: `網址代稱「${parsed.slug}」已被使用` };
+    return { error: `網址代稱「${parsed.data.slug}」已被使用` };
   }
+  await syncWebinarRelations(created.id, parsed.assets, parsed.questions);
   revalidatePath("/admin/webinars");
   revalidatePath("/");
   revalidatePath("/board");
@@ -133,12 +241,13 @@ export async function updateWebinarAction(
   const parsed = await parseWebinarForm(formData);
   if ("error" in parsed) return { error: parsed.error };
   try {
-    await prisma.webinar.update({ where: { id }, data: parsed });
+    await prisma.webinar.update({ where: { id }, data: parsed.data });
+    await syncWebinarRelations(id, parsed.assets, parsed.questions);
   } catch {
-    return { error: `網址代稱「${parsed.slug}」已被使用` };
+    return { error: `網址代稱「${parsed.data.slug}」已被使用` };
   }
   revalidatePath("/admin/webinars");
-  revalidatePath(`/webinar/${parsed.slug}`);
+  revalidatePath(`/webinar/${parsed.data.slug}`);
   revalidatePath("/");
   revalidatePath("/board");
   return { success: "已更新" };
@@ -275,11 +384,21 @@ export async function requestWebinarLinkAction(
 
   const webinar = await prisma.webinar.findUnique({
     where: { slug },
-    include: { assets: { orderBy: { sortOrder: "asc" } } },
+    include: {
+      assets: { orderBy: { sortOrder: "asc" } },
+      questions: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
+    },
   });
   if (!webinar || !webinar.isActive || hasEndedInTaipei(webinar.endDate) ||
     (!!webinar.unpublishAt && webinar.unpublishAt <= new Date()))
     return { error: "此講座報名已結束" };
+
+  // 問卷：必填未答要在寄信之前擋下，訪客改完再送。
+  // 選項值只收在題目選項內的（公開端點，前端擋不住竄改）。
+  const survey = parseSurveyAnswers(webinar.questions, (field) =>
+    formData.getAll(field).map((v) => String(v)),
+  );
+  if (!survey.ok) return { error: survey.error, questionId: survey.questionId };
 
   // 同 email 60 秒限流：防止被拿來重複轟炸別人的信箱
   const existing = await prisma.webinarRequest.findUnique({
@@ -339,6 +458,8 @@ export async function requestWebinarLinkAction(
       update: {
         name,
         phone,
+        // 重送時以最新一次作答為準；沒作答（例如既有講座頁沒有問卷）就不動舊值
+        ...(survey.answers.length > 0 ? { answers: survey.answers } : {}),
         sentCount: { increment: 1 },
         lastSentAt: new Date(),
         // 重寄 = 新一輪追蹤：狀態重置回 SENT，等 webhook 回報這一封的下場
@@ -351,6 +472,7 @@ export async function requestWebinarLinkAction(
         email,
         name,
         phone,
+        answers: survey.answers.length > 0 ? survey.answers : undefined,
         sentCount: 1,
         lastSentAt: new Date(),
         deliveryStatus: "SENT",

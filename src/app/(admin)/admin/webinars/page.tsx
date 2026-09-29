@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { currentCanEdit } from "@/lib/auth/staff";
 import { WebinarCard } from "./webinars-manager";
 
-export const metadata = { title: "講座場次 — 管理後台" };
+export const metadata = { title: "名單收集 — 管理後台" };
 
 export default async function AdminWebinarsPage() {
   const [webinars, mailGroups, canEditNow] = await Promise.all([
@@ -17,6 +17,8 @@ export default async function AdminWebinarsPage() {
           where: { resolvedAt: null },
           orderBy: { createdAt: "desc" },
         },
+        assets: { orderBy: { sortOrder: "asc" } },
+        questions: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
       },
     }),
     prisma.mailGroup.findMany({
@@ -31,13 +33,13 @@ export default async function AdminWebinarsPage() {
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="mb-1 text-2xl font-bold">
-            講座場次
+            名單收集
             <span className="ml-2 text-base font-normal text-gray-400">
-              共 {webinars.length} 場
+              共 {webinars.length} 頁
             </span>
           </h1>
           <p className="text-sm text-gray-500">
-            點開場次管理設定與索取名單；訪客到 /webinar/網址代稱 留姓名＋email 即寄講座連結信。
+            線上講座與素材索取共用同一套：訪客到 /webinar/網址代稱 留姓名、Email、手機（可加問卷），系統即寄出連結或素材。
           </p>
         </div>
         {canEditNow && (
@@ -45,7 +47,7 @@ export default async function AdminWebinarsPage() {
             href="/admin/webinars/new"
             className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800"
           >
-            ＋建立講座
+            ＋建立頁面
           </Link>
         )}
       </header>
@@ -53,7 +55,7 @@ export default async function AdminWebinarsPage() {
       <div className="space-y-3">
         {webinars.length === 0 && (
           <p className="rounded-xl border border-gray-200 px-4 py-6 text-center text-sm text-gray-400">
-            還沒有講座——到「建立講座」開第一場
+            還沒有頁面——到「建立頁面」開第一個
           </p>
         )}
         {webinars.map((w) => (
@@ -75,6 +77,11 @@ export default async function AdminWebinarsPage() {
               emailBody: w.emailBody,
               groupId: w.groupId,
               isActive: w.isActive,
+              kind: w.kind,
+              assets: w.assets.map((a) => ({ id: a.id, title: a.title, url: a.url, note: a.note })),
+              questions: w.questions.map((q) => ({
+                id: q.id, label: q.label, type: q.type, options: q.options, required: q.required,
+              })),
               endDate: w.endDate?.toISOString() ?? null,
               unpublishAt: w.unpublishAt?.toISOString() ?? null,
               blockedAttempts: w.blockedAttempts.map((a) => ({

@@ -10,6 +10,7 @@ import {
 } from "@/actions/webinar";
 import { suggestEmailFix } from "@/lib/email-typo";
 import { explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
+import { questionFieldName, type SurveyQuestion } from "@/lib/webinar-survey";
 
 /** 依信箱網域給對應的找信指引 */
 function searchTips(email: string): string[] {
@@ -32,10 +33,15 @@ function searchTips(email: string): string[] {
 export function WebinarRequestForm({
   slug,
   senderEmail,
+  kind = "WEBINAR",
+  questions = [],
 }: {
   slug: string;
   senderEmail: string;
+  kind?: string; // WEBINAR／RESOURCE：只影響文案，流程完全相同
+  questions?: SurveyQuestion[]; // 啟用中的問卷題目（可為空）
 }) {
+  const isResource = kind === "RESOURCE";
   const [state, action, pending] = useActionState<WebinarRequestState, FormData>(
     requestWebinarLinkAction.bind(null, slug),
     null,
@@ -43,6 +49,14 @@ export function WebinarRequestForm({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  // 問卷答案全受控：伺服器擋下「必填未答」時，已填的欄位絕不能清空
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const setSingle = (id: string, v: string) => setAnswers((a) => ({ ...a, [id]: [v] }));
+  const toggleMulti = (id: string, v: string) =>
+    setAnswers((a) => {
+      const cur = a[id] ?? [];
+      return { ...a, [id]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] };
+    });
   const [cooldown, setCooldown] = useState(0);
   const [delivery, setDelivery] = useState<WebinarDeliveryStatus>(null);
 
@@ -59,6 +73,11 @@ export function WebinarRequestForm({
     if (!state?.success) return;
     const t = setTimeout(() => setCooldown(60), 0);
     return () => clearTimeout(t);
+  }, [state]);
+  // 必填未答被擋下：把那一題捲進畫面並標紅（手機上鍵盤一彈，錯誤訊息常在畫面外）
+  useEffect(() => {
+    if (!state?.questionId) return;
+    document.getElementById(`q-${state.questionId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [state]);
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -126,7 +145,7 @@ export function WebinarRequestForm({
           <div className="mb-2 font-bold">📬 找不到信？照這三步：</div>
           <ol className="list-inside list-decimal space-y-1.5">
             <li>
-              找主旨含「講座」、寄件者{" "}
+              找主旨含「{isResource ? "資料" : "講座"}」、寄件者{" "}
               <span className="font-mono text-xs">{senderEmail}</span> 的信（1–2 分鐘內送達）
             </li>
             {searchTips(email).map((tip) => (
@@ -145,6 +164,12 @@ export function WebinarRequestForm({
           <input type="hidden" name="name" value={name} />
           {/* 手機是必填欄位，重寄也得帶上，否則會被 action 擋成「請填寫手機號碼」 */}
           <input type="hidden" name="phone" value={phone} />
+          {/* 問卷答案同理：必填題沒帶上，重寄會被擋成「請回答」 */}
+          {Object.entries(answers).flatMap(([qid, vals]) =>
+            vals.map((v, i) => (
+              <input key={`${qid}-${i}`} type="hidden" name={questionFieldName(qid)} value={v} />
+            )),
+          )}
           <button
             disabled={pending || cooldown > 0}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
@@ -208,6 +233,52 @@ export function WebinarRequestForm({
       ) : (
         <p className="px-1 text-xs text-gray-400">開課前會用簡訊提醒你，不會用於其他用途</p>
       )}
+      {questions.length > 0 && (
+        <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+          {questions.map((q, idx) => {
+            const flagged = state?.questionId === q.id;
+            const field = questionFieldName(q.id);
+            const cur = answers[q.id] ?? [];
+            return (
+              <div
+                key={q.id}
+                id={`q-${q.id}`}
+                className={`rounded-lg ${flagged ? "ring-2 ring-red-400 ring-offset-2" : ""}`}
+              >
+                <p className="mb-2 text-sm font-medium text-gray-800">
+                  {idx + 1}. {q.label}
+                  {q.required && <span className="ml-1 text-red-500">*</span>}
+                </p>
+                {q.type === "TEXT" ? (
+                  <textarea
+                    name={field}
+                    rows={2}
+                    value={cur[0] ?? ""}
+                    onChange={(e) => setSingle(q.id, e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-black focus:outline-none"
+                  />
+                ) : (
+                  <div className="space-y-1.5">
+                    {q.options.map((opt) => (
+                      <label key={opt} className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type={q.type === "MULTI" ? "checkbox" : "radio"}
+                          name={field}
+                          value={opt}
+                          checked={cur.includes(opt)}
+                          onChange={() => (q.type === "MULTI" ? toggleMulti(q.id, opt) : setSingle(q.id, opt))}
+                          className="h-4 w-4"
+                        />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {suggestion && (
         <button
           type="button"
@@ -229,10 +300,10 @@ export function WebinarRequestForm({
         disabled={pending}
         className="w-full rounded-xl bg-black px-4 py-3 font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
       >
-        {pending ? "寄送中…" : "索取講座連結"}
+        {pending ? "寄送中…" : isResource ? "取得資料" : "索取講座連結"}
       </button>
       <p className="text-center text-xs text-gray-400">
-        送出後系統會將講座連結寄到你的信箱
+        送出後系統會將{isResource ? "資料" : "講座連結"}寄到你的信箱
       </p>
       {/* 蜜罐欄位：真人看不到，機器人會填。
           ① 欄位名不能用 website/url/phone 等 autofill 字典內的字（曾因取名 website

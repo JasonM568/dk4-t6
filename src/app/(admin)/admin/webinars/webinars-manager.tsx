@@ -14,6 +14,7 @@ import { requestCourseImageUploadUrl } from "@/actions/admin";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { MAX_QUESTIONS, QUESTION_TYPE_LABEL, QUESTION_TYPES } from "@/lib/webinar-survey";
 import { formatMobile, isOverseasPhone } from "@/lib/sms/phone";
 import {
   BackfillPhonesButton,
@@ -95,6 +96,9 @@ export type WebinarRow = {
   emailBody: string;
   groupId: string | null;
   isActive: boolean;
+  kind: string; // WEBINAR／RESOURCE
+  assets: { id: string; title: string; url: string; note: string | null }[];
+  questions: { id: string; label: string; type: string; options: string[]; required: boolean }[];
   endDate: string | null; // 結束日：過了隔天（台北時間）看板下架＋報名頁自動關閉；null = 不自動結束
   unpublishAt: string | null; // 精確下架時間；到點立即從首頁/看板隱藏並關閉報名
   requests: WebinarRequestRow[];
@@ -121,6 +125,113 @@ function Feedback({ state }: { state: WebinarFormState }) {
   ) : null;
 }
 
+type AssetDraft = { title: string; url: string; note: string };
+type QuestionDraft = { id: string | null; label: string; type: string; options: string; required: boolean };
+
+/** 素材清單編輯器：受控列表，序列化成 assetsJson 交給 action */
+function AssetsEditor({ initial }: { initial: AssetDraft[] }) {
+  const [rows, setRows] = useState<AssetDraft[]>(initial);
+  const set = (i: number, patch: Partial<AssetDraft>) =>
+    setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const move = (i: number, d: number) =>
+    setRows((r) => {
+      const j = i + d;
+      if (j < 0 || j >= r.length) return r;
+      const n = [...r];
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+  const cls = "rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none";
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 p-3">
+      <input type="hidden" name="assetsJson" value={JSON.stringify(rows)} />
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-500">
+          素材清單（影片、講義、檔案；信裡會渲染成按鈕列，改這裡不必改信件內文）
+        </span>
+        <button type="button" onClick={() => setRows((r) => [...r, { title: "", url: "", note: "" }])}
+          className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50">＋加一筆</button>
+      </div>
+      {rows.length === 0 && <p className="text-xs text-gray-400">還沒有素材。YouTube 未列出連結、Google Drive、Storage 網址都可以。</p>}
+      <div className="space-y-2">
+        {rows.map((a, i) => (
+          <div key={i} className="grid gap-1.5 rounded-lg bg-gray-50 p-2 sm:grid-cols-[1fr_1.4fr_1fr_auto]">
+            <input value={a.title} onChange={(e) => set(i, { title: e.target.value })} placeholder="按鈕文字（例：完整影片）" className={cls} />
+            <input value={a.url} onChange={(e) => set(i, { url: e.target.value })} placeholder="https://…" className={cls} />
+            <input value={a.note} onChange={(e) => set(i, { note: e.target.value })} placeholder="說明（選填）" className={cls} />
+            <div className="flex items-center gap-1 text-xs text-gray-400">
+              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-1 hover:text-black disabled:opacity-20">▲</button>
+              <button type="button" onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="px-1 hover:text-black disabled:opacity-20">▼</button>
+              <button type="button" onClick={() => setRows((r) => r.filter((_, j) => j !== i))} className="px-1 text-red-500 hover:text-red-700">刪</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 問卷編輯器：上限 MAX_QUESTIONS 題，序列化成 questionsJson。刪題由 action 軟刪。 */
+function QuestionsEditor({ initial }: { initial: QuestionDraft[] }) {
+  const [rows, setRows] = useState<QuestionDraft[]>(initial);
+  const set = (i: number, patch: Partial<QuestionDraft>) =>
+    setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const move = (i: number, d: number) =>
+    setRows((r) => {
+      const j = i + d;
+      if (j < 0 || j >= r.length) return r;
+      const n = [...r];
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+  const payload = rows.map((q) => ({
+    id: q.id, label: q.label, type: q.type, required: q.required,
+    options: q.options.split("\n").map((o) => o.trim()).filter(Boolean),
+  }));
+  const cls = "rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-black focus:outline-none";
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 p-3">
+      <input type="hidden" name="questionsJson" value={JSON.stringify(payload)} />
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-500">
+          問卷（選填；與姓名、Email、手機同一頁一次送出）{rows.length}／{MAX_QUESTIONS} 題
+        </span>
+        <button type="button" disabled={rows.length >= MAX_QUESTIONS}
+          onClick={() => setRows((r) => [...r, { id: null, label: "", type: "SINGLE", options: "", required: false }])}
+          className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50 disabled:opacity-40">＋加一題</button>
+      </div>
+      {rows.length === 0 && <p className="text-xs text-gray-400">沒有問卷時，訪客只填姓名、Email、手機。</p>}
+      <div className="space-y-2">
+        {rows.map((q, i) => (
+          <div key={q.id ?? `new-${i}`} className="space-y-1.5 rounded-lg bg-gray-50 p-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-400">{i + 1}.</span>
+              <input value={q.label} onChange={(e) => set(i, { label: e.target.value })} placeholder="題目" className={`${cls} min-w-60 flex-1`} />
+              <select value={q.type} onChange={(e) => set(i, { type: e.target.value })} className={cls}>
+                {QUESTION_TYPES.map((t) => <option key={t} value={t}>{QUESTION_TYPE_LABEL[t]}</option>)}
+              </select>
+              <label className="flex items-center gap-1 text-xs text-gray-600">
+                <input type="checkbox" checked={q.required} onChange={(e) => set(i, { required: e.target.checked })} /> 必填
+              </label>
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="px-1 hover:text-black disabled:opacity-20">▲</button>
+                <button type="button" onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="px-1 hover:text-black disabled:opacity-20">▼</button>
+                <button type="button" onClick={() => setRows((r) => r.filter((_, j) => j !== i))} className="px-1 text-red-500 hover:text-red-700">刪</button>
+              </span>
+            </div>
+            {q.type !== "TEXT" && (
+              <textarea value={q.options} onChange={(e) => set(i, { options: e.target.value })} rows={3}
+                placeholder={"選項，一行一個（至少兩個）\nFacebook\n朋友介紹"}
+                className={`${cls} w-full font-mono`} />
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-gray-400">刪掉的題目不會消失：已收到的答案仍保留題目文字，只是不再顯示給新訪客。</p>
+    </div>
+  );
+}
+
 function WebinarFields({
   groups,
   initial,
@@ -128,6 +239,9 @@ function WebinarFields({
   groups: WebinarGroupOption[];
   initial?: WebinarRow;
 }) {
+  // 類型切換要即時改變欄位顯示，所以是 state；藏一個 hidden 給 action
+  const [kind, setKind] = useState<string>(initial?.kind ?? "WEBINAR");
+  const isResource = kind === "RESOURCE";
   const [dmImage, setDmImage] = useState(initial?.dmImage ?? "");
   const [dmError, setDmError] = useState("");
   const [dmUploading, setDmUploading] = useState(false);
@@ -153,6 +267,12 @@ function WebinarFields({
 
   return (
     <>
+      <input type="hidden" name="kind" value={kind} />
+      <div className="flex flex-wrap gap-4 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+        <span className="text-xs font-medium text-gray-500">類型</span>
+        <label className="flex items-center gap-1.5"><input type="radio" checked={!isResource} onChange={() => setKind("WEBINAR")} /> 線上講座（寄會議連結）</label>
+        <label className="flex items-center gap-1.5"><input type="radio" checked={isResource} onChange={() => setKind("RESOURCE")} /> 素材索取（寄影片、講義、檔案）</label>
+      </div>
       <div className="flex flex-wrap gap-2">
         <input
           name="slug"
@@ -165,7 +285,7 @@ function WebinarFields({
           name="title"
           required
           defaultValue={initial?.title ?? ""}
-          placeholder="講座標題"
+          placeholder={isResource ? "頁面標題（例：完整影片＋講義索取）" : "講座標題"}
           className="w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
         />
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
@@ -198,16 +318,20 @@ function WebinarFields({
         name="description"
         rows={3}
         defaultValue={initial?.description ?? ""}
-        placeholder="頁面說明（講座時間、講者、內容簡介…）"
+        placeholder={isResource ? "頁面說明（這份資料是什麼、填完會收到什麼…）" : "頁面說明（講座時間、講者、內容簡介…）"}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
       <input
         name="lectureUrl"
-        required
+        required={!isResource}
         defaultValue={initial?.lectureUrl ?? ""}
-        placeholder="講座連結（https://…，只出現在信裡不露出在頁面）"
+        placeholder={isResource ? "主要連結（選填；沒填就用素材清單第一筆）" : "講座連結（https://…，只出現在信裡不露出在頁面）"}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
+      <AssetsEditor
+        initial={(initial?.assets ?? []).map((a) => ({ title: a.title, url: a.url, note: a.note ?? "" }))}
+      />
+      {!isResource && (<>
       <div className="flex flex-wrap gap-2">
         <input
           name="meetingId"
@@ -235,10 +359,11 @@ function WebinarFields({
         Zoom 建議直接貼邀請信裡含 pwd 的完整連結最保險。
       </p>
 
+      </>)}
       {/* 講座 DM 圖：瀏覽器直傳 Storage（同課程封面），存公開網址 */}
       <div className="rounded-lg border border-dashed border-gray-300 p-3">
         <div className="mb-1.5 text-xs font-medium text-gray-500">
-          講座 DM 圖（選填，顯示在報名頁說明上方；JPG/PNG/WebP，5MB 內）
+          {isResource ? "主視覺" : "講座 DM 圖"}（選填，顯示在頁面說明上方；JPG/PNG/WebP，5MB 內）
         </div>
         <input type="hidden" name="dmImage" value={dmImage} />
         <div className="flex flex-wrap items-center gap-3">
@@ -298,7 +423,7 @@ function WebinarFields({
         name="emailSubject"
         required
         defaultValue={initial?.emailSubject ?? ""}
-        placeholder="信件主旨（例：您的講座連結來了｜希望學院）"
+        placeholder={isResource ? "信件主旨（例：你索取的完整影片與講義｜希望學院）" : "信件主旨（例：您的講座連結來了｜希望學院）"}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
       />
       <textarea
@@ -309,9 +434,14 @@ function WebinarFields({
         className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-black focus:outline-none"
       />
       <p className="text-xs text-gray-400">
-        {"{link}"} = 講座連結；[按鈕文字](網址) 會變成紅色 CTA 按鈕。內文沒放 {"{link}"}
-        時系統會自動在信末補「進入講座」按鈕。
+        {"{link}"} = {isResource ? "第一筆素材" : "講座連結"}；{"{assets}"} = 整份素材清單按鈕列；
+        [按鈕文字](網址) 會變成紅色 CTA 按鈕。內文沒放這些變數時系統會自動在信末補上。
       </p>
+      <QuestionsEditor
+        initial={(initial?.questions ?? []).map((q) => ({
+          id: q.id, label: q.label, type: q.type, required: q.required, options: q.options.join("\n"),
+        }))}
+      />
     </>
   );
 }
@@ -329,7 +459,7 @@ export function CreateWebinarForm({ groups }: { groups: WebinarGroupOption[] }) 
           disabled={pending}
           className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
         >
-          {pending ? "建立中…" : "建立講座頁"}
+          {pending ? "建立中…" : "建立頁面"}
         </button>
         <Feedback state={state} />
       </div>
@@ -466,6 +596,9 @@ export function WebinarCard({
     <details className="rounded-xl border border-gray-200">
       <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3">
         <span className="font-medium">{webinar.title}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs ${webinar.kind === "RESOURCE" ? "bg-emerald-100 text-emerald-800" : "bg-sky-100 text-sky-800"}`}>
+          {webinar.kind === "RESOURCE" ? "素材索取" : "線上講座"}
+        </span>
         {/* 直接看活動頁。放在 <summary> 裡要擋掉冒泡，否則點連結會順手把卡片展開／收合 */}
         <a
           href={`/webinar/${webinar.slug}`}
