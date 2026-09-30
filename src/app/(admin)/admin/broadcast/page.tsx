@@ -47,6 +47,8 @@ export default async function BroadcastPage({
     preset?: string;
     // 從場次看板「發課前通知」帶過來：勾好場次並填好草稿
     session?: string;
+    // 場次卡片的「只通知還沒收到的 N 人」帶 ?pending=1：直接勾好「只寄還沒收到的人」
+    pending?: string;
     // 場次名單列的「EDM」：只寄給這一位（手動名單自動填好該學員）
     signup?: string;
     followUp?: string;
@@ -62,6 +64,7 @@ export default async function BroadcastPage({
     followUp: followUpId,
     filter,
     session: sessionParam,
+    pending: pendingParam,
     signup: signupParam,
   } = await searchParams;
   const page = Math.max(1, Number.parseInt(pageRaw ?? "1", 10) || 1);
@@ -389,6 +392,7 @@ export default async function BroadcastPage({
                 groupIds: [],
                 sessionIds: singleRecipient ? [] : [noticeSession.id],
                 isNotice: true,
+                noticeScope: !singleRecipient && pendingParam === "1" ? "PENDING" : "ALL",
                 manualList: singleRecipient
                   ? `${singleRecipient.email},${singleRecipient.name}`
                   : "",

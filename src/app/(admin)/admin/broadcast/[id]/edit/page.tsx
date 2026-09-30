@@ -126,6 +126,7 @@ export default async function BroadcastEditPage({
     sessionIds: broadcastSessionIds(record),
     webinarIds: broadcastWebinarIds(record),
     isNotice: record.messageType === "NOTICE",
+    noticeScope: record.noticeScope === "PENDING" ? "PENDING" : "ALL",
     manualList: manualRows
       .map((r) => [r.email, r.name, r.link].filter(Boolean).join(","))
       .join("\n"),

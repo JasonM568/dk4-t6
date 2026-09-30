@@ -75,6 +75,8 @@ export type BroadcastFormDefaults = {
   sessionIds: string[]; // 場次可複選
   webinarIds?: string[]; // 講座可複選
   isNotice: boolean; // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉
+  /** 場次名單範圍：ALL＝全部報名者；PENDING＝只寄還沒收到課前 Email 的人（與簡訊模組同款） */
+  noticeScope?: "ALL" | "PENDING";
   manualList: string;
   scheduledAt: string; // datetime-local 格式（台北時間），空字串 = 未排程
 };
@@ -161,7 +163,11 @@ export function BroadcastForm({
     data: SessionAudiencePreview;
   } | null>(null);
   const [sessionPreviewing, startSessionPreview] = useTransition();
-  const sessionPreviewKey = pickedSessions.join(",");
+  // 只寄還沒收到的人：與簡訊模組同一個開關。試算 key 也要帶上，切換範圍舊數字要立刻失效
+  const [noticeScope, setNoticeScope] = useState<"ALL" | "PENDING">(
+    defaultValues?.noticeScope ?? "ALL",
+  );
+  const sessionPreviewKey = `${pickedSessions.join(",")}|${noticeScope}`;
   // key 帶上 messageType：勾/取消「履約通知」會改變退訂扣除數，
   // 舊結果必須立刻失效，不能讓過期數字停在畫面上
   const sessionPreview =
@@ -233,6 +239,7 @@ export function BroadcastForm({
         const result = await previewSessionAudienceAction(
           pickedSessions,
           messageType,
+          noticeScope,
         );
         if (alive)
           setSessionPreviewState({
@@ -245,7 +252,7 @@ export function BroadcastForm({
       alive = false;
       clearTimeout(timer);
     };
-  }, [audience, pickedSessions, sessionPreviewKey, messageType]);
+  }, [audience, pickedSessions, sessionPreviewKey, messageType, noticeScope]);
 
   // 講座名單試算（同上：debounce + 擋過期回應）
   useEffect(() => {
@@ -764,6 +771,20 @@ export function BroadcastForm({
                       </label>
                     ))
                   )}
+                </div>
+                {/* 名單範圍：開課前會重複匯入名單，多半只需要通知這次新進來的人。
+                    口徑是「還沒收到課前 Email 的人」，漏寄、寄失敗的也會被撈回來（與簡訊同款） */}
+                <input type="hidden" name="noticeScope" value={noticeScope} />
+                <div className="flex flex-wrap gap-4 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input type="radio" checked={noticeScope === "ALL"} onChange={() => setNoticeScope("ALL")} />
+                    全部報名者
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input type="radio" checked={noticeScope === "PENDING"} onChange={() => setNoticeScope("PENDING")} />
+                    只寄還沒收到的人
+                    <span className="text-xs text-gray-400">（寄出成功才算收到；失敗的下次會再撈回來）</span>
+                  </label>
                 </div>
                 {/* 名單試算：與寄出走同一套解析。「沒有 Email」要單獨顯示——
                     團報名單常常只有訂購人留了 Email，同行者是空的，那些人得改用簡訊通知 */}

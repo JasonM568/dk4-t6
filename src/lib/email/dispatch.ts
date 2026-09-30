@@ -96,10 +96,17 @@ async function collectGroupMembers(groupIds: string[]) {
  *  與 sms/dispatch.ts 的同名函式刻意各留一份（一個取 email、一個取 phone），
  *  但過濾條件必須一致：已延期到其他場次的不收原場次的課前通知，
  *  新場次的名單自然會涵蓋他，否則同一個人會收到兩份不同日期的通知。 */
-async function collectSessionSignups(sessionIds: string[]) {
+async function collectSessionSignups(sessionIds: string[], noticeScope = "ALL") {
   const rows = await prisma.sessionSignup.findMany({
-    where: { sessionId: { in: sessionIds }, deferredToSessionId: null },
+    where: {
+      sessionId: { in: sessionIds },
+      deferredToSessionId: null,
+      // PENDING：只寄還沒收到課前 Email 的人（開課前重複匯入後，只通知這次新進來的）。
+      // 與 ALL 同樣在寄出當下解析，解析到寄出之間新報名的人也涵蓋得到。與 sms/dispatch 同款。
+      ...(noticeScope === "PENDING" ? { emailNoticeAt: null } : {}),
+    },
     select: {
+      id: true,
       sessionId: true,
       email: true,
       name: true,
@@ -264,9 +271,19 @@ async function resolveRecipients(record: {
   manualRows: unknown;
   sourceBroadcastId: string | null;
   followUpFilter: string | null;
-}): Promise<{ recipients: Recipient[]; excludedCount: number; error?: string }> {
+  noticeScope?: string;
+}): Promise<{
+  recipients: Recipient[];
+  excludedCount: number;
+  error?: string;
+  /** email（小寫）→ 名單列 id：寄出成功後回寫 emailNoticeAt 用。
+   *  一個信箱可能對到多筆（訂購人幫同行者填自己的信箱），那一封信等於通知到全部，
+   *  所以同信箱的人一起標記，不會讓同行者永遠留在「未通知」被重複寄送（同 sms/dispatch）。 */
+  signupIdsByEmail?: Map<string, string[]>;
+}> {
   let deduped: Recipient[] = [];
   let emptyError = "";
+  let signupIdsByEmail: Map<string, string[]> | undefined;
 
   if (record.audienceType === "FOLLOWUP") {
     const r = await resolveFollowUpRecipients(record);
@@ -292,7 +309,13 @@ async function resolveRecipients(record: {
     const sessionIds = broadcastSessionIds(record);
     if (sessionIds.length === 0)
       return { recipients: [], excludedCount: 0, error: "缺少場次" };
-    const signups = await collectSessionSignups(sessionIds);
+    const signups = await collectSessionSignups(sessionIds, record.noticeScope);
+    signupIdsByEmail = new Map();
+    for (const s of signups) {
+      const key = (s.email ?? "").trim().toLowerCase();
+      if (!key) continue;
+      signupIdsByEmail.set(key, [...(signupIdsByEmail.get(key) ?? []), s.id]);
+    }
     // 跨場次重複報名的 email 收斂成一筆 → 報名多場的學員只會收到一封
     deduped = dedupeByEmail(
       signups.map((s) => ({
@@ -349,7 +372,7 @@ async function resolveRecipients(record: {
           ? "名單全數退信或檢舉過垃圾信，無人可寄"
           : "名單全數已退訂，無人可寄",
     };
-  return { recipients, excludedCount };
+  return { recipients, excludedCount, signupIdsByEmail };
 }
 
 /** 複選名單群組的收件人數預覽（後台送出前顯示）。
@@ -399,6 +422,7 @@ export async function previewGroupAudience(
 export async function previewSessionAudience(
   sessionIds: string[],
   messageType = "MARKETING",
+  noticeScope = "ALL",
 ): Promise<SessionAudiencePreview> {
   if (sessionIds.length === 0) return EMPTY_SESSION_AUDIENCE_PREVIEW;
 
@@ -407,7 +431,8 @@ export async function previewSessionAudience(
       where: { id: { in: sessionIds } },
       select: { id: true, title: true },
     }),
-    collectSessionSignups(sessionIds),
+    // 試算與寄出走同一個 scope，否則「只寄未通知」的預估人數會是全場人數
+    collectSessionSignups(sessionIds, noticeScope),
   ]);
 
   const rowsBySession = new Map<string, number>();
@@ -513,6 +538,7 @@ export async function executeBroadcast(broadcastId: string) {
     recipients,
     excludedCount,
     error: resolveError,
+    signupIdsByEmail,
   } = await resolveRecipients(record);
   // 先留下 PENDING：若 provider 已接受後 serverless 中斷，管理員會看到「結果不確定」，
   // 系統不會據此自動重寄。unique + skipDuplicates 也避免同一封重複建立列。
@@ -574,6 +600,19 @@ export async function executeBroadcast(broadcastId: string) {
         ],
       }),
     ]);
+  }
+
+  // 課前通知狀態回寫：**只標記 provider 已接受的**，失敗的維持未通知，
+  // 下次「只寄還沒收到的人」會自動把他們撈回來（永不自動重寄的原則不變）。與 sms/dispatch 同款。
+  if (record.audienceType === "SESSION" && signupIdsByEmail && r.acceptedRecipients.length > 0) {
+    const ids = r.acceptedRecipients.flatMap(
+      (rcpt) => signupIdsByEmail.get(rcpt.email.trim().toLowerCase()) ?? [],
+    );
+    if (ids.length > 0)
+      await prisma.sessionSignup.updateMany({
+        where: { id: { in: [...new Set(ids)] } },
+        data: { emailNoticeAt: new Date() },
+      });
   }
 
   await prisma.emailBroadcast.update({

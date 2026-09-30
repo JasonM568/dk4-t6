@@ -1502,6 +1502,16 @@ export function SessionCard({
                   📱 只通知還沒收到的 {notice.smsPending} 人
                 </Link>
               )}
+              {/* Email 版同款：口徑是「還沒收到課前 Email 的人」（寄出成功才回寫），
+                  漏寄、寄失敗的也會被撈回來 */}
+              {notice.emailPending > 0 && notice.emailDone > 0 && (
+                <Link
+                  href={`/admin/broadcast?session=${session.id}&pending=1`}
+                  className="inline-block rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 transition hover:bg-amber-100"
+                >
+                  ✉️ 只通知還沒收到的 {notice.emailPending} 人
+                </Link>
+              )}
               {/* 公開報名頁：DM 圖、課程資訊、名額與待確認報名都在那一頁 */}
               <Link
                 href={`/admin/sessions/${session.id}/signup-page`}

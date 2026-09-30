@@ -298,6 +298,9 @@ model EmailBroadcast {
   // audienceType=SESSION 的場次（可複選）：與 SmsBroadcast.sessionIds 同義，
   // 一次匯入的場次名單同時餵 EDM 與簡訊兩個模組；寄出當下才取名單（新報名者自動涵蓋）
   sessionIds    String[]  @default([])
+  // audienceType=SESSION 的名單範圍：ALL＝全部報名者；PENDING＝只寄 emailNoticeAt 為空的人。
+  // 與 SmsBroadcast.noticeScope 同義；寄出成功（provider ACCEPTED）才回寫 emailNoticeAt
+  noticeScope   String    @default("ALL")
   // audienceType=WEBINAR 的講座（可複選）：與 SmsBroadcast.webinarIds 同義，
   // 名單來源同為 WebinarRequest；寄出當下才解析（發完才索取的人下次自動涵蓋）
   webinarIds    String[]  @default([])

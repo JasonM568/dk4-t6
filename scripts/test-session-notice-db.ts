@@ -7,6 +7,7 @@
  * 測完會刪掉自己建的場次與報名列。 */
 import { prisma } from "../src/lib/db";
 import { previewSmsAudience } from "../src/lib/sms/dispatch";
+import { previewSessionAudience } from "../src/lib/email/dispatch";
 import { computeNoticeProgress } from "../src/lib/session-notice";
 
 // 安全鎖：非本機資料庫一律拒跑（鐵則：絕不對正式站跑寫入測試）
@@ -110,6 +111,39 @@ async function main() {
     where: { sessionId: SID, orderNo: "N-3" },
     data: { smsNoticeAt: new Date() },
   });
+
+  console.log("\nEDM：只寄還沒收到的人（PENDING）——走正式的 previewSessionAudience");
+  {
+    const all = await previewSessionAudience([SID], "NOTICE", "ALL");
+    const pend = await previewSessionAudience([SID], "NOTICE", "PENDING");
+    // 夾具六位中「二次匯入己」沒有 email（簡訊案例），Email 可寄基準是 5
+    check("全部範圍＝5 位可寄（海外與無手機 Email 都寄得到；沒 email 的不算）", all.uniqueCount === 5, `實得 ${all.uniqueCount}`);
+    check("沒人收過 Email 時，未通知範圍＝全部（5）", pend.uniqueCount === 5, `實得 ${pend.uniqueCount}`);
+    await prisma.sessionSignup.updateMany({
+      where: { sessionId: SID, email: { in: ["a@example.com", "b@example.com"] } },
+      data: { emailNoticeAt: new Date() },
+    });
+    const pend2 = await previewSessionAudience([SID], "NOTICE", "PENDING");
+    const all2 = await previewSessionAudience([SID], "NOTICE", "ALL");
+    check("回寫甲乙後未通知範圍剩 3 位", pend2.uniqueCount === 3, `實得 ${pend2.uniqueCount}`);
+    check("全部範圍不受回寫影響（仍 5 位）", all2.uniqueCount === 5, `實得 ${all2.uniqueCount}`);
+    // 同信箱多筆：訂購人幫同行者填自己的信箱 → 一封信通知到全部，回寫要一起標
+    await prisma.sessionSignup.create({
+      data: { sessionId: SID, orderNo: "N-7", attendeeKey: "companion", name: "同行者庚", phone: "0900000107", email: "c@example.com" },
+    });
+    const pend3 = await previewSessionAudience([SID], "NOTICE", "PENDING");
+    check("同信箱兩筆去重後仍是 3 位（不多算一封）", pend3.uniqueCount === 3, `實得 ${pend3.uniqueCount}`);
+    await prisma.sessionSignup.updateMany({ where: { sessionId: SID, email: "c@example.com" }, data: { emailNoticeAt: new Date() } });
+    const pend4 = await previewSessionAudience([SID], "NOTICE", "PENDING");
+    check("同信箱一起標記後兩筆都不再出現（3→2）", pend4.uniqueCount === 2, `實得 ${pend4.uniqueCount}`);
+    await prisma.sessionSignup.updateMany({ where: { sessionId: SID, orderNo: "N-4" }, data: { deferredToSessionId: "other-session" } });
+    const pend5 = await previewSessionAudience([SID], "NOTICE", "PENDING");
+    check("延期出去的海外丁被排除（2→1）", pend5.uniqueCount === 1, `實得 ${pend5.uniqueCount}`);
+    await prisma.sessionSignup.updateMany({ where: { sessionId: SID, orderNo: "N-4" }, data: { deferredToSessionId: null } });
+    // 還原：後面的進度數字案例假設 Email 全未發
+    await prisma.sessionSignup.updateMany({ where: { sessionId: SID }, data: { emailNoticeAt: null } });
+    await prisma.sessionSignup.deleteMany({ where: { sessionId: SID, orderNo: "N-7" } });
+  }
 
   console.log("\n場次卡片的進度數字");
   const rows = await prisma.sessionSignup.findMany({

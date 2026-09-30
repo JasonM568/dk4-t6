@@ -1135,13 +1135,19 @@ export async function previewGroupAudienceAction(
 export async function previewSessionAudienceAction(
   sessionIds: string[],
   messageType = "MARKETING",
+  noticeScope = "ALL",
 ): Promise<SessionAudiencePreview> {
   await requireEditor();
   const ids = [...new Set((sessionIds ?? []).map(String).filter(Boolean))].slice(0, 50);
   if (ids.length === 0) return EMPTY_SESSION_AUDIENCE_PREVIEW;
   // 勾了「履約通知」就用 NOTICE 試算：畫面上的「扣除退訂 N 人」會跟著變，
-  // 管理員看得到「勾這個框救回了幾個人」
-  return previewSessionAudience(ids, messageType === "NOTICE" ? "NOTICE" : "MARKETING");
+  // 管理員看得到「勾這個框救回了幾個人」。
+  // 試算與寄出走同一個 noticeScope，否則「只寄未通知」的預估人數會是全場人數
+  return previewSessionAudience(
+    ids,
+    messageType === "NOTICE" ? "NOTICE" : "MARKETING",
+    noticeScope === "PENDING" ? "PENDING" : "ALL",
+  );
 }
 
 /** 複選講座的收件人數預覽（勾選當下即時試算）。
@@ -1178,6 +1184,11 @@ export async function sendBroadcastAction(
   // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
   const webinarIds = formData.getAll("webinarIds").map(String).filter(Boolean);
+  // 場次名單範圍（與簡訊同款）：只有場次名單才有「只寄還沒收到的人」，其他對象一律 ALL
+  const noticeScope =
+    audience === "session" && String(formData.get("noticeScope") ?? "") === "PENDING"
+      ? "PENDING"
+      : "ALL";
   // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉。比照簡訊需勾確認
   const wantsNotice = formData.get("isNotice") === "on";
   const noticeAck = formData.get("noticeAck") === "on";
@@ -1202,6 +1213,7 @@ export async function sendBroadcastAction(
   if (mode !== "draft" && notice.error) return { error: notice.error };
   const noticeFields = {
     messageType: notice.messageType,
+    noticeScope,
     noticeAckBy:
       notice.messageType === "NOTICE" ? (admin?.email ?? null) : null,
   };
@@ -1434,6 +1446,11 @@ export async function updateBroadcastAction(
   // 場次可複選（同上）；名單於寄出當下才解析，與簡訊模組共用同一份場次報名名單
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
   const webinarIds = formData.getAll("webinarIds").map(String).filter(Boolean);
+  // 場次名單範圍（與簡訊同款）：只有場次名單才有「只寄還沒收到的人」，其他對象一律 ALL
+  const noticeScope =
+    audience === "session" && String(formData.get("noticeScope") ?? "") === "PENDING"
+      ? "PENDING"
+      : "ALL";
   // 履約通知（課前通知）：只擋退信／檢舉，不被行銷退訂擋掉。比照簡訊需勾確認
   const wantsNotice = formData.get("isNotice") === "on";
   const noticeAck = formData.get("noticeAck") === "on";
@@ -1458,6 +1475,7 @@ export async function updateBroadcastAction(
   if (mode !== "draft" && notice.error) return { error: notice.error };
   const noticeFields = {
     messageType: notice.messageType,
+    noticeScope,
     noticeAckBy:
       notice.messageType === "NOTICE" ? (admin?.email ?? null) : null,
   };
