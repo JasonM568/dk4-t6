@@ -44,6 +44,7 @@ import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
 import { setPageEnabled, type SitePageKey } from "@/lib/site-pages";
 import { TRACKING_KEYS } from "@/lib/tracking";
+import { parseTrackingId, type TrackingField } from "@/lib/tracking-id";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { parseOrderFile } from "@/lib/session-import";
 import { normalizeContactPhone } from "@/lib/sms/phone";
@@ -2527,8 +2528,6 @@ export async function togglePageAction(key: SitePageKey, enabled: boolean) {
   revalidatePath("/admin/settings");
 }
 
-/** 儲存全站追蹤碼設定（GA4/Meta Pixel/GTM）。
- *  格式嚴格驗證：ID 會內插進前台 inline script，不能放行任意字串；空字串 = 停用 */
 // ─────────────────── 1shop 訂單回填會員手機 ───────────────────
 
 export type PhoneImportReport = {
@@ -2677,47 +2676,39 @@ export async function importMemberPhonesAction(
   return { report };
 }
 
+export type TrackingState = {
+  error?: string;
+  field?: TrackingField; // 哪一格錯，前端把訊息顯示在那一格底下
+  success?: string;
+  saved?: Record<TrackingField, string>; // 實際存進去的值（貼安裝碼時是抽出來的 ID）
+} | null;
+
+/** 儲存全站追蹤碼設定（GA4/Meta Pixel/GTM）。
+ *  格式嚴格驗證：ID 會內插進前台 inline script，不能放行任意字串；空字串 = 停用 */
 export async function saveTrackingSettingsAction(
-  _prev: BroadcastState,
+  _prev: TrackingState,
   formData: FormData,
-): Promise<BroadcastState> {
+): Promise<TrackingState> {
   await requireFullAdmin();
 
-  const fields = [
-    {
-      key: TRACKING_KEYS.ga4,
-      value: String(formData.get("ga4") ?? "").trim(),
-      re: /^G-[A-Z0-9]{4,20}$/i,
-      label: "GA4 評估 ID 格式不正確（應為 G- 開頭，例：G-XXXXXXXXXX）",
-    },
-    {
-      key: TRACKING_KEYS.metaPixel,
-      value: String(formData.get("metaPixel") ?? "").trim(),
-      re: /^\d{5,20}$/,
-      label: "Meta Pixel ID 格式不正確（應為純數字）",
-    },
-    {
-      key: TRACKING_KEYS.gtm,
-      value: String(formData.get("gtm") ?? "").trim(),
-      re: /^GTM-[A-Z0-9]{4,15}$/i,
-      label: "GTM 容器 ID 格式不正確（應為 GTM- 開頭，例：GTM-XXXXXXX）",
-    },
-  ];
-  for (const f of fields) {
-    if (f.value && !f.re.test(f.value)) return { error: f.label };
+  const saved = {} as Record<TrackingField, string>;
+  for (const field of ["ga4", "metaPixel", "gtm"] as const) {
+    const parsed = parseTrackingId(field, String(formData.get(field) ?? ""));
+    if (!parsed.ok) return { error: parsed.error, field };
+    saved[field] = parsed.value;
   }
 
-  for (const f of fields) {
+  for (const field of ["ga4", "metaPixel", "gtm"] as const) {
     await prisma.siteSetting.upsert({
-      where: { key: f.key },
-      create: { key: f.key, value: f.value },
-      update: { value: f.value },
+      where: { key: TRACKING_KEYS[field] },
+      create: { key: TRACKING_KEYS[field], value: saved[field] },
+      update: { value: saved[field] },
     });
   }
   // 追蹤碼在 root layout 注入，全站重新驗證
   revalidatePath("/", "layout");
   revalidatePath("/admin/settings");
-  return { success: "追蹤碼設定已儲存，前台即刻生效" };
+  return { success: "追蹤碼設定已儲存，前台即刻生效", saved };
 }
 
 // ── 權限管理（指派總教練/操作人員）── 僅管理員

@@ -129,6 +129,7 @@ npx tsx scripts/test-batch-enroll-form.ts                               # 批次
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
 npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 16 項（既有講座頁零變化是回歸線）
 npx tsx scripts/test-webinar-survey.ts                                  # 問卷驗證 27 項（必填／選項竄改／題數上限／快照）
+npx tsx scripts/test-tracking-id.ts                                      # 追蹤碼 ID 解析（貼整段安裝碼）＋表單受控契約 17 項
 npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等（本機 DB）
 ```
 
