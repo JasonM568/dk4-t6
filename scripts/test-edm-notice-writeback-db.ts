@@ -9,11 +9,6 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 
-const url = process.env.DATABASE_URL ?? "";
-if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
-  console.error("✗ DATABASE_URL 不是本機資料庫，拒絕執行（此測試會寫入）");
-  process.exit(1);
-}
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail?: string) {
   if (ok) { pass++; console.log(`  ✓ ${name}`); }
@@ -47,8 +42,16 @@ async function main() {
   process.env.RESEND_BATCH_URL = `http://127.0.0.1:${address.port}`;
   process.env.RESEND_API_KEY = "test-only";
   process.env.EMAIL_FROM = "Test <test@example.com>";
-  // provider URL 在模組載入時固定，必須先設 env 再 dynamic import
+  // 先載 lib/db（順帶載入 .env）再做本機守門：守門若放在任何 import 之前，
+  // DATABASE_URL 還是空的，會把本機也誤判成「非本機」而拒跑——2026-09-30 就這樣讓
+  // 這支測試在 commit 訊息裡「全過」但其實一次都沒執行
   const { prisma } = await import("../src/lib/db");
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  if (!/@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl)) {
+    console.error("✗ DATABASE_URL 不是本機資料庫，拒絕執行（此測試會寫入）");
+    process.exit(1);
+  }
+  // provider URL 在模組載入時固定，必須先設 env 再 dynamic import dispatch
   const { executeBroadcast, previewSessionAudience } = await import("../src/lib/email/dispatch");
 
   const cleanup = async () => {
