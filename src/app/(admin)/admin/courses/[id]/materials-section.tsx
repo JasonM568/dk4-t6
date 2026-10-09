@@ -3,7 +3,7 @@
 import { useActionState, useTransition } from "react";
 import type { MaterialState } from "@/actions/admin";
 
-type Material = { id: string; title: string; url: string };
+type Material = { id: string; title: string; url: string | null };
 
 type MaterialsSectionProps = {
   materials: Material[];
@@ -39,7 +39,7 @@ export function MaterialsSection({
             <span className="text-gray-400">📄</span>
             <span className="flex-1">{m.title}</span>
             <a
-              href={m.url}
+              href={`/api/materials/${m.id}`}
               target="_blank"
               rel="noreferrer"
               className="text-indigo-600 hover:underline"

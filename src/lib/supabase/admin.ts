@@ -18,7 +18,7 @@ export type Profile = {
   role: string | null; // student | admin | coach | master | tester
 };
 
-function createAdminClient() {
+export function createAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!,
@@ -249,10 +249,11 @@ export async function generateSetPasswordLink(
 // ───── 課程圖片上傳（Supabase Storage：course-assets 公開 bucket）─────
 
 const COURSE_ASSETS_BUCKET = "course-assets";
+export const COURSE_MATERIALS_BUCKET = "course-materials";
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export type UploadResult =
-  | { ok: true; url: string }
+  | { ok: true; path: string }
   | { ok: false; error: string };
 
 export type SignedUploadResult =
@@ -318,7 +319,18 @@ const ALLOWED_MATERIAL_TYPES: Record<string, string> = {
 };
 const MAX_MATERIAL_BYTES = 20 * 1024 * 1024; // 20MB
 
-// 上傳課程講義（PDF/Office/ZIP），回傳公開網址
+/** 講義只存私有 bucket；bucket 已存在時可直接繼續上傳。 */
+export async function ensureMaterialsBucket(): Promise<void> {
+  const { error } = await createAdminClient().storage.createBucket(COURSE_MATERIALS_BUCKET, {
+    public: false,
+    fileSizeLimit: MAX_MATERIAL_BYTES,
+  });
+  if (error && error.statusCode !== "409" && !/already exists|already exist|duplicate/i.test(error.message)) {
+    throw error;
+  }
+}
+
+// 上傳課程講義（PDF/Office/ZIP），只回傳私有 bucket 的物件 path
 export async function uploadCourseMaterial(file: File): Promise<UploadResult> {
   const ext = ALLOWED_MATERIAL_TYPES[file.type];
   if (!ext) {
@@ -332,18 +344,23 @@ export async function uploadCourseMaterial(file: File): Promise<UploadResult> {
   }
 
   const path = `materials/${crypto.randomUUID()}.${ext}`;
+  try {
+    await ensureMaterialsBucket();
+  } catch (e) {
+    console.error("[supabase/admin] 建立私有講義 bucket 失敗：", e);
+    return { ok: false, error: "無法準備講義儲存空間，請稍後再試" };
+  }
   const supabase = createAdminClient();
   const { error } = await supabase.storage
-    .from(COURSE_ASSETS_BUCKET)
-    .upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+    .from(COURSE_MATERIALS_BUCKET)
+    .upload(path, file, { contentType: file.type });
 
   if (error) {
     console.error("[supabase/admin] 講義上傳失敗：", file.name, error.message);
     return { ok: false, error: `「${file.name}」上傳失敗：${error.message}` };
   }
 
-  const { data } = supabase.storage.from(COURSE_ASSETS_BUCKET).getPublicUrl(path);
-  return { ok: true, url: data.publicUrl };
+  return { ok: true, path };
 }
 
 export type NeverSignedInUser = {

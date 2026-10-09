@@ -137,7 +137,7 @@ export default async function LearnPage({
                 {course.materials.map((m) => (
                   <li key={m.id}>
                     <a
-                      href={m.url}
+                      href={`/api/materials/${m.id}`}
                       target="_blank"
                       rel="noreferrer"
                       className="flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-gray-50"

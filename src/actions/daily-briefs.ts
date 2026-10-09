@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
+import { isOurStorageUrl, MAX_BRIEF_IMAGES } from "@/lib/supabase/public-url";
 
 export type DailyBriefFormState = { error?: string; success?: string } | null;
 
@@ -22,7 +23,11 @@ function titleForDate(dateKey: string) {
 }
 
 function imagesFrom(formData: FormData) {
-  return formData.getAll("images").map(String).filter((url) => /^https?:\/\//.test(url));
+  const images = formData.getAll("images").map(String);
+  if (images.length > MAX_BRIEF_IMAGES) return { images: [], error: `一則剪報最多 ${MAX_BRIEF_IMAGES} 張圖片` };
+  return images.every(isOurStorageUrl)
+    ? { images }
+    : { images: [], error: "剪報圖片只接受站內上傳的圖片" };
 }
 
 function revalidate(groupSlug: string) {
@@ -40,7 +45,9 @@ export async function createTodayDailyBrief(
   formData: FormData,
 ): Promise<DailyBriefFormState> {
   await requireEditor();
-  const images = imagesFrom(formData);
+  const parsed = imagesFrom(formData);
+  if (parsed.error) return { error: parsed.error };
+  const { images } = parsed;
   if (!images.length) return { error: "請至少上傳一張新聞截圖" };
   const dateKey = taipeiDateKey();
   const prior = await prisma.dailyBrief.count({ where: { groupId } });
@@ -74,7 +81,9 @@ export async function updateDailyBrief(
   await requireEditor();
   const title = String(formData.get("title") ?? "").trim();
   const status = String(formData.get("status") ?? "DRAFT");
-  const images = imagesFrom(formData);
+  const parsed = imagesFrom(formData);
+  if (parsed.error) return { error: parsed.error };
+  const { images } = parsed;
   if (!title) return { error: "請填寫標題" };
   if (!['DRAFT', 'PUBLISHED', 'UNPUBLISHED'].includes(status)) return { error: "發布狀態不正確" };
   if (!images.length) return { error: "至少保留一張新聞截圖" };

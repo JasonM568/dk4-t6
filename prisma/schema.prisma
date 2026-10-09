@@ -1199,7 +1199,8 @@ model CourseMaterial {
   courseId String
   course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
   title    String
-  url      String
+  url      String?
+  storagePath String?
 
   createdAt DateTime @default(now())
 

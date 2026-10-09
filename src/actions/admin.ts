@@ -366,7 +366,7 @@ export async function duplicateCourse(courseId: string) {
         })),
       },
       materials: {
-        create: src.materials.map((m) => ({ title: m.title, url: m.url })),
+        create: src.materials.map((m) => ({ title: m.title, url: m.url, storagePath: m.storagePath })),
       },
     },
   });
@@ -464,15 +464,18 @@ export async function addMaterialAction(
   if (!title) return { error: "請填寫講義名稱" };
 
   let url = String(formData.get("url") ?? "").trim();
+  let storagePath: string | null = null;
   const file = formData.get("file");
   if (file instanceof File && file.size > 0) {
     const up = await uploadCourseMaterial(file);
     if (!up.ok) return { error: up.error };
-    url = up.url;
+    storagePath = up.path;
+    url = "";
   }
-  if (!url) return { error: "請上傳檔案或填寫外部網址" };
+  if (!storagePath && !url) return { error: "請上傳檔案或填寫外部網址" };
+  if (url && !/^https?:\/\//i.test(url)) return { error: "外部網址須以 http(s) 開頭" };
 
-  await prisma.courseMaterial.create({ data: { courseId, title, url } });
+  await prisma.courseMaterial.create({ data: { courseId, title, url: url || null, storagePath } });
   revalidatePath(`/admin/courses/${courseId}`);
   return null;
 }
