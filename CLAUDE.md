@@ -142,7 +142,7 @@ npx tsx --conditions=react-server scripts/test-zone-invite-db.ts        # 邀請
 npx tsx --conditions=react-server scripts/test-session-signup-abuse-db.ts # 公開報名頁／訪客結帳 D 層 47 項（名額併發鎖／60 秒連點只擋同一組人／報名方式守門／長度與人數上限）
 npx tsx --conditions=react-server scripts/test-import-export-abuse-db.ts # 匯入匯出 D 層 64 項（CSV 公式注入含 Tab/CR／學員名單匯入共用解析器與 5,000 列上限／金額日期嚴格解析／壓縮炸彈）
 npx tsx --conditions=react-server scripts/test-broadcast-abuse-db.ts     # EDM／簡訊群發 D 層 50 項（requestKey 冪等／補寄原子認領／簡訊 5 則上限／退訂端點偽造；假寄信商）
-npx tsx --conditions=react-server scripts/test-public-forms-abuse-db.ts  # 公開表單 D 層 60 項（4 位碼限流原子計次／學員記錄認領比姓名／講座與企業包班併發／長度上限／同 IP 限流 20 次；Supabase 全替身）
+npx tsx --conditions=react-server scripts/test-public-forms-abuse-db.ts  # 公開表單 D 層 64 項（4 位碼限流原子計次／學員記錄認領比姓名／講座與企業包班併發／長度上限／同 IP 限流預設 20、講座索取與場次報名 60；Supabase 全替身）
 npx tsx scripts/test-idor-static.ts                                      # IDOR 靜態掃描 29 項（會員端資料範圍／落地頁欄位最小化／後台子資源寫入那一句的 where 綁父層＋掃描器自測）
 npx tsx --conditions=react-server scripts/test-material-brief-abuse-db.ts # 講義下載授權／剪報圖片網址 D 層 73 項（未登入／無權 404 無探針／簽名 ≤60 秒／外部網址 7 種不轉址／穿越與上限）
 npx tsx --conditions=react-server scripts/test-material-access-db.ts     # 講義路由基本授權 9 項（未開通／已開通／幹部／停用專區／外部 url）

@@ -363,59 +363,83 @@ async function main() {
   }
 
   // ═══════════════ F ═══════════════
-  console.log("\nF. 公開表單的同 IP 限流（每 IP 10 分鐘 20 次，超過鎖 15 分鐘）");
+  console.log("\nF. 公開表單的同 IP 限流（預設每 IP 10 分鐘 20 次；講座索取、手動報名、平台結帳 60 次；超過鎖 15 分鐘）");
   {
     const thr = readFileSync("src/lib/form-throttle.ts", "utf8");
-    check("限流常數：同 IP 10 分鐘 20 次、鎖 15 分鐘；全站 300 次、鎖 10 分鐘（門檻不得放寬）",
+    const { ipMaxAttemptsFor } = await import("../src/lib/form-throttle");
+    check("限流常數：視窗 10 分鐘、預設同 IP 20 次、鎖 15 分鐘；全站 300 次、鎖 10 分鐘（門檻不得再放寬）",
       /WINDOW_MS = 10 \* 60 \* 1000/.test(thr) && /IP_MAX_ATTEMPTS = 20/.test(thr) && /IP_LOCK_MS = 15 \* 60 \* 1000/.test(thr) &&
         /GLOBAL_MAX_ATTEMPTS = 300/.test(thr) && /GLOBAL_LOCK_MS = 10 \* 60 \* 1000/.test(thr));
+    const perForm: Record<string, number> = { webinar: 60, "session-signup": 60, "session-checkout": 60, corporate: 20, register: 20, "forgot-password": 20, "任何未列名的新表單": 20 };
+    check("各表單的同 IP 上限：講座索取、手動報名、平台結帳是 60（Jason 2026-10-09：現場同 WiFi 數十人掃碼），其餘與未列名的新表單維持 20",
+      Object.entries(perForm).every(([f, n]) => ipMaxAttemptsFor(f) === n), JSON.stringify(Object.fromEntries(Object.keys(perForm).map((f) => [f, ipMaxAttemptsFor(f)]))));
+    const mapped = [...(/IP_MAX_ATTEMPTS_BY_FORM[^=]*=\s*\{([^}]*)\}/.exec(thr)?.[1] ?? "").matchAll(/(\d+)/g)].map((m) => Number(m[1]));
+    check("放寬只限那三張表單：覆寫表裡只有 3 項、沒有任何一項超過 60", mapped.length === 3 && mapped.every((n) => n <= 60), JSON.stringify(mapped));
     const wired: [string, string][] = [["src/actions/webinar.ts", "webinar"], ["src/actions/session-signup.ts", "session-signup"], ["src/actions/session-checkout.ts", "session-checkout"], ["src/actions/corporate.ts", "corporate"], ["src/actions/auth.ts", "register"], ["src/actions/auth.ts", "forgot-password"]];
     check("六個會寄信或建立資料的公開入口都接上限流（講座、手動報名、平台結帳、企業包班、註冊、忘記密碼）",
       wired.every(([f, name]) => new RegExp(`reserveCurrentFormAttempt\\("${name}"\\)`).test(readFileSync(f, "utf8"))),
       wired.filter(([f, name]) => !new RegExp(`reserveCurrentFormAttempt\\("${name}"\\)`).test(readFileSync(f, "utf8"))).map((x) => x[1]).join("、"));
 
-    // 講座索取：循序 20 次通過、第 21 次被擋
+    const WN = ipMaxAttemptsFor("webinar"); // 60
+    // 講座索取：循序 WN 次通過、第 WN+1 次被擋
     await prisma.boardLoginThrottle.deleteMany({ where: { key: { in: FORM_GLOBAL_KEYS } } });
     const ipA = freshIp("thrA");
     const wmail = (i: number) => `thr${i}${D}`;
     const wform = (i: number) => fd({ name: `限流${i}`, email: wmail(i), phone: phone(), [qf(q1.id)]: "甲" });
     const results: unknown[] = [];
-    for (let i = 0; i < 20; i++) results.push(await requestWebinarLinkAction(WSLUG, null, wform(i)));
+    for (let i = 0; i < WN; i++) results.push(await requestWebinarLinkAction(WSLUG, null, wform(i)));
     const okN = results.filter((r) => r && typeof r === "object" && "success" in (r as object)).length;
     const before = mails.length;
-    const r21 = await requestWebinarLinkAction(WSLUG, null, wform(20));
-    check("講座索取：同一個 IP 循序 20 次全部通過", okN === 20, `通過 ${okN} 次`);
-    check("講座索取：第 21 次被擋（回『操作過於頻繁』）且零寄信、零寫入", !!r21 && "error" in r21 && /頻繁/.test(r21.error ?? "") && mails.length === before && (await prisma.webinarRequest.count({ where: { email: wmail(20) } })) === 0, JSON.stringify(r21));
+    const rOver = await requestWebinarLinkAction(WSLUG, null, wform(WN));
+    check(`講座索取：同一個 IP 循序 ${WN} 次全部通過（現場數十人共用 WiFi 不該被擋）`, okN === WN, `通過 ${okN} 次`);
+    check(`講座索取：第 ${WN + 1} 次被擋（回『操作過於頻繁』）且零寄信、零寫入`, !!rOver && "error" in rOver && /頻繁/.test(rOver.error ?? "") && mails.length === before && (await prisma.webinarRequest.count({ where: { email: wmail(WN) } })) === 0, JSON.stringify(rOver));
     currentIp = freshIp("thrB");
-    const other = await requestWebinarLinkAction(WSLUG, null, wform(21));
+    const other = await requestWebinarLinkAction(WSLUG, null, wform(WN + 1));
     check("另一個 IP 不受影響（仍可送出）", !!other && "success" in other, JSON.stringify(other));
     // 鎖定到期（模擬 16 分鐘後）要解鎖，不能永久鎖死
     currentIp = ipA;
     await prisma.boardLoginThrottle.updateMany({ where: { key: { contains: ipA } }, data: { lockedUntil: new Date(Date.now() - 1000), failCount: 0, windowStart: new Date(Date.now() - 16 * 60_000) } });
-    const after = await requestWebinarLinkAction(WSLUG, null, wform(22));
+    const after = await requestWebinarLinkAction(WSLUG, null, wform(WN + 2));
     check("鎖定到期後同一 IP 可再送出（沒有永久鎖死）", !!after && "success" in after, JSON.stringify(after));
 
-    // 併發：同一個 IP 一次送 60 個，最多只能 20 個通過
-    const ipC = freshIp("thrC");
+    // 併發：同一個 IP 一次送 2×WN 個，最多只能 WN 個通過
+    await prisma.boardLoginThrottle.deleteMany({ where: { key: { in: FORM_GLOBAL_KEYS } } });
+    freshIp("thrC");
     const mailsBefore = mails.length;
-    const burst = await Promise.all(Array.from({ length: 60 }, (_, i) => settle(requestWebinarLinkAction(WSLUG, null, wform(100 + i)))));
+    const burst = await Promise.all(Array.from({ length: 2 * WN }, (_, i) => settle(requestWebinarLinkAction(WSLUG, null, wform(200 + i)))));
     const passed = burst.filter((r) => r && typeof r === "object" && "success" in (r as object)).length;
     const blocked = burst.filter((r) => r && typeof r === "object" && "error" in (r as object) && /頻繁/.test((r as { error: string }).error)).length;
-    check("講座索取：同一 IP 一次併發 60 個，最多只有 20 個通過（先預約再處理，併發也繞不過）", passed <= 20 && passed > 0, `通過 ${passed}、被擋 ${blocked}、寄出 ${mails.length - mailsBefore} 封`);
-    check("併發 60 個：其餘全部被限流擋下（不是 500 或其他錯誤）", passed + blocked === 60, `通過 ${passed} + 被擋 ${blocked} ≠ 60`);
-    void ipC;
+    check(`講座索取：同一 IP 一次併發 ${2 * WN} 個，最多只有 ${WN} 個通過（先預約再處理，併發也繞不過）`, passed <= WN && passed > 0, `通過 ${passed}、被擋 ${blocked}、寄出 ${mails.length - mailsBefore} 封`);
+    check(`併發 ${2 * WN} 個：其餘全部被限流擋下（不是 500 或其他錯誤）`, passed + blocked === 2 * WN, `通過 ${passed} + 被擋 ${blocked} ≠ ${2 * WN}`);
 
-    // 手動報名：循序 21 次
+    // 手動報名：循序 SN 次通過、第 SN+1 次被擋
+    await prisma.boardLoginThrottle.deleteMany({ where: { key: { in: FORM_GLOBAL_KEYS } } });
+    const SN = ipMaxAttemptsFor("session-signup");
     await prisma.courseSession.create({ data: { id: `test-pf-signup-${PID}`, title: "限流測試場次", signupSlug: `test-pf-signup-${PID}`, isSignupOpen: true, signupPayMode: "MANUAL", signupQuota: null } });
     const { submitSignupAction } = await import("../src/actions/session-signup");
     freshIp("thrD");
     const sf = (i: number) => fd({ buyerEmail: `sg${i}${D}`, "attendee-0-name": `報名${i}`, "attendee-0-phone": phone() });
     const sres: unknown[] = [];
-    for (let i = 0; i < 20; i++) sres.push(await submitSignupAction(`test-pf-signup-${PID}`, null, sf(i)));
+    for (let i = 0; i < SN; i++) sres.push(await submitSignupAction(`test-pf-signup-${PID}`, null, sf(i)));
     const sOk = sres.filter((r) => r && typeof r === "object" && "success" in (r as object)).length;
-    const s21 = await submitSignupAction(`test-pf-signup-${PID}`, null, sf(20));
-    check("手動報名：同一 IP 循序 20 次通過、第 21 次被擋且零寫入", sOk === 20 && !!s21 && "error" in s21 && /頻繁/.test(s21.error ?? "") && (await prisma.sessionSignupRequest.count({ where: { sessionId: `test-pf-signup-${PID}`, buyerEmail: `sg20${D}` } })) === 0, `通過 ${sOk}；第 21 次 ${JSON.stringify(s21)}`);
+    const sOver = await submitSignupAction(`test-pf-signup-${PID}`, null, sf(SN));
+    check(`手動報名：同一 IP 循序 ${SN} 次通過、第 ${SN + 1} 次被擋且零寫入`, sOk === SN && !!sOver && "error" in sOver && /頻繁/.test(sOver.error ?? "") && (await prisma.sessionSignupRequest.count({ where: { sessionId: `test-pf-signup-${PID}`, buyerEmail: `sg${SN}${D}` } })) === 0, `通過 ${sOk}；第 ${SN + 1} 次 ${JSON.stringify(sOver)}`);
     await prisma.sessionSignupRequest.deleteMany({ where: { sessionId: `test-pf-signup-${PID}` } });
+    await prisma.boardLoginThrottle.deleteMany({ where: { key: { in: FORM_GLOBAL_KEYS } } });
+
+    // 企業包班維持 20：循序第 21 次被擋、併發 40 個最多 20 個通過
+    const CN = ipMaxAttemptsFor("corporate");
+    freshIp("thrE");
+    const cform = (i: number) => fd({ companyName: `限流公司${i}`, contactName: "陳先生", email: `corp${i}${D}`, phone: "02-12345678" });
+    const cres: unknown[] = [];
+    for (let i = 0; i < CN; i++) cres.push(await submitCorporateInquiryAction(null, cform(i)));
+    const cOk = cres.filter((r) => r && typeof r === "object" && "success" in (r as object)).length;
+    const cOver = await submitCorporateInquiryAction(null, cform(CN));
+    check(`企業包班（維持 ${CN}）：同一 IP 循序 ${CN} 次通過、第 ${CN + 1} 次被擋且零入庫`, CN === 20 && cOk === CN && !!cOver && "error" in cOver && /頻繁/.test(cOver.error ?? "") && (await prisma.corporateInquiry.count({ where: { email: `corp${CN}${D}` } })) === 0, `通過 ${cOk}；第 ${CN + 1} 次 ${JSON.stringify(cOver)}`);
+    freshIp("thrF");
+    const cburst = await Promise.all(Array.from({ length: 2 * CN }, (_, i) => settle(submitCorporateInquiryAction(null, cform(100 + i)))));
+    const cPassed = cburst.filter((r) => r && typeof r === "object" && "success" in (r as object)).length;
+    check(`企業包班：同一 IP 一次併發 ${2 * CN} 個，最多只有 ${CN} 個通過`, cPassed <= CN && cPassed > 0, `通過 ${cPassed}`);
     await prisma.boardLoginThrottle.deleteMany({ where: { key: { in: FORM_GLOBAL_KEYS } } });
   }
 
