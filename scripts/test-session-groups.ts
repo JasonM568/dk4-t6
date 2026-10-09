@@ -16,6 +16,7 @@ import {
   groupCountFor,
   MIN_GROUPS,
   normalizeFixedCount,
+  parseFixedCountInput,
   signupsBeyondGroup,
 } from "../src/lib/session-roster";
 
@@ -215,6 +216,17 @@ console.log("\nnormalizeFixedCount：不合法的值一律當自動，不讓髒�
   check("NaN → null", normalizeFixedCount(Number.NaN) === null);
   check("8 → 8", normalizeFixedCount(8) === 8);
   check("8.7 → 8（無條件捨去）", normalizeFixedCount(8.7) === 8);
+}
+
+console.log("\n表單組數與每組上限：只能輸入 1〜99 的十進位整數，留空代表自動");
+{
+  for (const [raw, expected] of [["", null], ["8", 8], ["99", 99], [" 8 ", 8]] as const) {
+    const result = parseFixedCountInput(raw);
+    check(`輸入 ${JSON.stringify(raw)} → ${expected}`, result.ok && result.value === expected);
+  }
+  for (const raw of ["1.9", "1e1", "0x10", "0", "100", "-1"]) {
+    check(`輸入 ${JSON.stringify(raw)} → 拒絕`, !parseFixedCountInput(raw).ok);
+  }
 }
 
 console.log("\n確定性：同輸入必同輸出（名單每天重匯，組別不該跳來跳去）");

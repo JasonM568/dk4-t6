@@ -16,6 +16,7 @@ import {
   groupCountFor,
   isSamePerson,
   normalizeFixedCount,
+  parseFixedCountInput,
   signupsBeyondGroup,
   type Meal,
 } from "@/lib/session-roster";
@@ -546,14 +547,15 @@ export async function autoGroupAction(
   formData: FormData,
 ): Promise<SessionFormState> {
   await requireEditor();
-  const cap = Math.floor(Number(formData.get("cap")));
-  if (!Number.isFinite(cap) || cap < 1 || cap > 99)
+  const parsedCap = parseFixedCountInput(String(formData.get("cap") ?? ""));
+  if (!parsedCap.ok || parsedCap.value === null)
     return { error: "每組人數上限請填 1〜99" };
+  const cap = parsedCap.value;
   // 固定組數：留空＝自動推導（維持原行為）
-  const fixedRaw = String(formData.get("fixedCount") ?? "").trim();
-  const fixed = fixedRaw === "" ? null : normalizeFixedCount(Number(fixedRaw));
-  if (fixedRaw !== "" && fixed === null)
+  const parsedFixed = parseFixedCountInput(String(formData.get("fixedCount") ?? ""));
+  if (!parsedFixed.ok)
     return { error: "固定組數請填 1〜99，或留空改回自動" };
+  const fixed = parsedFixed.value;
   const fillOnly = String(formData.get("mode")) === "fill";
 
   const [session, signups] = await Promise.all([

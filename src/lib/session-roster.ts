@@ -122,6 +122,14 @@ export function normalizeFixedCount(fixed: number | null | undefined): number | 
   return Number.isFinite(n) && n >= 1 && n <= 99 ? n : null;
 }
 
+/** 管理員表單的組數／每組上限：只接受十進位整數，留空表示自動。 */
+export function parseFixedCountInput(raw: string): { ok: true; value: number | null } | { ok: false } {
+  const input = raw.trim();
+  if (input === "") return { ok: true, value: null };
+  if (!/^[1-9]\d?$/.test(input)) return { ok: false };
+  return { ok: true, value: Number(input) };
+}
+
 /** N 組總共裝得下幾個人：逐組上限覆寫要算進去，不是 N × 預設上限。
  *  「塞不塞得下」與錯誤訊息裡的「尚差幾席」都靠這支。 */
 export function groupCapacity(
