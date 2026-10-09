@@ -281,6 +281,8 @@ model SiteSetting {
 //   一律 MARKETING（見 actions/admin.ts NOTICE_ALLOWED_AUDIENCES）
 model EmailBroadcast {
   id            String    @id @default(cuid())
+  requestKey    String?   @unique
+  resendLockedAt DateTime?
   subject       String
   body          String    @db.Text
   messageType   String    @default("MARKETING")
@@ -1347,6 +1349,7 @@ model Enrollment {
 // 沒有 ALL：會員資料表沒有手機，且「簡訊轟炸全體會員」本來就不該存在
 model SmsBroadcast {
   id          String  @id @default(cuid())
+  requestKey  String? @unique
   title       String? // 後台識別用，不會出現在簡訊內容裡
   body        String  @db.Text
   messageType String  @default("NOTICE") // NOTICE（履約通知）/ MARKETING（行銷推播，需帶退訂連結）

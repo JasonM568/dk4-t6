@@ -1177,6 +1177,17 @@ export async function sendBroadcastAction(
   const body = String(formData.get("body") ?? "").trim();
   const courseId = String(formData.get("courseId") ?? "");
   const mode = String(formData.get("mode") ?? "test");
+  const requestKey = String(formData.get("requestKey") ?? "").trim() || null;
+  const duplicateRequest = { error: "這份已經送出過了，請到群發紀錄查看，不要重複寄" };
+  const createOnce = async (data: Prisma.EmailBroadcastCreateInput) => {
+    try {
+      return await prisma.emailBroadcast.create({ data: { ...data, requestKey } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002" &&
+          String((e.meta as { target?: unknown } | undefined)?.target ?? "").includes("requestKey")) return null;
+      throw e;
+    }
+  };
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const audience = String(formData.get("audience") ?? "all"); // all | group | session | manual | members | followup
   // 名單群組可複選（checkbox 同名多值）；勾選順序即姓名優先序
@@ -1241,8 +1252,7 @@ export async function sendBroadcastAction(
     const scheduledAt = scheduledAtRaw
       ? new Date(`${scheduledAtRaw}:00+08:00`)
       : null;
-    const record = await prisma.emailBroadcast.create({
-      data: {
+    const record = await createOnce({
         subject,
         body,
         courseId: courseId || null,
@@ -1251,8 +1261,8 @@ export async function sendBroadcastAction(
         sentBy: admin?.email ?? null,
         ...audienceData,
         ...noticeFields,
-      },
     });
+    if (!record) return duplicateRequest;
     revalidatePath("/admin/broadcast");
     return {
       success: "草稿已儲存，可到下方寄送紀錄「繼續編輯」",
@@ -1344,8 +1354,7 @@ export async function sendBroadcastAction(
     if (scheduledAt.getTime() < Date.now() + 60_000) {
       return { error: "發送時間需晚於現在（要立即寄出請清空發送時間）" };
     }
-    const record = await prisma.emailBroadcast.create({
-      data: {
+    const record = await createOnce({
         subject,
         body,
         courseId: courseId || null,
@@ -1354,8 +1363,8 @@ export async function sendBroadcastAction(
         sentBy: admin?.email ?? null,
         ...audienceData,
         ...noticeFields,
-      },
     });
+    if (!record) return duplicateRequest;
     revalidatePath("/admin/broadcast");
     const shown = scheduledAt.toLocaleString("zh-TW", {
       timeZone: "Asia/Taipei",
@@ -1375,8 +1384,7 @@ export async function sendBroadcastAction(
   // 立即群發：先建紀錄再寄，結果回寫同一筆
   // claimedAt 必填：cron 會把「SENDING 且 claimedAt=null」視為卡死回收標 FAILED，
   // 沒寫的話進行中的立即寄送可能被 cron 誤標
-  const record = await prisma.emailBroadcast.create({
-    data: {
+  const record = await createOnce({
       subject,
       body,
       courseId: courseId || null,
@@ -1385,8 +1393,8 @@ export async function sendBroadcastAction(
       sentBy: admin?.email ?? null,
       ...audienceData,
       ...noticeFields,
-    },
   });
+  if (!record) return duplicateRequest;
   const r = await executeBroadcast(record.id);
 
   revalidatePath("/admin/broadcast");
@@ -1674,18 +1682,21 @@ export async function resendFailedBroadcastAction(
   if (orig.status !== "SENT" && orig.status !== "FAILED") {
     return { error: "只有已寄出/失敗的群發可以補寄" };
   }
-  const failed = (orig.failedRecipients ?? []) as FailedRecipient[];
+  let failed = (orig.failedRecipients ?? []) as FailedRecipient[];
   if (!Array.isArray(failed) || failed.length === 0) {
     return { error: "這筆群發沒有失敗名單可補寄" };
   }
 
-  // 併發防護：同一筆已有補寄進行中就擋下（避免連點重複寄）
-  const inFlight = await prisma.emailBroadcast.findFirst({
-    where: { resendOfId: id, status: "SENDING" },
-    select: { id: true },
+  const claimed = await prisma.emailBroadcast.updateMany({
+    where: { id, resendLockedAt: null },
+    data: { resendLockedAt: new Date() },
   });
-  if (inFlight) return { error: "已有補寄進行中，請稍候再試" };
-
+  if (claimed.count === 0) return { error: "已有補寄進行中，請稍候再試" };
+  try {
+  // 等待鎖後重新讀取，避免第一輪已補完卻拿舊快照再次寄送。
+  const latest = await prisma.emailBroadcast.findUnique({ where: { id }, select: { failedRecipients: true } });
+  failed = (latest?.failedRecipients ?? []) as FailedRecipient[];
+  if (!Array.isArray(failed) || failed.length === 0) return { error: "這筆群發沒有失敗名單可補寄" };
   const record = await prisma.emailBroadcast.create({
     data: {
       subject: orig.subject,
@@ -1729,6 +1740,12 @@ export async function resendFailedBroadcastAction(
     success: `補寄完成！已成功寄給 ${r.sent} 位原本失敗的收件人`,
     broadcastId: record.id,
   };
+  } finally {
+    await prisma.emailBroadcast.updateMany({
+      where: { id },
+      data: { resendLockedAt: null },
+    });
+  }
 }
 
 // ───────────────────────── 電子報名單群組 ─────────────────────────

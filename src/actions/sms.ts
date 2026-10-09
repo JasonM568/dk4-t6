@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
 import { normalizeMobile, explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
-import { countSms, composeSmsText, hasEmoji, applySmsMergeTags } from "@/lib/sms/message";
+import { countSms, composeSmsText, hasEmoji, applySmsMergeTags, MAX_SMS_SEGMENTS } from "@/lib/sms/message";
 import { getSmsSettings, setSmsSetting, toCents } from "@/lib/sms/settings";
 import { getSmsProvider } from "@/lib/sms/provider";
 import { sendSms } from "@/lib/sms/send";
@@ -318,6 +318,10 @@ export async function sendSmsTestAction(
       optOutUrl: null,
     },
   );
+  const testSegments = countSms(text).segments;
+  if (testSegments > MAX_SMS_SEGMENTS) {
+    return { error: `簡訊內文超過 ${MAX_SMS_SEGMENTS} 則（目前 ${testSegments} 則），請精簡內容` };
+  }
   const r = await sendSms([{ mobile, name: "測試" }], () => text);
   if (r.sent === 0) return { error: r.error ?? "測試發送失敗" };
   return {
@@ -337,9 +341,14 @@ export async function sendSmsAction(
 
   const title = String(formData.get("title") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
+  const segments = countSms(body).segments;
+  if (segments > MAX_SMS_SEGMENTS) {
+    return { error: `簡訊內文超過 ${MAX_SMS_SEGMENTS} 則（目前 ${segments} 則），請精簡內容` };
+  }
   const mode = String(formData.get("mode") ?? "draft");
   // 有值 = 正在編輯既有草稿：改同一筆，不另建新的
   const draftId = String(formData.get("draftId") ?? "").trim();
+  const requestKey = String(formData.get("requestKey") ?? "").trim() || null;
   const messageType = String(formData.get("messageType") ?? "NOTICE");
   const audience = String(formData.get("audience") ?? "session");
   const sessionIds = formData.getAll("sessionIds").map(String).filter(Boolean);
@@ -404,10 +413,18 @@ export async function sendSmsAction(
 
   /** 編輯中的草稿改同一筆；否則建新的。status 用 updateMany 當樂觀鎖——
    *  兩個人同時開同一則草稿時，後按的人不會把已送出的紀錄覆寫回去。 */
-  const saveDraft = async (patch: { status: string; scheduledAt?: Date | null; claimedAt?: Date }) => {
+  const saveDraft = async (patch: { status: string; scheduledAt?: Date | null; claimedAt?: Date }): Promise<{ id: string; ok: boolean; duplicate?: boolean }> => {
     if (!draftId) {
-      const rec = await prisma.smsBroadcast.create({ data: { ...base, ...patch } });
-      return { id: rec.id, ok: true };
+      try {
+        const rec = await prisma.smsBroadcast.create({ data: { ...base, ...patch, requestKey } });
+        return { id: rec.id, ok: true };
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002" &&
+            String((e.meta as { target?: unknown } | undefined)?.target ?? "").includes("requestKey")) {
+          return { id: "", ok: false, duplicate: true };
+        }
+        throw e;
+      }
     }
     const r = await prisma.smsBroadcast.updateMany({
       where: { id: draftId, status: "DRAFT" },
@@ -416,9 +433,11 @@ export async function sendSmsAction(
     return { id: draftId, ok: r.count > 0 };
   };
   const staleDraft = { error: "這則草稿剛被其他人送出或刪除了，請重新整理頁面" };
+  const duplicateRequest = { error: "這份已經送出過了，請到發送紀錄查看，不要重複寄" };
 
   if (mode === "draft") {
     const rec = await saveDraft({ status: "DRAFT" });
+    if (rec.duplicate) return duplicateRequest;
     if (!rec.ok) return staleDraft;
     revalidatePath("/admin/sms");
     return {
@@ -430,6 +449,7 @@ export async function sendSmsAction(
 
   if (scheduledAt) {
     const rec = await saveDraft({ status: "SCHEDULED", scheduledAt });
+    if (rec.duplicate) return duplicateRequest;
     if (!rec.ok) return staleDraft;
     revalidatePath("/admin/sms");
     const shown = scheduledAt.toLocaleString("zh-TW", {
@@ -445,6 +465,7 @@ export async function sendSmsAction(
   // 立即發送：先建紀錄再送，結果回寫同一筆。
   // claimedAt 必填：cron 會把「SENDING 且 claimedAt=null」視為卡死回收標 FAILED
   const rec = await saveDraft({ status: "SENDING", claimedAt: new Date() });
+  if (rec.duplicate) return duplicateRequest;
   if (!rec.ok) return staleDraft;
   const r = await executeSmsBroadcast(rec.id);
   revalidatePath("/admin/sms");

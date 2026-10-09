@@ -123,6 +123,10 @@ export function BroadcastForm({
     sendAction,
     null,
   );
+  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  useEffect(() => {
+    if (state?.success) setRequestKey(crypto.randomUUID());
+  }, [state]);
   const formRef = useRef<HTMLFormElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const tplNameRef = useRef<HTMLInputElement>(null);
@@ -378,6 +382,7 @@ export function BroadcastForm({
   return (
     <>
       <form ref={formRef} action={formAction} className="space-y-4">
+        <input type="hidden" name="requestKey" value={requestKey} />
         <div>
           <label className="mb-1 block text-sm font-medium">主旨</label>
           <input

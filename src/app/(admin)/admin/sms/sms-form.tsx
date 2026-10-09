@@ -9,7 +9,7 @@ import {
   sendSmsTestAction,
   type SmsState,
 } from "@/actions/sms";
-import { countSms, hasEmoji } from "@/lib/sms/message";
+import { countSms, hasEmoji, MAX_SMS_SEGMENTS } from "@/lib/sms/message";
 import { formatCents } from "@/lib/sms/settings";
 import { SubmitButton } from "@/components/admin/submit-button";
 
@@ -96,6 +96,10 @@ export function SmsForm({
     sendSmsTestAction,
     null,
   );
+  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  useEffect(() => {
+    if (state?.success) setRequestKey(crypto.randomUUID());
+  }, [state]);
   const formRef = useRef<HTMLFormElement>(null);
 
   const [audience, setAudience] = useState<"session" | "webinar" | "manual">(
@@ -308,6 +312,7 @@ export function SmsForm({
       )}
 
       <form ref={formRef} action={formAction} className="space-y-4">
+        <input type="hidden" name="requestKey" value={requestKey} />
         <input type="hidden" name="messageType" value={messageType} />
         {/* 有值 = 改既有草稿（server action 會確認它仍是 DRAFT 才寫） */}
         <input type="hidden" name="draftId" value={draftId} />
@@ -373,6 +378,11 @@ export function SmsForm({
           {bodyHasEmoji && (
             <p className="mt-1 text-xs text-red-600">
               內容含 emoji：各家電信顯示不一致且會影響計費則數，請移除
+            </p>
+          )}
+          {count.segments > MAX_SMS_SEGMENTS && (
+            <p className="mt-1 text-xs text-red-600">
+              簡訊內文超過 {MAX_SMS_SEGMENTS} 則（目前 {count.segments} 則），請精簡內容
             </p>
           )}
           <p className="mt-1 text-xs text-gray-400">

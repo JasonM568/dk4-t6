@@ -10,6 +10,7 @@ export const GSM_MULTI = 153;
 /** 含中文（UCS-2）：單則 70 字，分段後每段 67。台灣簡訊商以此計費 */
 export const UCS2_SINGLE = 70;
 export const UCS2_MULTI = 67;
+export const MAX_SMS_SEGMENTS = 5;
 
 /** GSM-7 基本字集；不在此集合內的字元（中文、全形標點等）會讓整則升級成 UCS-2 */
 const GSM_BASIC = /^[ -~ -ÿ\n\r\t€£¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉÄÖÑÜ§¿äöñüà]*$/;
