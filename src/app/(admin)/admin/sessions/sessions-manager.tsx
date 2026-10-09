@@ -23,6 +23,7 @@ import {
   setSignupGroupAction,
   setSignupNameAction,
   setSignupPhoneAction,
+  setSignupEmailAction,
   setSignupTypeAction,
   setGroupCapAction,
   autoGroupAction,
@@ -1784,12 +1785,40 @@ export function SessionCard({
                     {/* Email 併在手機下方（聯絡資訊一組）：各佔一欄會把表撐出卡片外。
                         同行者多半沒有（訂單只有訂購人填），顯示用；寄信名單以此為準 */}
                     <span className="flex items-center gap-1">
-                      <span
-                        className="block max-w-[10rem] truncate font-sans text-gray-400"
-                        title={s.email ?? undefined}
-                      >
-                        {s.email ?? "—"}
-                      </span>
+                      {canEdit && !deferredOut ? (
+                        <input
+                          key={s.email ?? ""}
+                          type="email"
+                          defaultValue={s.email ?? ""}
+                          placeholder="補 Email"
+                          title={
+                            s.email
+                              ? "點擊修改 Email，離開欄位自動儲存（清空＝未填）"
+                              : "沒有 Email，收不到 EDM 課前通知——點這裡補，離開欄位自動儲存"
+                          }
+                          onBlur={async (e) => {
+                            const next = e.target.value.trim().toLowerCase();
+                            if (next === (s.email ?? "")) return;
+                            const res = await setSignupEmailAction(s.id, next);
+                            if (res?.error) {
+                              alert(res.error);
+                              e.target.focus();
+                            }
+                          }}
+                          className={`w-40 rounded border border-transparent px-1 py-0.5 font-sans hover:border-gray-300 focus:border-black focus:outline-none ${
+                            s.email
+                              ? "text-gray-400"
+                              : "text-amber-600 placeholder:text-amber-600"
+                          }`}
+                        />
+                      ) : (
+                        <span
+                          className="block max-w-[10rem] truncate font-sans text-gray-400"
+                          title={s.email ?? undefined}
+                        >
+                          {s.email ?? "—"}
+                        </span>
+                      )}
                       {sharedContactIds.has(s.id) && (
                         <span
                           className="whitespace-nowrap rounded bg-orange-50 px-1 py-0.5 text-[10px] font-sans text-orange-700"

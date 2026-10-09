@@ -430,6 +430,21 @@ export async function setSignupPhoneAction(id: string, phone: string) {
   revalidatePath("/board");
 }
 
+/** 逐人補 Email（訂單沒帶信箱、手動新增漏填的人，事後補上才收得到 EDM 課前通知；
+ *  重匯不會覆蓋——匯入對既有列一律 skipDuplicates 不更新）。
+ *  空字串 = 清成未填。存小寫，同 addSignupAction。 */
+export async function setSignupEmailAction(id: string, email: string) {
+  await requireEditor();
+  const value = email.trim().toLowerCase().slice(0, 254);
+  if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+    return { error: "Email 格式不正確" };
+  await prisma.sessionSignup
+    .update({ where: { id }, data: { email: value || null } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
 /** 逐人改身分：新生 / 舊生（複訓）/ 工作人員。
  *
  *  訂單買錯方案、家人代訂、事後才查出是舊生等情況，光靠產品名判不出來——
