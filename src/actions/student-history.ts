@@ -6,19 +6,54 @@ import { hasSegmentCondition, parseSegmentFilter, querySegment } from "@/lib/stu
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { decodeCsvBuffer } from "@/lib/csv";
+import { PARSE_LIMITS, STUDENT_IMPORT_MAX_ROWS, cellText, parseCsvRows, parseTaipei } from "@/lib/session-import";
 import { normalizeMobile } from "@/lib/sms/phone";
 // 學員記錄卡的找／建入口抽到 lib：名單收集模組也要用同一支，
 // 同行者鐵則（姓名不同＝不同人）只能有一份實作
 import { upsertStudent } from "@/lib/student-upsert";
-export type StudentImportState={error?:string;success?:string; imported?:number; histories?:number; noPhone?:number}|null;
+export type StudentImportState={error?:string;success?:string; imported?:number; histories?:number; noPhone?:number; badDate?:number}|null;
 const aliases={email:["email","信箱","電子信箱","e-mail"],name:["姓名","name","學員姓名"],phone:["電話","手機","phone"],course:["課程","課程名稱","course"],date:["上課日期","日期","date"],note:["備註","note"]};
 const val=(row:string[],headers:string[],key:keyof typeof aliases)=>{const i=headers.findIndex(h=>aliases[key].includes(h.toLowerCase()));return i<0?"":(row[i]??"").trim()};
 
 /** 學員資料庫匯入。識別鍵是手機——同一支號碼只會有一筆學員，重複匯入是更新不是新增。
  *  只有 email 沒有手機的舊名單仍可匯入，但共用信箱的兩個人會被併成同一筆
  *  （夫妻共用信箱很常見），所以回報會列出「沒有手機」的筆數提醒補齊。 */
-export async function importStudentHistory(_p:StudentImportState,fd:FormData):Promise<StudentImportState>{await requireEditor();const f=fd.get("file");if(!(f instanceof File)||!f.size)return{error:"請選擇 CSV 或 XLSX 檔"};let rows:string[][]=[];try{if(/\.csv$/i.test(f.name))rows=decodeCsvBuffer(await f.arrayBuffer()).split(/\r?\n/).filter(Boolean).map(x=>x.split(",").map(v=>v.trim().replace(/^"|"$/g,"")));else{const wb=new ExcelJS.Workbook();await wb.xlsx.load(await f.arrayBuffer());const ws=wb.worksheets[0];rows=ws.getSheetValues().slice(1).map(r=>Array.isArray(r)?r.slice(1).map(v=>String(v??"").trim()):[]);}}catch{return{error:"檔案無法解析，請使用 CSV 或 XLSX"}}if(rows.length<2)return{error:"檔案沒有資料列"};const headers=rows.shift()!.map(x=>x.toLowerCase());if(!headers.some(h=>aliases.phone.includes(h))&&!headers.some(h=>aliases.email.includes(h)))return{error:"需要「電話」欄位（或至少要有 Email 欄位）"};
-  let imported=0,histories=0,noPhone=0;
+export async function importStudentHistory(_p: StudentImportState, fd: FormData): Promise<StudentImportState> {
+  await requireEditor();
+  const f = fd.get("file");
+  if (!(f instanceof File) || !f.size) return { error: "請選擇 CSV 或 XLSX 檔" };
+  if (f.size > 20 * 1024 * 1024) return { error: "檔案請小於 20MB" };
+  let rows: string[][] = [];
+  try {
+    const buf = await f.arrayBuffer();
+    if (/\.csv$/i.test(f.name)) {
+      rows = parseCsvRows(decodeCsvBuffer(buf));
+    } else {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      const ws = wb.worksheets[0];
+      if (ws && ws.actualRowCount > STUDENT_IMPORT_MAX_ROWS + 1) {
+        return { error: "檔案超過 5,000 列，請分批上傳" };
+      }
+      ws?.eachRow({ includeEmpty: false }, (row) => {
+        const cells: string[] = [];
+        for (let c = 1; c <= Math.min(row.cellCount, PARSE_LIMITS.maxCols); c++) {
+          cells.push(cellText(row.getCell(c).value).slice(0, PARSE_LIMITS.maxCellLen).trim());
+        }
+        rows.push(cells);
+      });
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("列數過多")) return { error: "檔案超過 5,000 列，請分批上傳" };
+    return { error: "檔案無法解析，請使用 CSV 或 XLSX" };
+  }
+  if (rows.length > STUDENT_IMPORT_MAX_ROWS + 1) return { error: "檔案超過 5,000 列，請分批上傳" };
+  if (rows.length < 2) return { error: "檔案沒有資料列" };
+  const headers = rows.shift()!.map((x) => x.toLowerCase());
+  if (!headers.some((h) => aliases.phone.includes(h)) && !headers.some((h) => aliases.email.includes(h))) {
+    return { error: "需要「電話」欄位（或至少要有 Email 欄位）" };
+  }
+  let imported = 0, histories = 0, noPhone = 0, badDate = 0;
   for(const row of rows){
     const phone=normalizeMobile(val(row,headers,"phone"));
     const email=val(row,headers,"email").toLowerCase();
@@ -32,12 +67,14 @@ export async function importStudentHistory(_p:StudentImportState,fd:FormData):Pr
     const course=val(row,headers,"course");
     if(course){
       const date=val(row,headers,"date");
-      await prisma.studentCourseHistory.create({data:{studentId:record.id,courseName:course,attendedAt:date?new Date(date):null,note:val(row,headers,"note")||null,source:"IMPORT"}});
+      const attendedAt = date ? parseTaipei(date) : null;
+      if (date && !attendedAt) badDate++;
+      await prisma.studentCourseHistory.create({data:{studentId:record.id,courseName:course,attendedAt,note:val(row,headers,"note")||null,source:"IMPORT"}});
       histories++;
     }
   }
   revalidatePath("/admin/students");
-  return{success:"匯入完成",imported,histories,noPhone};
+  return{success:badDate ? `匯入完成（${badDate} 筆日期無法解析已留空）` : "匯入完成",imported,histories,noPhone,badDate};
 }
 
 /** 已有同鍵紀錄就跳過（防重複匯入把記錄卡灌成十筆一樣的） */

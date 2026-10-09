@@ -238,14 +238,23 @@ function findCompanions(header: string[], row: unknown[], buyerName: string): Co
  * 直接 new Date() 會用「伺服器時區」解讀——Vercel 是 UTC，會整整差 8 小時。
  * 台灣自 1980 起無日光節約時間，固定補 +08:00 即可。
  */
-function parseTaipei(s: string): Date | null {
-  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+export function parseTaipei(s: string): Date | null {
+  // 帶時區的 ISO 字串會走下方原生解析，也先擋不存在的曆日。
+  const calendar = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (calendar) {
+    const year = Number(calendar[1]), month = Number(calendar[2]), day = Number(calendar[3]);
+    const check = new Date(Date.UTC(year, month - 1, day));
+    if (year < 1 || check.getUTCFullYear() !== year ||
+        check.getUTCMonth() + 1 !== month || check.getUTCDate() !== day) return null;
+  }
+  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (!m) {
     // 認不得的格式：退回原生解析，至少不丟資料
     const d = new Date(s.replace(" ", "T"));
     return Number.isNaN(d.getTime()) ? null : d;
   }
   const [, y, mo, d, h, mi, sec] = m;
+  if (Number(h ?? 0) > 23 || Number(mi ?? 0) > 59 || Number(sec ?? 0) > 59) return null;
   const iso = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}T${(h ?? "0").padStart(2, "0")}:${
     mi ?? "00"
   }:${sec ?? "00"}+08:00`;
@@ -254,14 +263,17 @@ function parseTaipei(s: string): Date | null {
 }
 
 // 解析防線：惡意/畸形檔案要快速安全失敗，不能拖垮 serverless function
-const PARSE_LIMITS = {
+/** 學員名單匯入逐筆寫記錄卡與上課史（約 4.6ms/列），5,000 列約 23 秒仍在 Vercel 300 秒內；
+ *  歷史全量 5,560 筆是分四個來源匯入的，單檔不需要更大。 */
+export const STUDENT_IMPORT_MAX_ROWS = 5_000;
+
+export const PARSE_LIMITS = {
   maxRows: 20_000, // 1shop 單檔實務上是數百列，2 萬列已是十倍餘裕
   // 1shop「原始訂單資料」的自訂欄位每個銷售頁各自成欄：全期間匯出實測 156 欄
   //（2026-08-29 order_2026_08_29 檔）。250 給足成長空間，仍擋得住異常寬表。
   maxCols: 250,
   maxCellLen: 2_000,
 } as const;
-
 /** Excel 序號日期在 exceljs 會轉成 UTC 牆上時間的 Date：取 UTC 分量還原成
  *  「YYYY-MM-DD HH:mm:ss」字串，交給 parseTaipei 統一補 +08:00 */
 function utcWallString(d: Date): string {
@@ -272,7 +284,7 @@ function utcWallString(d: Date): string {
 }
 
 /** exceljs 各種 cell value（字串/數字/日期/超連結/富文字/公式）一律收斂成純文字 */
-function cellText(v: ExcelJS.CellValue): string {
+export function cellText(v: ExcelJS.CellValue): string {
   if (v == null) return "";
   if (v instanceof Date) return utcWallString(v);
   if (typeof v === "object") {
@@ -287,7 +299,8 @@ function cellText(v: ExcelJS.CellValue): string {
 
 /** RFC 4180 CSV 解析（引號欄位/內嵌逗號換行/雙引號跳脫），內建列欄與長度上限。
  *  CSV 不交給 XLSX parser：格式單純就用單純的解析器，縮小攻擊面 */
-function parseCsvRows(text: string): string[][] {
+export function parseCsvRows(text: string): string[][] {
+  text = text.replace(/^\uFEFF/, "");
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -330,6 +343,15 @@ function parseCsvRows(text: string): string[][] {
   }
   if (field !== "" || row.length > 0) pushRow();
   return rows;
+}
+
+/** 訂單的金額／數量／單價共用嚴格解析，避免 Number 接受十六進位與科學記號。 */
+export function parseAmount(s: string): number | null {
+  const value = s.trim();
+  if (!/^-?\d+(\.\d+)?$/.test(value)) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || Math.abs(number) > 10_000_000) return null;
+  return Math.round(number);
 }
 
 /** 解碼 CSV bytes：先試 UTF-8，出現亂碼再退 Big5（與 src/lib/csv.ts 同策略；
@@ -438,13 +460,13 @@ export async function parseOrderFile(
     const dateStr = cell(r, col.orderedAt);
     const parsed = dateStr ? parseTaipei(dateStr) : null;
     const amountStr = cell(r, col.amount);
-    const amount = amountStr ? Math.round(Number(amountStr)) : null;
+    const amount = amountStr ? parseAmount(amountStr) : null;
     const qtyStr = qtyCol >= 0 ? cell(r, qtyCol) : "";
-    const qty = qtyStr ? Math.round(Number(qtyStr)) : null;
+    const qty = qtyStr ? parseAmount(qtyStr) : null;
     const name = cell(r, col.name);
     const companions = findCompanions(header, r, name);
     const unitPriceStr = cell(r, col.unitPrice);
-    const unitPrice = unitPriceStr ? Math.round(Number(unitPriceStr)) : null;
+    const unitPrice = unitPriceStr ? parseAmount(unitPriceStr) : null;
     return {
       orderNo: cell(r, col.orderNo),
       orderedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed : null,
@@ -461,7 +483,8 @@ export async function parseOrderFile(
       salesPage: cell(r, col.salesPage) || null,
       salesPageCode: cell(r, col.salesPageCode) || null,
       referrer: cell(r, col.referrer) || null,
-      quantity: qty !== null && Number.isFinite(qty) && qty > 0 ? qty : null,
+      // 單筆訂單席次不可能破百：>100 幾乎都是金額欄誤填進數量欄，當無效處理
+      quantity: qty !== null && Number.isInteger(qty) && qty > 0 && qty <= 100 ? qty : null,
       attendees: [
         { key: "buyer", name },
         ...companions.map((companion, index) => ({

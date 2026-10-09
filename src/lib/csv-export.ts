@@ -1,7 +1,7 @@
 /** RFC 4180 cell escaping + spreadsheet formula injection protection. */
 export function csvCell(value: unknown): string {
   let text = value == null ? "" : String(value);
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 }
 
