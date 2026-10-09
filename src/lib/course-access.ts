@@ -77,15 +77,15 @@ export async function canWatchCourse(
   if (enrollment) return true;
   // 訂閱專區的有效資格由專區會員名單管理：在名單內即可看全部專區影片；
   // 移出名單立即失去資格，日後接訂閱金流時只需同步這份名單。
-  if (course.groupId) {
-    const group = await prisma.courseGroup.findUnique({
+  const group = course.groupId
+    ? await prisma.courseGroup.findUnique({
       where: { id: course.groupId },
-      select: { kind: true },
-    });
-    if (group?.kind === "SUBSCRIPTION" && await isGroupMember(course.groupId, user.email))
-      return true;
-  }
-  if (groupOpenAccessActive(course)) {
+      select: { kind: true, isActive: true },
+    })
+    : null;
+  if (group?.isActive && group.kind === "SUBSCRIPTION" && await isGroupMember(course.groupId!, user.email))
+    return true;
+  if (group?.isActive && groupOpenAccessActive(course)) {
     return isGroupMember(course.groupId!, user.email);
   }
   return false;
@@ -100,6 +100,10 @@ export async function canViewGroupCourse(
   user: { email: string | null } | null
 ): Promise<boolean> {
   if (!course.groupId) return true;
-  if (await isGroupMember(course.groupId, user?.email ?? null)) return true;
+  const group = await prisma.courseGroup.findUnique({
+    where: { id: course.groupId },
+    select: { isActive: true },
+  });
+  if (group?.isActive && await isGroupMember(course.groupId, user?.email ?? null)) return true;
   return canAccessAdmin(await currentStaffRole());
 }

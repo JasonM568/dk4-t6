@@ -18,7 +18,7 @@ export type SessionSettleInput = {
 
 export type SessionSettleResult =
   | { ok: true; already: boolean }
-  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" };
+  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" | "ZERO_TOTAL" };
 
 /** 視同已結算的狀態：重送的付款通知一律走冪等路徑，不重複建名單。 */
 const SETTLED_STATUSES = new Set(["PAID", "CONFIRMED", "COMPLETED", "REFUNDED"]);
@@ -54,6 +54,11 @@ export async function settleSessionPaidOrder(
         orderNo: input.orderNo,
       });
       outcome = { ok: false, reason: "CANCELLED" };
+      return;
+    }
+    if (order.total <= 0) {
+      console.error("[session-settle] 0 元訂單不走金流結算", { orderNo: input.orderNo });
+      outcome = { ok: false, reason: "ZERO_TOTAL" };
       return;
     }
     if (input.amount !== order.total) {

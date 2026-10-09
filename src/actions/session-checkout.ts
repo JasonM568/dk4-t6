@@ -6,6 +6,7 @@ import { getPaymentProvider } from "@/lib/payment";
 import { collectAttendees } from "@/lib/session-attendees";
 import { classifyTiers, priceForTier } from "@/lib/session-student-tier";
 import { isSamePerson } from "@/lib/session-roster";
+import { createOrderWithRetry } from "@/lib/order-create";
 import {
   makeWebOrderNo,
   signupState,
@@ -138,12 +139,10 @@ export async function createSessionCheckout(
 
   // 建 SessionSignupOrder（PENDING）。checkoutKey 擋「同場次同信箱重複下單」，
   // orderNo 隨機不可枚舉；撞 orderNo 換一個重試，撞 checkoutKey 才是重複下單。
-  let orderId: string | null = null;
-  let orderNo = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
-    orderNo = makeWebOrderNo();
-    try {
-      const created = await prisma.sessionSignupOrder.create({
+  let createdOrder;
+  try {
+    // 場次單號由 generate 產生隨機值，不查課程 Order 的流水號。
+    createdOrder = await createOrderWithRetry({}, (orderNo) => prisma.sessionSignupOrder.create({
         data: {
           orderNo,
           sessionId: session.id,
@@ -159,26 +158,22 @@ export async function createSessionCheckout(
           provider: provider.name,
         },
         select: { id: true },
-      });
-      orderId = created.id;
-      break;
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
-        if (target.includes("orderNo")) continue; // 併發撞號：換一個重試
-        return {
-          ok: false,
-          error:
-            "你已有這個場次的待付款報名，請先完成付款；若不打算付款，稍後訂單失效即可重新報名",
-        };
-      }
-      throw e;
+      }), { generate: () => makeWebOrderNo() });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return {
+        ok: false,
+        error: "你已有這個場次的待付款報名，請先完成付款；若不打算付款，稍後訂單失效即可重新報名",
+      };
     }
+    throw e;
   }
-  if (!orderId) {
-    console.error("[session-checkout] 訂單編號連撞 4 次，放棄", { slug });
+  if (!createdOrder.ok) {
+    console.error("[session-checkout] 訂單編號連撞 8 次，放棄", { slug });
     return { ok: false, error: "系統忙碌中，請稍後再試" };
   }
+  const { orderNo } = createdOrder;
+  const orderId = createdOrder.value.id;
 
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
   try {

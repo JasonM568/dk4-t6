@@ -22,6 +22,7 @@ export default async function AdminMembersPage({
   const query = (q ?? "").trim().toLowerCase();
   const showArchived = archived === "1";
   const selectedGroupIds = (Array.isArray(group) ? group : group ? [group] : []).filter(Boolean);
+  const canResetPasswordNow = isFullAdmin(await currentStaffRole());
 
   // 會員身分在 Supabase public.profiles（唯讀），消費統計在 course.MemberStats，
   // 應用層以 userId 拼裝（不開 multiSchema、不對 public schema 做 join 寫入）
@@ -33,7 +34,7 @@ export default async function AdminMembersPage({
         include: { _count: { select: { members: true } } },
         orderBy: { createdAt: "desc" },
       }),
-      prisma.memberPassword.findMany(),
+      canResetPasswordNow ? prisma.memberPassword.findMany() : Promise.resolve([]),
       listAuthMeta(),
       // B5：「共 N 位」用真實總數（head:true 只取 count），不受列表筆數影響
       countProfiles(),
@@ -77,7 +78,6 @@ export default async function AdminMembersPage({
   });
   const canEditNow = await currentCanEdit();
   // 密碼重設僅限管理員（server action 也擋，這裡只是不顯示按鈕）
-  const canResetPasswordNow = isFullAdmin(await currentStaffRole());
 
   // 勾選名單群組 → 取出群組內 email 集合過濾會員
   const groupEmails =
@@ -108,7 +108,7 @@ export default async function AdminMembersPage({
         currentTier: stats?.currentTier ?? null,
         totalSpent: stats?.totalSpent ?? 0,
         coursesBought: stats?.coursesBought ?? 0,
-        initialPassword: passwordByUserId.get(p.id) ?? null,
+        initialPassword: canResetPasswordNow ? (passwordByUserId.get(p.id) ?? null) : null,
         lastSignInAt: authMeta.get(p.id)?.lastSignInAt ?? null,
       };
     })
@@ -281,7 +281,7 @@ export default async function AdminMembersPage({
           tierName: m.currentTier?.name ?? null,
           totalSpent: m.totalSpent,
           coursesBought: m.coursesBought,
-          initialPassword: m.initialPassword,
+          initialPassword: canResetPasswordNow ? m.initialPassword : null,
           lastSignInAt: m.lastSignInAt,
           zoneMemberships: zonesByEmail.get((m.email ?? "").toLowerCase()) ?? [],
         }))}

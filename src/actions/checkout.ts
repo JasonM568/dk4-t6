@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client";
 import { getPaymentProvider } from "@/lib/payment";
 import { computeDiscount, TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { isCoursePublicActive } from "@/lib/course-access";
-import { nextOrderNo } from "@/lib/order-no";
+import { createOrderWithRetry } from "@/lib/order-create";
 import { getPaymentToolConfig, resolvePayTools } from "@/lib/payment/pay-config";
 import { explainMobile } from "@/lib/sms/phone";
 import { findAuthUserIdByEmail } from "@/lib/supabase/admin";
@@ -74,12 +74,9 @@ export async function createGuestCheckout(
     data: { status: "EXPIRED", checkoutKey: null },
   });
 
-  let orderId: string | null = null;
-  let orderNo = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
-    orderNo = await nextOrderNo(course, attempt);
-    try {
-      const created = await prisma.order.create({
+  let createdOrder;
+  try {
+    createdOrder = await createOrderWithRetry(course, (orderNo) => prisma.order.create({
         data: {
           orderNo,
           // 訪客防重鍵用 email（尚無 userId）
@@ -102,26 +99,22 @@ export async function createGuestCheckout(
           },
         },
         select: { id: true },
-      });
-      orderId = created.id;
-      break;
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
-        if (target.includes("orderNo")) continue;
-        return {
-          ok: false,
-          error:
-            "你已有這門課的待付款訂單，請先完成付款；若不打算付款，2 小時後訂單自動失效即可重新下單",
-        };
-      }
-      throw e;
+      }));
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return {
+        ok: false,
+        error: "你已有這門課的待付款訂單，請先完成付款；若不打算付款，2 小時後訂單自動失效即可重新下單",
+      };
     }
+    throw e;
   }
-  if (!orderId) {
-    console.error("[guest-checkout] 訂單編號連撞 4 次，放棄", { courseId });
+  if (!createdOrder.ok) {
+    console.error("[guest-checkout] 訂單編號連撞 8 次，放棄", { courseId });
     return { ok: false, error: "系統忙碌中，請稍後再試" };
   }
+  const { orderNo } = createdOrder;
+  const orderId = createdOrder.value.id;
 
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
   const provider = getPaymentProvider();
@@ -225,12 +218,9 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
   // 兩把唯一鍵各司其職：checkoutKey 擋「同人同課重複下單」；orderNo（代碼+日期+
   // 當日流水，可預測）擋「併發撞號」——撞號就換下一個流水重試，撞 checkoutKey
   // 才是真的重複下單。
-  let orderId: string | null = null;
-  let orderNo = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
-    orderNo = await nextOrderNo(course, attempt);
-    try {
-      const created = await prisma.order.create({
+  let createdOrder;
+  try {
+    createdOrder = await createOrderWithRetry(course, (orderNo) => prisma.order.create({
         data: {
           orderNo,
           checkoutKey: `${userId}:${courseId}`,
@@ -255,26 +245,22 @@ export async function createCheckout(courseId: string): Promise<CheckoutResult> 
           },
         },
         select: { id: true },
-      });
-      orderId = created.id;
-      break;
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        const target = String((e.meta as { target?: unknown } | undefined)?.target ?? "");
-        if (target.includes("orderNo")) continue; // 併發撞流水號：換下一號重試
-        return {
-          ok: false,
-          error:
-            "你已有這門課的待付款訂單，請先完成付款；若不打算付款，2 小時後訂單自動失效即可重新下單",
-        };
-      }
-      throw e;
+      }));
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return {
+        ok: false,
+        error: "你已有這門課的待付款訂單，請先完成付款；若不打算付款，2 小時後訂單自動失效即可重新下單",
+      };
     }
+    throw e;
   }
-  if (!orderId) {
-    console.error("[checkout] 訂單編號連撞 4 次，放棄", { courseId });
+  if (!createdOrder.ok) {
+    console.error("[checkout] 訂單編號連撞 8 次，放棄", { courseId });
     return { ok: false, error: "系統忙碌中，請稍後再試" };
   }
+  const { orderNo } = createdOrder;
+  const orderId = createdOrder.value.id;
 
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
   const provider = getPaymentProvider();

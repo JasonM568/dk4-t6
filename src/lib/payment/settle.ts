@@ -25,7 +25,7 @@ export type SettleInput = {
 
 export type SettleResult =
   | { ok: true; already: boolean } // already=true 表示先前已結算（冪等路徑）
-  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" | "DUPLICATE_PAID" };
+  | { ok: false; reason: "NOT_FOUND" | "AMOUNT_MISMATCH" | "CANCELLED" | "DUPLICATE_PAID" | "ZERO_TOTAL" };
 
 /** 已擁有課程視同「已付款且有效」的狀態（不含 REFUNDED/CANCELLED——那代表不再擁有）。
  *  用來判定「這筆是不是同一門課的第二次付款」。 */
@@ -83,7 +83,7 @@ async function provisionGuestOrderAccount(
   if (!order || order.userId || SETTLED_STATUSES.has(order.status)) return null;
   // 金額不符／已取消的單稍後會被拒絕結算——這裡就不要先建帳號，
   // 否則偽造或竄改金額的回呼可以拿公開端點灌帳號（結算本身仍會擋下開通）
-  if (order.status === "CANCELLED" || paidAmount !== order.total) return null;
+  if (order.status === "CANCELLED" || order.total <= 0 || paidAmount !== order.total) return null;
   if (!order.buyerEmail) {
     console.error("[settle] 訪客訂單缺 buyerEmail，無法建立帳號", { orderNo });
     return null;
@@ -143,6 +143,11 @@ export async function settlePaidOrder(input: SettleInput): Promise<SettleResult>
       outcome = { ok: false, reason: "CANCELLED" };
       return;
     }
+    if (order.total <= 0) {
+      console.error("[settle] 0 元訂單不走金流結算", { orderNo: input.orderNo });
+      outcome = { ok: false, reason: "ZERO_TOTAL" };
+      return;
+    }
     // 金額比對：金流商說收了多少就得跟訂單一致，不符即拒絕結算
     if (input.amount !== order.total) {
       outcome = { ok: false, reason: "AMOUNT_MISMATCH" };
@@ -155,6 +160,17 @@ export async function settlePaidOrder(input: SettleInput): Promise<SettleResult>
     // 導致同一門課收兩次錢、totalSpent 雙計。退款無法自動化（PAYUNi 後台人工），
     // 這裡拒絕結算、不重複開通/累計，把重複標記寫進 Payment 留痕並告警等人工退款。
     const courseIds = order.items.map((i) => i.courseId);
+    if (order.userId) {
+      for (const cid of [...new Set(courseIds)].sort()) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${order.userId}:${cid}`}))`;
+      }
+      // 同一張單的並行通知也會等鎖；等鎖後重新讀取狀態，避免重複累計。
+      const current = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } });
+      if (current && SETTLED_STATUSES.has(current.status)) {
+        outcome = { ok: true, already: true };
+        return;
+      }
+    }
     const dup = await tx.order.findFirst({
       where: {
         userId: order.userId,
