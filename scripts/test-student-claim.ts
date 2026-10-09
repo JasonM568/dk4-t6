@@ -54,7 +54,8 @@ async function main() {
 
   check("共用信箱又沒給手機 → 不認領（不猜是誰）", (await claimStudentRecord(U1, { email: EMAIL })) === false);
 
-  check("給了手機 → 認領到本人那筆", (await claimStudentRecord(U1, { email: EMAIL, phone: WIFE })) === true);
+  check("給了手機但姓名不符 → 不認領（R10：記錄有姓名就要比對）", (await claimStudentRecord(U1, { email: EMAIL, phone: WIFE, name: "冒名者(測)" })) === false);
+  check("給了手機＋同姓名 → 認領到本人那筆", (await claimStudentRecord(U1, { email: EMAIL, phone: WIFE, name: "蘇郁雅(測)" })) === true);
   const claimed = await prisma.studentRecord.findUnique({ where: { phone: WIFE } });
   check("認領到的確實是蘇郁雅而非先生", claimed?.name === "蘇郁雅(測)" && claimed?.claimedUserId === U1);
 
@@ -65,7 +66,7 @@ async function main() {
   });
   check(
     "信箱只對到一筆時 email 仍可當認領備援",
-    (await claimStudentRecord(U2, { email: "solo+test@example.com" })) === true,
+    (await claimStudentRecord(U2, { email: "solo+test@example.com", name: "獨立信箱(測)" })) === true,
   );
 
   await prisma.studentRecord.deleteMany({ where: { phone: { in: phones } } });

@@ -41,12 +41,13 @@ const registerSchema = z.object({
   displayName: z
     .string()
     .trim()
+    .max(50, "姓名最多 50 字")
     .regex(
       /^[一-鿿A-Za-z][一-鿿A-Za-z\s.·'-]*[一-鿿A-Za-z.]$/,
       "姓名請輸入至少 2 個字（中文或英文）",
     ),
-  email: z.string().email("Email 格式不正確"),
-  password: z.string().min(6, "密碼至少 6 字元"),
+  email: z.string().email("Email 格式不正確").max(254, "Email 最多 254 字"),
+  password: z.string().min(6, "密碼至少 6 字元").max(128, "密碼最多 128 字"),
 });
 
 /** 手機驗證（2026-08-15 起必填）：normalizeMobile 同一套規則，
@@ -116,12 +117,12 @@ function parseProfileFields(
 }
 
 const forgotPasswordSchema = z.object({
-  email: z.string().email("Email 格式不正確"),
+  email: z.string().email("Email 格式不正確").max(254, "Email 最多 254 字"),
 });
 
 const loginSchema = z.object({
-  email: z.string().email("Email 格式不正確"),
-  password: z.string().min(1, "請輸入密碼"),
+  email: z.string().email("Email 格式不正確").max(254, "Email 最多 254 字"),
+  password: z.string().min(1, "請輸入密碼").max(128, "密碼最多 128 字"),
 });
 
 // 把 Supabase Auth 錯誤對應成使用者可讀的繁中文案（不外洩原始錯誤）
@@ -405,7 +406,7 @@ export async function registerAction(
       console.error("[register] 待開通認領失敗", { email, e });
     }
     try {
-      await claimStudentRecord(data.user.id, { email, phone });
+      await claimStudentRecord(data.user.id, { email, phone, name: displayName });
     } catch (e) {
       console.error("[register] 歷史學員資料認領失敗", { email, e });
     }

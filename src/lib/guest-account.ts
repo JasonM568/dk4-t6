@@ -77,7 +77,7 @@ export async function fillGuestProfile(
     console.error("[guest-account] 補會員資料失敗", { userId, e });
   }
   try {
-    await claimStudentRecord(userId, { email: input.email, phone: input.phone });
+    await claimStudentRecord(userId, { email: input.email, phone: input.phone, name: input.name });
   } catch (e) {
     console.error("[guest-account] 認領學員紀錄失敗", { userId, e });
   }

@@ -5,12 +5,11 @@ import { revalidatePath } from "next/cache";
 import {
   BOARD_COOKIE,
   boardCodeEquals,
-  boardLoginBlocked,
   clearBoardLoginFails,
   getBoardClientIp,
   getBoardCode,
   getBoardSessionHours,
-  recordBoardLoginFail,
+  reserveBoardLoginAttempt,
   signBoardToken,
 } from "@/lib/board-auth";
 
@@ -33,7 +32,7 @@ export async function boardLoginAction(
   }
 
   const ip = await getBoardClientIp();
-  if (await boardLoginBlocked(ip)) {
+  if (await reserveBoardLoginAttempt(ip)) {
     await failDelay();
     return { error: "嘗試次數過多，請 15 分鐘後再試" };
   }
@@ -42,7 +41,6 @@ export async function boardLoginAction(
   if (!code) return { error: "看板尚未開放，請聯繫管理員" };
 
   if (!boardCodeEquals(input, code)) {
-    await recordBoardLoginFail(ip);
     await failDelay();
     return { error: "登入碼錯誤" };
   }

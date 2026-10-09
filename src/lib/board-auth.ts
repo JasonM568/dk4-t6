@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies, headers } from "next/headers";
 import { prisma } from "@/lib/db";
+import { reserveLoginAttempt } from "@/lib/login-throttle";
 
 // 看板 4 位碼閘門（合作方免帳號查看，看板只露姓名不露聯絡資料）。
 // cookie 值 = `v1.${exp}.${nonce}.${hmac}`：
@@ -123,38 +124,18 @@ export async function boardLoginBlocked(ip: string): Promise<boolean> {
   return rows.some((r) => r.lockedUntil && r.lockedUntil.getTime() > now);
 }
 
-async function bumpFail(
-  key: string,
-  windowMs: number,
-  maxFails: number,
-  lockMs: number,
-): Promise<boolean> {
-  const now = new Date();
-  const row = await prisma.boardLoginThrottle.findUnique({ where: { key } });
-  if (!row || now.getTime() - row.windowStart.getTime() > windowMs) {
-    await prisma.boardLoginThrottle.upsert({
-      where: { key },
-      update: { failCount: 1, windowStart: now, lockedUntil: null },
-      create: { key, failCount: 1, windowStart: now },
-    });
-    return false;
-  }
-  const failCount = row.failCount + 1;
-  const locked = failCount >= maxFails;
-  await prisma.boardLoginThrottle.update({
-    where: { key },
-    data: {
-      failCount,
-      ...(locked ? { lockedUntil: new Date(now.getTime() + lockMs) } : {}),
-    },
-  });
-  return locked;
+/** 比對看板碼前先預約 IP＋全域額度。 */
+export async function reserveBoardLoginAttempt(ip: string): Promise<boolean> {
+  const ipLocked = await reserveLoginAttempt(`ip:${ip}`, IP_WINDOW_MS, IP_MAX_FAILS, IP_LOCK_MS);
+  const globalLocked = await reserveLoginAttempt("global", GLOBAL_WINDOW_MS, GLOBAL_MAX_FAILS, GLOBAL_LOCK_MS);
+  if (globalLocked) console.error("[board-auth] 全域登入嘗試次數異常，看板登入冷卻 60 分鐘");
+  return ipLocked || globalLocked;
 }
 
 /** 記一次登入失敗（IP＋全域雙維度）；不記使用者輸入的碼 */
 export async function recordBoardLoginFail(ip: string): Promise<void> {
-  await bumpFail(`ip:${ip}`, IP_WINDOW_MS, IP_MAX_FAILS, IP_LOCK_MS);
-  const globalLocked = await bumpFail(
+  await reserveLoginAttempt(`ip:${ip}`, IP_WINDOW_MS, IP_MAX_FAILS, IP_LOCK_MS);
+  const globalLocked = await reserveLoginAttempt(
     "global",
     GLOBAL_WINDOW_MS,
     GLOBAL_MAX_FAILS,

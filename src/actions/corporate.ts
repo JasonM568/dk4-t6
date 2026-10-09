@@ -71,26 +71,21 @@ export async function submitCorporateInquiryAction(
   const budget = pickOption(field(formData, "budget", 20), BUDGET_OPTIONS);
 
   // 防重：同 email 十分鐘內已有單 → 直接回成功，不重複入庫也不重複轟炸通知信
-  const recent = await prisma.corporateInquiry.findFirst({
-    where: { email, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) } },
+  const created = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`corporate:${email}`}))`;
+    const recent = await tx.corporateInquiry.findFirst({
+      where: { email, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) } },
+    });
+    if (recent) return false;
+    await tx.corporateInquiry.create({
+      data: {
+        companyName, contactName, contactTitle, email, phone, headcount,
+        topics, trainingType, preferredTime, budget, message,
+      },
+    });
+    return true;
   });
-  if (recent) return { success: SUCCESS_MSG };
-
-  await prisma.corporateInquiry.create({
-    data: {
-      companyName,
-      contactName,
-      contactTitle,
-      email,
-      phone,
-      headcount,
-      topics,
-      trainingType,
-      preferredTime,
-      budget,
-      message,
-    },
-  });
+  if (!created) return { success: SUCCESS_MSG };
 
   // 新單通知管理員（收件人存 SiteSetting，後台可改；未設定或寄失敗都不影響收單）
   try {

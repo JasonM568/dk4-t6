@@ -27,6 +27,7 @@ import {
 // 學員記錄卡的找／建入口（與訂單匯入共用，同行者鐵則只有一份實作）。
 // 海外門號 normalizeMobile 會回 null → upsertStudent 自動退回信箱路徑，正確。
 import { upsertStudent } from "@/lib/student-upsert";
+import { isSamePerson } from "@/lib/session-roster";
 import {
   parseSurveyAnswers,
   validateQuestions,
@@ -357,6 +358,9 @@ export async function requestWebinarLinkAction(
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "請填寫姓名" };
+  if (name.includes("\0")) return { error: "姓名含無效字元" };
+  if (name.length > 50) return { error: "姓名最多 50 字" };
+  if (email.length > 254) return { error: "Email 最多 254 字" };
   if (!EMAIL_RE.test(email)) return { error: "Email 格式不正確，請再確認" };
 
   // 手機必填（2026-09-02 Jason 決定）：開課前提醒簡訊與學員記錄卡歸戶都以手機為識別鍵。
@@ -392,18 +396,34 @@ export async function requestWebinarLinkAction(
   );
   if (!survey.ok) return { error: survey.error, questionId: survey.questionId };
 
-  // 同 email 60 秒限流：防止被拿來重複轟炸別人的信箱
+  // 新信箱用唯一鍵認領；舊信箱用條件更新認領，兩者都在寄信前完成。
+  const freshClaim = await prisma.webinarRequest.createMany({
+    data: [{ webinarId: webinar.id, email, name, phone, sentCount: 0, lastSentAt: new Date() }],
+    skipDuplicates: true,
+  });
+  if (freshClaim.count === 0) {
+    const claimed = await prisma.webinarRequest.updateMany({
+      where: {
+        webinarId: webinar.id,
+        email,
+        OR: [
+          { lastSentAt: null },
+          { lastSentAt: { lt: new Date(Date.now() - RESEND_COOLDOWN_MS) } },
+        ],
+      },
+      data: { lastSentAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      return { success: "確認信剛剛已寄出，請稍候並到信箱查收（也請檢查垃圾郵件夾）" };
+    }
+  }
   const existing = await prisma.webinarRequest.findUnique({
     where: { webinarId_email: { webinarId: webinar.id, email } },
   });
-  if (
-    existing?.lastSentAt &&
-    Date.now() - existing.lastSentAt.getTime() < RESEND_COOLDOWN_MS
-  ) {
-    return {
-      success: "確認信剛剛已寄出，請稍候並到信箱查收（也請檢查垃圾郵件夾）",
-    };
-  }
+  const updateContact = !existing?.phone || isSamePerson(
+    { name: existing.name ?? "", phone: existing.phone },
+    { name, phone },
+  );
 
   // 信件內容組裝抽在 lib/webinar-mail：後台預覽頁走同一支，兩邊不會各說各話。
   // （{name}/{email} 合併變數先替換再轉 HTML，esc 在 buildBroadcastHtml 內處理防注入）
@@ -418,13 +438,13 @@ export async function requestWebinarLinkAction(
   );
   if (result.sent === 0) {
     console.error("[webinar] 寄信失敗", { slug, email, error: result.error });
-    // 寄失敗也留下索取紀錄（名單不能丟）標 FAILED；不動 lastSentAt，訪客可立即重試
+    // 寄失敗也留下索取紀錄（名單不能丟）標 FAILED；清掉認領時間讓訪客可立即重試
     await prisma.webinarRequest
       .upsert({
         where: { webinarId_email: { webinarId: webinar.id, email } },
         update: {
-          name,
-          phone,
+          ...(updateContact ? { name, phone } : {}),
+          lastSentAt: null,
           deliveryStatus: "FAILED",
           deliveryDetail: (result.error ?? "寄送失敗").slice(0, 500),
           deliveryAt: new Date(),
@@ -448,8 +468,7 @@ export async function requestWebinarLinkAction(
     await prisma.webinarRequest.upsert({
       where: { webinarId_email: { webinarId: webinar.id, email } },
       update: {
-        name,
-        phone,
+        ...(updateContact ? { name, phone } : {}),
         // 重送時以最新一次作答為準；沒作答（例如既有講座頁沒有問卷）就不動舊值
         ...(survey.answers.length > 0 ? { answers: survey.answers } : {}),
         sentCount: { increment: 1 },

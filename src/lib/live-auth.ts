@@ -4,6 +4,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { getBoardClientIp } from "@/lib/board-auth";
+import { reserveLoginAttempt } from "@/lib/login-throttle";
 
 // 上課連結頁（/live）的 4 位上課碼閘門。
 // 與 /board 的差別（刻意不共用同一把鎖）：
@@ -143,38 +144,18 @@ export async function liveLoginBlocked(ip: string): Promise<boolean> {
   return rows.some((r) => r.lockedUntil && r.lockedUntil.getTime() > now);
 }
 
-async function bumpFail(
-  key: string,
-  windowMs: number,
-  maxFails: number,
-  lockMs: number,
-): Promise<boolean> {
-  const now = new Date();
-  const row = await prisma.boardLoginThrottle.findUnique({ where: { key } });
-  if (!row || now.getTime() - row.windowStart.getTime() > windowMs) {
-    await prisma.boardLoginThrottle.upsert({
-      where: { key },
-      update: { failCount: 1, windowStart: now, lockedUntil: null },
-      create: { key, failCount: 1, windowStart: now },
-    });
-    return false;
-  }
-  const failCount = row.failCount + 1;
-  const locked = failCount >= maxFails;
-  await prisma.boardLoginThrottle.update({
-    where: { key },
-    data: {
-      failCount,
-      ...(locked ? { lockedUntil: new Date(now.getTime() + lockMs) } : {}),
-    },
-  });
-  return locked;
+/** 比對上課碼前先預約 IP＋全域額度。 */
+export async function reserveLiveLoginAttempt(ip: string): Promise<boolean> {
+  const ipLocked = await reserveLoginAttempt(`live-ip:${ip}`, IP_WINDOW_MS, IP_MAX_FAILS, IP_LOCK_MS);
+  const globalLocked = await reserveLoginAttempt("live-global", GLOBAL_WINDOW_MS, GLOBAL_MAX_FAILS, GLOBAL_LOCK_MS);
+  if (globalLocked) console.error("[live-auth] 全域上課碼嘗試次數異常，上課連結頁冷卻 30 分鐘");
+  return ipLocked || globalLocked;
 }
 
 /** 記一次失敗（IP＋全域雙維度）；不記使用者輸入的碼 */
 export async function recordLiveLoginFail(ip: string): Promise<void> {
-  await bumpFail(`live-ip:${ip}`, IP_WINDOW_MS, IP_MAX_FAILS, IP_LOCK_MS);
-  const globalLocked = await bumpFail(
+  await reserveLoginAttempt(`live-ip:${ip}`, IP_WINDOW_MS, IP_MAX_FAILS, IP_LOCK_MS);
+  const globalLocked = await reserveLoginAttempt(
     "live-global",
     GLOBAL_WINDOW_MS,
     GLOBAL_MAX_FAILS,

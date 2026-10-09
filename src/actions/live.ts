@@ -8,8 +8,7 @@ import {
   clearLiveLoginFails,
   getLiveClientIp,
   liveCodeEquals,
-  liveLoginBlocked,
-  recordLiveLoginFail,
+  reserveLiveLoginAttempt,
   signLiveToken,
 } from "@/lib/live-auth";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
@@ -37,7 +36,7 @@ export async function liveLoginAction(
   }
 
   const ip = await getLiveClientIp();
-  if (await liveLoginBlocked(ip)) {
+  if (await reserveLiveLoginAttempt(ip)) {
     await failDelay();
     return { error: "嘗試次數過多，請 15 分鐘後再試" };
   }
@@ -62,7 +61,6 @@ export async function liveLoginAction(
     !hasEndedInTaipei(session.endDate ?? session.eventDate);
 
   if (!usable) {
-    await recordLiveLoginFail(ip);
     await failDelay();
     return { error: "上課碼錯誤，或這堂課尚未開放／已結束" };
   }

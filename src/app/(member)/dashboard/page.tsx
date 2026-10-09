@@ -26,7 +26,7 @@ export default async function DashboardPage() {
   // 歷史上課紀錄只認「已認領到本帳號」的那筆——共用信箱（夫妻／親子）若用 email 比對，
   // 會把另一半的上課紀錄顯示在自己頁面上。註冊當下已認領過；這裡再補一次是為了
   // 既有會員（先前沒手機、或註冊後才補填手機）。認領失敗不擋頁面。
-  await claimStudentRecord(user.id, { email: user.email, phone: memberProfile?.phone }).catch(
+  await claimStudentRecord(user.id, { email: user.email, phone: memberProfile?.phone, name: memberProfile?.name ?? user.displayName }).catch(
     (e) => console.error("[dashboard] 歷史學員資料認領失敗", e),
   );
   const studentRecord = await prisma.studentRecord.findFirst({
