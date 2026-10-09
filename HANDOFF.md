@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-10-09（QA 全系統補測 5 支 191 項，揪出 3 P2＋6 P3；R2–R16 全部上線（最後 d8c1d5b）；Jason 八題已裁決並落地（①⑥⑦不動）；待答：每 IP 門檻 20→60。派工狀態、決定不修清單、等 Jason 拍板的設計題見 docs/worklogs/2026-10-09-QA全系統補測與派工.md）**
+> 最後更新：**2026-10-09（QA 全系統補測 5 支 191 項，揪出 3 P2＋6 P3；R2–R17 全部上線（最後 8b39b02）；補填閘門已改提醒不再擋舊生看影片；待答：每 IP 門檻 20→60。派工狀態、決定不修清單、等 Jason 拍板的設計題見 docs/worklogs/2026-10-09-QA全系統補測與派工.md）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
 > 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
@@ -306,7 +306,7 @@ Supabase 專案 qubjpayeopvscrgrvrci（兩站共用）
 
 ## 📌 待辦（依優先序）
 
--1. **2026-10-09 QA 補測派工（R2–R16 全部上線；講義已走私有桶＋權限路由，既有 25 筆外部連結 Jason 決定不動）**：工程1（codex）修 3 P2（初始密碼外洩給 coach/operator、
+-1. **2026-10-09 QA 補測派工（R2–R17 全部上線；補填閘門改提醒；講義私有桶；25 筆外部講義不動）**：工程1（codex）修 3 P2（初始密碼外洩給 coach/operator、
    同人同課併發重複結算、專區停用仍可看片）＋6 P3。流程：工程1 修完回報 → PM 親核（重跑測試＋反向驗證）
    → QA 回歸 → PM commit/push → 5 支新測試項數進 CLAUDE.md。細節與環境紅線見 worklog 2026-10-09。
    三個設計題等 Jason：MemberPassword 明文備查、講義直連網址、剪報外圖洩 IP。
