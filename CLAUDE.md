@@ -107,32 +107,34 @@ Supabase 專案 qubjpayeopvscrgrvrci（hope 站與 course 站共用）
 pnpm dev                              # 啟動開發伺服器 http://localhost:3000
 pnpm tsc --noEmit && pnpm build       # 型別檢查 + 正式 build
 npx tsx scripts/test-ecpay.ts         # 驗 ECPay 簽章
-npx tsx scripts/test-payuni.ts        # 驗 PAYUNi 加解密/三態（官方測試向量）
-npx tsx scripts/test-ezpay-invoice.ts # 驗 ezPay 發票加密/CheckCode/稅額
-npx tsx scripts/check-webinar-mail-refactor.ts # 講座索取信組裝：預覽與實際寄信同一條路徑（離線）
+npx tsx scripts/test-payuni.ts        # 驗 PAYUNi 加解密/三態 33 項（官方測試向量）
+npx tsx scripts/test-ezpay-invoice.ts # 驗 ezPay 發票加密/CheckCode/稅額 17 項
+npx tsx scripts/check-webinar-mail-refactor.ts # 講座索取信組裝 6 項：預覽與實際寄信同一條路徑（離線）
 npx tsx scripts/test-purchase-flow.ts # 付款 webhook 端到端（需 dev server）
 npx tsx scripts/reset-testuser.ts     # 重置測試會員
 pnpm check:actions                    # 檢查 "use server" 檔案的匯出（build 也會跑）
 
 # 以下會寫入資料庫，只能對本機 localhost 跑
+# 本機 .env 帶正式 RESEND_API_KEY / MAACGO_API_KEY / SUPABASE_SECRET_KEY；跑 DB 測試前請在指令前加 RESEND_API_KEY= MAACGO_API_KEY= SUPABASE_SECRET_KEY= 清空
 npx tsx --conditions=react-server scripts/test-live-access-db.ts        # 上課碼閘門 29 項
-npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 12 項
-npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單
+npx tsx --conditions=react-server scripts/test-broadcast-notice-db.ts   # EDM 退訂分流 16 項
+npx tsx --conditions=react-server scripts/test-edm-delivery.ts          # EDM mock provider／跟進名單 21 項
 npx tsx --conditions=react-server scripts/test-session-notice-db.ts     # 課前通知「未通知名單」18 項（簡訊＋EDM 試算層）
 npx tsx --conditions=react-server scripts/test-edm-notice-writeback-db.ts # EDM 已通知回寫 9 項（mock provider：只標接受的／同信箱一起標／失敗留未通知）
 npx tsx --conditions=react-server scripts/test-webinar-sms-db.ts        # 簡訊「講座索取者」名單 28 項（去重/退訂/未通知/回寫）
 npx tsx --conditions=react-server scripts/test-webinar-phone-backfill-db.ts # 講座補手機 20 項（姓名不同不寫／共用信箱／撞號）
-npx tsx --conditions=react-server scripts/test-session-signup-db.ts     # 公開報名頁 28 項（名額/同行者/轉入名單）
-npx tsx scripts/test-edm-phase2.ts                                      # EDM KPI／CSV／preflight／成效分眾
-npx tsx scripts/test-session-groups.ts                                  # 場次固定組數 47 項（留空＝行為不變是回歸線）
+npx tsx --conditions=react-server scripts/test-session-signup-db.ts     # 公開報名頁 45 項（名額/同行者/轉入名單）
+npx tsx scripts/test-edm-phase2.ts                                      # EDM KPI／CSV／preflight／成效分眾 15 項
+npx tsx scripts/test-session-groups.ts                                  # 場次固定組數 57 項（留空＝行為不變是回歸線）
 npx tsx scripts/test-session-order.ts                                   # 場次手動排序的陣列運算 18 項
 npx tsx scripts/test-batch-enroll-form.ts                               # 批次開通表單契約 23 項（受控欄位／版面順序／兩步驟標示）
-npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示（radio／textarea；複選維持伺服端驗證）
+npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示 6 項（radio／textarea；複選維持伺服端驗證）
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
-npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 16 項（既有講座頁零變化是回歸線）
+npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 25 項（既有講座頁零變化是回歸線）
 npx tsx scripts/test-webinar-survey.ts                                  # 問卷驗證 27 項（必填／選項竄改／題數上限／快照）
 npx tsx scripts/test-tracking-id.ts                                      # 追蹤碼 ID 解析（貼整段安裝碼）＋表單受控契約 17 項
-npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等（本機 DB）
+npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等 7 項（本機 DB）
+npx tsx scripts/test-claude-test-counts.ts                               # 核對本區測試項數與實際輸出（僅 localhost DB）
 ```
 
 ## 目錄重點
