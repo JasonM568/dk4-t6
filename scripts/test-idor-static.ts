@@ -125,6 +125,80 @@ console.log("\nD. 身分來源");
 
 // ───────────────────── E. 後台子資源＋父層寫入 ─────────────────────
 console.log("\nE. 後台寫入的父層範圍");
+
+/** 取出『寫入那一句』的 where 內容（含 update／updateMany／delete／deleteMany／upsert），逐句判斷。
+ *  不再看整個函式有沒有出現父層參數——前面別的查詢（例如重複檢查）帶了父層 id 不代表寫入有被限定。 */
+function writeWheres(logic: string): string[] {
+  const out: string[] = [];
+  const re = /\b(?:prisma|tx)\.\w+\.(?:update|updateMany|delete|deleteMany|upsert)\(\s*\{\s*where:\s*\{([^}]*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(logic))) out.push(m[1]);
+  return out;
+}
+/** 守門讀取：用『子 id＋父層 id』正向比對查出該筆，查不到就提早結束。
+ *  重複檢查（NOT: { id: 子 id }）不算守門。 */
+function hasGuardRead(logic: string, child: string, parent: string): boolean {
+  const re = /\b(?:prisma|tx)\.\w+\.(?:findFirst|findUnique|count)\(\{\s*where:\s*\{([^}]*)\}[^]*?\)\s*;?\s*\n\s*if\s*\(\s*!\w+\s*\)\s*(?:return|\{)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(logic))) {
+    const w = m[1];
+    const positiveChild = new RegExp(`(?<!NOT:\\s*\\{\\s*)\\bid:\\s*${child}\\b|\\b${child}\\b(?!\\s*\\})`).test(w.replace(/NOT:\s*\{[^}]*\}/g, ""));
+    if (positiveChild && new RegExp(`\\b${parent}\\b`).test(w.replace(/NOT:\s*\{[^}]*\}/g, ""))) return true;
+  }
+  return false;
+}
+function isParentScoped(body: string, child: string, parent: string): boolean {
+  // 去掉函式簽名（簽名裡一定同時有子 id 與父層 id）與 revalidate 之後的部分
+  const logic = body.slice(body.indexOf("{", body.indexOf(")")) + 1).split("revalidate")[0];
+  const wheres = writeWheres(logic);
+  if (wheres.length === 0) return false;
+  if (wheres.every((w) => new RegExp(`\\b${parent}\\b`).test(w))) return true; // 每一句寫入自己就綁了父層
+  return hasGuardRead(logic, child, parent); // 或：先用子＋父層讀取守門，查不到就結束
+}
+
+// 掃描器自測：確保它不會被『別的查詢帶了父層 id』騙過（工程1 回報的情況）
+{
+  const dupOnly = `export async function f(memberId: string, groupId: string, fd: FormData) {
+  await requireEditor();
+  const dup = await prisma.mailGroupMember.findFirst({
+    where: { groupId, email, NOT: { id: memberId } },
+    select: { id: true },
+  });
+  if (dup) return { error: "x" };
+  await prisma.mailGroupMember.update({ where: { id: memberId }, data: { email } });
+}`;
+  check("自測：只有『重複檢查』帶父層 id、寫入本身沒綁父層 → 判為未綁（不被前一行的查詢騙過）", !isParentScoped(dupOnly, "memberId", "groupId"));
+  const writeScoped = `export async function f(memberId: string, groupId: string) {
+  await requireEditor();
+  const dup = await prisma.x.findFirst({ where: { NOT: { id: memberId } } });
+  const updated = await prisma.mailGroupMember.updateMany({
+    where: { id: memberId, groupId },
+    data: { name: "n" },
+  });
+}`;
+  check("自測：寫入的 where 自己就含父層 id → 判為已綁", isParentScoped(writeScoped, "memberId", "groupId"));
+  const guarded = `export async function f(studentId: string, historyId: string) {
+  await actorEmail();
+  const existing = await prisma.studentCourseHistory.findFirst({ where: { id: historyId, studentId } });
+  if (!existing) return;
+  await prisma.$transaction(async (tx) => {
+    await tx.studentCourseHistory.delete({ where: { id: historyId } });
+  });
+}`;
+  check("自測：先用『子＋父層』正向讀取守門、查不到就結束，之後只用子 id 寫入 → 判為已綁", isParentScoped(guarded, "historyId", "studentId"));
+  const onlyRevalidate = `export async function f(lessonId: string, courseId: string) {
+  await requireEditor();
+  await prisma.lesson.delete({ where: { id: lessonId } });
+  revalidatePath(\`/admin/courses/\${courseId}\`);
+}`;
+  check("自測：父層 id 只出現在 revalidatePath → 判為未綁", !isParentScoped(onlyRevalidate, "lessonId", "courseId"));
+  const readNoGuardReturn = `export async function f(studentId: string, historyId: string) {
+  const existing = await prisma.studentCourseHistory.findFirst({ where: { id: historyId, studentId } });
+  await prisma.studentCourseHistory.delete({ where: { id: historyId } });
+}`;
+  check("自測：有讀取但讀不到時沒有提早結束 → 不算守門，判為未綁", !isParentScoped(readNoGuardReturn, "historyId", "studentId"));
+}
+
 {
   // [檔案, 函式, 子 id 參數, 父層參數]
   const table: [string, string, string, string][] = [
@@ -143,14 +217,7 @@ console.log("\nE. 後台寫入的父層範圍");
   for (const [file, fn, child, parent] of table) {
     const body = fnBody(read(`src/actions/${file}`), fn);
     if (!body) { unscoped.push(`${fn}（找不到函式，請更新測試表）`); continue; }
-    // 父層參數出現在 where 條件（或被拿來和查到的資料比對），而不是只用在 revalidatePath
-    // 去掉函式簽名（簽名裡一定同時有子 id 與父層 id，會讓檢查永遠通過），
-    // 只看實際寫入邏輯：父層參數要出現在 where 條件，或被拿來和查到的資料比對
-    const logic = body.slice(body.indexOf("{", body.indexOf(")")) + 1).split("revalidate")[0];
-    const scoped =
-      new RegExp(`where:\\s*\\{[^}]*\\b${parent}\\b`).test(logic) ||
-      new RegExp(`(?:!==|===)\\s*[\\w.]*${parent}\\b|\\b${parent}\\s*(?:!==|===)`).test(logic);
-    if (!scoped) unscoped.push(`${fn}(${child}, ${parent})`);
+    if (!isParentScoped(body, child, parent)) unscoped.push(`${fn}(${child}, ${parent})`);
   }
   check("子資源寫入的 where 同時綁父層 id（拿 A 的子資源 id 搭配 B 的父層 id 不能動到 A 的資料）", unscoped.length === 0,
     `${unscoped.length}/${table.length} 個 action 只用子資源 id 寫入，父層參數只拿來 revalidatePath：${unscoped.join("、")}`);

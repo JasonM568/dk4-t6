@@ -143,7 +143,9 @@ npx tsx --conditions=react-server scripts/test-session-signup-abuse-db.ts # 公�
 npx tsx --conditions=react-server scripts/test-import-export-abuse-db.ts # 匯入匯出 D 層 64 項（CSV 公式注入含 Tab/CR／學員名單匯入共用解析器與 5,000 列上限／金額日期嚴格解析／壓縮炸彈）
 npx tsx --conditions=react-server scripts/test-broadcast-abuse-db.ts     # EDM／簡訊群發 D 層 50 項（requestKey 冪等／補寄原子認領／簡訊 5 則上限／退訂端點偽造；假寄信商）
 npx tsx --conditions=react-server scripts/test-public-forms-abuse-db.ts  # 公開表單 D 層 51 項（4 位碼限流原子計次／學員記錄認領比姓名／講座與企業包班併發／長度上限；Supabase 全替身）
-npx tsx scripts/test-idor-static.ts                                      # IDOR 靜態掃描 24 項（會員端資料範圍／落地頁欄位最小化／後台子資源 where 綁父層）
+npx tsx scripts/test-idor-static.ts                                      # IDOR 靜態掃描 29 項（會員端資料範圍／落地頁欄位最小化／後台子資源寫入那一句的 where 綁父層＋掃描器自測）
+# 付款通知路由 D 層 74 項需起「隔離 dev server」（全假金鑰＋127.0.0.1:1 死埠，紅線見檔頭）：
+#   source scripts/dev-env.example.sh && pnpm dev -p 3100   → 另開終端 npx tsx scripts/test-payment-notify-abuse-db.ts → 用完 pkill -f "next dev -p 3100"
 npx tsx scripts/test-claude-test-counts.ts                               # 核對本區測試項數與實際輸出（僅 localhost DB）
 ```
 

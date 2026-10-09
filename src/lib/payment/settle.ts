@@ -89,7 +89,13 @@ async function provisionGuestOrderAccount(
     return null;
   }
 
-  const res = await guestProvisioner(order.buyerEmail, order.buyerName);
+  let res: Awaited<ReturnType<GuestProvisioner>>;
+  try {
+    res = await guestProvisioner(order.buyerEmail, order.buyerName);
+  } catch (e) {
+    console.error("[settle] 訪客訂單建立帳號例外，改存待開通", { orderNo, e });
+    return null;
+  }
   if (!res.ok) {
     console.error("[settle] 訪客訂單建立帳號失敗，訂單將維持未開通", {
       orderNo,

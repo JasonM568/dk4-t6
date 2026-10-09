@@ -38,6 +38,7 @@ export async function settleSessionPaidOrder(
   let outcome: SessionSettleResult = { ok: true, already: false };
 
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`session-order:${input.orderNo}`}))`;
     const order = await tx.sessionSignupOrder.findUnique({
       where: { orderNo: input.orderNo },
     });
@@ -85,6 +86,7 @@ export async function settleSessionPaidOrder(
       const a = attendees[i];
       const base = "網路報名";
       const product = a.isRetrain && !isRetrainProduct(base) ? `複訓｜${base}` : base;
+      await tx.$executeRawUnsafe(`SAVEPOINT s_${i}`);
       try {
         await tx.sessionSignup.create({
           data: {
@@ -100,6 +102,7 @@ export async function settleSessionPaidOrder(
           },
         });
       } catch (e) {
+        await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT s_${i}`);
         console.error("[session-settle] 建立名單列失敗（可能重送已建）", {
           orderNo: order.orderNo,
           name: a.name,
