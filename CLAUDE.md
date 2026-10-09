@@ -127,6 +127,7 @@ npx tsx scripts/test-edm-phase2.ts                                      # EDM KP
 npx tsx scripts/test-session-groups.ts                                  # 場次固定組數 47 項（留空＝行為不變是回歸線）
 npx tsx scripts/test-session-order.ts                                   # 場次手動排序的陣列運算 18 項
 npx tsx scripts/test-batch-enroll-form.ts                               # 批次開通表單契約 23 項（受控欄位／版面順序／兩步驟標示）
+npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示（radio／textarea；複選維持伺服端驗證）
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
 npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 16 項（既有講座頁零變化是回歸線）
 npx tsx scripts/test-webinar-survey.ts                                  # 問卷驗證 27 項（必填／選項竄改／題數上限／快照）

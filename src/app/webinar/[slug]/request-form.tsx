@@ -252,6 +252,7 @@ export function WebinarRequestForm({
                 {q.type === "TEXT" ? (
                   <textarea
                     name={field}
+                    required={q.required}
                     rows={2}
                     value={cur[0] ?? ""}
                     onChange={(e) => setSingle(q.id, e.target.value)}
@@ -261,14 +262,26 @@ export function WebinarRequestForm({
                   <div className="space-y-1.5">
                     {q.options.map((opt) => (
                       <label key={opt} className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                        <input
-                          type={q.type === "MULTI" ? "checkbox" : "radio"}
-                          name={field}
-                          value={opt}
-                          checked={cur.includes(opt)}
-                          onChange={() => (q.type === "MULTI" ? toggleMulti(q.id, opt) : setSingle(q.id, opt))}
-                          className="h-4 w-4"
-                        />
+                        {q.type === "MULTI" ? (
+                          <input
+                            type="checkbox"
+                            name={field}
+                            value={opt}
+                            checked={cur.includes(opt)}
+                            onChange={() => toggleMulti(q.id, opt)}
+                            className="h-4 w-4"
+                          />
+                        ) : (
+                          <input
+                            type="radio"
+                            name={field}
+                            required={q.required}
+                            value={opt}
+                            checked={cur.includes(opt)}
+                            onChange={() => setSingle(q.id, opt)}
+                            className="h-4 w-4"
+                          />
+                        )}
                         {opt}
                       </label>
                     ))}
