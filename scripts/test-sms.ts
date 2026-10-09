@@ -1,4 +1,4 @@
-// 簡訊模組驗證腳本（本機 DB，dry-run，不會發出任何簡訊、不呼叫任何外部 API）
+// 簡訊模組驗證腳本（會寫入資料庫，只能對本機 localhost 跑；dry-run，不會發出任何簡訊、不呼叫任何外部 API）
 //
 //   npx tsx --conditions=react-server scripts/test-sms.ts
 //
@@ -8,6 +8,12 @@
 import { normalizeMobile, explainMobile, formatMobile } from "../src/lib/sms/phone";
 import { countSms, composeSmsText, hasEmoji } from "../src/lib/sms/message";
 import { prisma } from "../src/lib/db";
+
+if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL ?? "")) {
+  console.error("✗ DATABASE_URL 不是本機資料庫，拒絕執行（此測試會寫入）");
+  process.exit(1);
+}
+
 import {
   previewSmsAudience,
   executeSmsBroadcast,

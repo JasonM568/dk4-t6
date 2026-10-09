@@ -120,7 +120,7 @@ async function main() {
   );
   await expectThrow(
     "CSV 超過欄位上限",
-    csvBuf(Array.from({ length: 151 }, (_, i) => `c${i}`).join(",") + "\nx".repeat(3)),
+    csvBuf(Array.from({ length: 251 }, (_, i) => `c${i}`).join(",") + "\nx".repeat(3)),
     "欄位數過多",
   );
   {
