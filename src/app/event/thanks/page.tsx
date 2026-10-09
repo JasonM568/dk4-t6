@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { maskEmail } from "@/lib/mask";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "報名結果" };
@@ -38,7 +39,7 @@ export default async function SessionThanksPage({
             <h1 className="mb-2 text-2xl font-bold text-green-800">報名完成！</h1>
             <p className="text-sm leading-relaxed text-green-900">
               我們已收到您 {order?.quantity} 位的報名與款項，確認信與發票將寄到{" "}
-              {order?.buyerEmail}。期待課堂見！
+              {order ? maskEmail(order.buyerEmail) : ""}。期待課堂見！
             </p>
           </>
         ) : pending ? (

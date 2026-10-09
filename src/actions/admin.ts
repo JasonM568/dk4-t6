@@ -433,14 +433,18 @@ export async function updateLesson(
   await requireEditor();
   const parsed = parseLessonForm(formData);
   if ("error" in parsed) return { error: parsed.error };
-  await prisma.lesson.update({ where: { id: lessonId }, data: parsed.data });
+  const updated = await prisma.lesson.updateMany({
+    where: { id: lessonId, courseId },
+    data: parsed.data,
+  });
+  if (updated.count === 0) return { error: "找不到章節" };
   revalidatePath(`/admin/courses/${courseId}`);
   return { ok: true };
 }
 
 export async function deleteLesson(lessonId: string, courseId: string) {
   await requireEditor();
-  await prisma.lesson.delete({ where: { id: lessonId } });
+  await prisma.lesson.deleteMany({ where: { id: lessonId, courseId } });
   revalidatePath(`/admin/courses/${courseId}`);
 }
 
@@ -475,7 +479,7 @@ export async function addMaterialAction(
 
 export async function deleteMaterial(materialId: string, courseId: string) {
   await requireEditor();
-  await prisma.courseMaterial.delete({ where: { id: materialId } });
+  await prisma.courseMaterial.deleteMany({ where: { id: materialId, courseId } });
   revalidatePath(`/admin/courses/${courseId}`);
 }
 
@@ -1871,7 +1875,7 @@ export async function addGroupMembersAction(
 
 export async function removeGroupMember(memberId: string, groupId: string) {
   await requireEditor();
-  await prisma.mailGroupMember.deleteMany({ where: { id: memberId } });
+  await prisma.mailGroupMember.deleteMany({ where: { id: memberId, groupId } });
   revalidatePath(`/admin/broadcast/groups/${groupId}`);
   revalidatePath("/admin/broadcast/groups");
 }
@@ -1897,10 +1901,11 @@ export async function updateGroupMemberAction(
   });
   if (dup) return { error: `${email} 已在群組內，請改用移除` };
 
-  await prisma.mailGroupMember.update({
-    where: { id: memberId },
+  const updated = await prisma.mailGroupMember.updateMany({
+    where: { id: memberId, groupId },
     data: { email, name: name || null },
   });
+  if (updated.count === 0) return { error: "找不到群組成員" };
   revalidatePath(`/admin/broadcast/groups/${groupId}`);
   return { success: "已更新" };
 }
@@ -2970,7 +2975,7 @@ export async function importZoneMembersAction(
 /** 移除專區會員（只影響專區可見性，已開通的 Enrollment 不動） */
 export async function removeZoneMember(memberId: string, zoneId: string) {
   await requireEditor();
-  await prisma.courseGroupMember.deleteMany({ where: { id: memberId } });
+  await prisma.courseGroupMember.deleteMany({ where: { id: memberId, groupId: zoneId } });
   revalidatePath(`/admin/zones/${zoneId}`);
   revalidatePath("/admin/members"); // 會員列表的專區徽章也會即時更新
 }
@@ -3017,7 +3022,7 @@ export async function createZoneInviteAction(zoneId: string, formData: FormData)
 /** 停用/啟用邀請碼 */
 export async function toggleZoneInvite(inviteId: string, zoneId: string, isActive: boolean) {
   await requireEditor();
-  await prisma.groupInviteCode.update({ where: { id: inviteId }, data: { isActive } });
+  await prisma.groupInviteCode.updateMany({ where: { id: inviteId, groupId: zoneId }, data: { isActive } });
   revalidatePath(`/admin/zones/${zoneId}`);
 }
 
