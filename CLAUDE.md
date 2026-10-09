@@ -147,6 +147,8 @@ npx tsx scripts/test-idor-static.ts                                      # IDOR 
 npx tsx --conditions=react-server scripts/test-material-brief-abuse-db.ts # 講義下載授權／剪報圖片網址 D 層 73 項（未登入／無權 404 無探針／簽名 ≤60 秒／外部網址 7 種不轉址／穿越與上限）
 npx tsx --conditions=react-server scripts/test-material-access-db.ts     # 講義路由基本授權 9 項（未開通／已開通／幹部／停用專區／外部 url）
 npx tsx scripts/test-brief-image-url.ts                                  # 剪報站內網址純函式 6 項
+npx tsx --conditions=react-server scripts/test-profile-gate-behavior-db.ts # 補填閘門改提醒 33 項（舊生登入直達／三頁不導走／結帳仍擋／補填頁 next 安全；Supabase 全替身）
+npx tsx scripts/test-profile-gate.ts                                     # 補填閘門靜態契約 6 項（layout 不擋、login 不導、checkout 仍導、三頁有提醒）
 # 付款通知路由 D 層 74 項需起「隔離 dev server」（全假金鑰＋127.0.0.1:1 死埠，紅線見檔頭）：
 #   source scripts/dev-env.example.sh && pnpm dev -p 3100   → 另開終端 npx tsx scripts/test-payment-notify-abuse-db.ts → 用完 pkill -f "next dev -p 3100"
 npx tsx scripts/test-claude-test-counts.ts                               # 核對本區測試項數與實際輸出（僅 localhost DB）

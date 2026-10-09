@@ -6,6 +6,7 @@ import { formatNT } from "@/lib/format";
 import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { getMemberProfile } from "@/lib/member-profile";
 import { claimStudentRecord } from "@/lib/student-history";
+import { ProfileReminder } from "@/components/member/profile-reminder";
 
 export const metadata = { title: "會員中心" };
 
@@ -53,6 +54,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
+      <ProfileReminder userId={user.id} nextPath="/dashboard" />
       <h1 className="mb-6 text-3xl font-bold">會員中心</h1>
 
       {/* 等級卡（分級制度停用時改顯示簡潔歡迎卡） */}

@@ -10,6 +10,7 @@ import { extractYoutubeId } from "@/lib/youtube";
 import { toSlideEmbedUrl } from "@/lib/embed";
 import { canWatchCourse } from "@/lib/course-access";
 import { prisma } from "@/lib/db";
+import { ProfileReminder } from "@/components/member/profile-reminder";
 
 export default async function LearnPage({
   params,
@@ -40,10 +41,12 @@ export default async function LearnPage({
   if (!allowed && !isAdminRole(await getProfileRole(userId))) {
     redirect(`/courses/${courseSlug}`);
   }
+  const nextPath = `/learn/${courseSlug}${lesson ? `?lesson=${encodeURIComponent(lesson)}` : ""}`;
 
   if (course.lessons.length === 0) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-20 text-center text-gray-500">
+        <ProfileReminder userId={userId} nextPath={nextPath} />
         此課程尚未上架章節。
       </div>
     );
@@ -54,6 +57,7 @@ export default async function LearnPage({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
+      <ProfileReminder userId={userId} nextPath={nextPath} />
       <Link href="/my-courses" className="text-sm text-gray-500 hover:text-black">
         ← 我的課程
       </Link>

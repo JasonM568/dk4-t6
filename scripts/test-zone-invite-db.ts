@@ -187,7 +187,7 @@ async function main() {
   check("剪報頁：查詢帶 groupId 與 status: PUBLISHED", /groupId:\s*zone\.id,\s*status:\s*"PUBLISHED"/.test(page));
   const act = read("src/actions/daily-briefs.ts");
   check("剪報管理 action 全部先過 requireEditor", (act.match(/export async function/g) ?? []).length === (act.match(/await requireEditor\(\)/g) ?? []).length);
-  check("剪報圖片網址只收 http(s)（擋 javascript:／data:）", /filter\(\(url\)\s*=>\s*\/\^https\?:\\\/\\\/\/\.test\(url\)\)/.test(act));
+  check("剪報圖片網址必須是本站 course-assets 的上傳網址（isOurStorageUrl；擋 javascript:／data:／第三方主機，R14 起取代舊的 http(s) 檢查）", /isOurStorageUrl/.test(act) && /every\(isOurStorageUrl\)/.test(act));
   check("更新剪報時檢查發布狀態白名單", /\['DRAFT', 'PUBLISHED', 'UNPUBLISHED'\]\.includes\(status\)/.test(act));
 
   await cleanup();

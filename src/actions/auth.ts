@@ -163,8 +163,7 @@ export async function loginAction(
   }
 
   const supabase = await createClient();
-  const { data: signInData, error } =
-    await supabase.auth.signInWithPassword(parsed.data);
+  const { error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
     return { error: mapAuthError(error.code, error.status) };
@@ -184,21 +183,6 @@ export async function loginAction(
     .catch(() => null); // 導向查詢失敗不擋登入
 
   const dest = zoneMember ? `/zone/${zoneMember.group.slug}` : "/dashboard";
-
-  // 2026-08-15 起手機必填：既有會員沒補過 → 先去補填頁（補完自動回 dest）。
-  // 查詢失敗 fail-open 不擋登入（合規閘門非安全邊界）
-  if (signInData.user) {
-    // 補齊定義＝有手機「且」有同意（訂單回填列只有手機、同意 null，仍要走補填頁勾同意）
-    const row = await prisma.memberProfile
-      .findUnique({
-        where: { userId: signInData.user.id },
-        select: { privacyConsentAt: true },
-      })
-      .catch(() => ({ privacyConsentAt: new Date(0) })); // fail-open
-    if (!row?.privacyConsentAt) {
-      redirect(`/complete-profile?next=${encodeURIComponent(dest)}`);
-    }
-  }
 
   redirect(dest);
 }
@@ -375,7 +359,7 @@ export async function registerAction(
         },
       });
     } catch (e) {
-      console.error("[register] MemberProfile 寫入失敗（登入時會要求補填）", { email, e });
+      console.error("[register] MemberProfile 寫入失敗（會員頁提醒、結帳時要求補填）", { email, e });
     }
   }
 

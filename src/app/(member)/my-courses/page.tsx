@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/supabase/server";
+import { ProfileReminder } from "@/components/member/profile-reminder";
 
 // 永遠抓最新開通狀態（避免學員登入後才被開通、卻看到舊快取沒有新課程）
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export default async function MyCoursesPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
+      <ProfileReminder userId={user.id} nextPath="/my-courses" />
       <h1 className="mb-6 text-3xl font-bold">我的課程</h1>
 
       {enrollments.length === 0 ? (
