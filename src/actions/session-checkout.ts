@@ -12,6 +12,8 @@ import {
   signupState,
   CLOSED_MESSAGE,
   SIGNUP_REQUEST_STATUS,
+  MAX_ATTENDEES,
+  resolveSignupMode,
 } from "@/lib/session-signup-page";
 
 export type SessionCheckoutResult =
@@ -28,6 +30,7 @@ export async function previewSessionPricing(
   slug: string,
   contacts: { phone?: string | null; email?: string | null }[],
 ): Promise<PricingPreview> {
+  if (!Array.isArray(contacts) || contacts.length > MAX_ATTENDEES) return { ok: false };
   const session = await prisma.courseSession.findUnique({
     where: { signupSlug: slug.toLowerCase() },
     select: {
@@ -67,7 +70,7 @@ export async function createSessionCheckout(
     where: { signupSlug: slug.toLowerCase() },
   });
   if (!session) return { ok: false, error: "找不到這個報名頁" };
-  if (session.signupPayMode !== "PLATFORM" || !session.signupPrice || session.signupPrice <= 0) {
+  if (resolveSignupMode(session) !== "PLATFORM" || !session.signupPrice || session.signupPrice <= 0) {
     return { ok: false, error: "本場次未開放線上付款報名" };
   }
 
@@ -79,46 +82,6 @@ export async function createSessionCheckout(
   const parsed = collectAttendees(formData);
   if ("error" in parsed) return { ok: false, error: parsed.error };
   const { attendees } = parsed;
-
-  // 開放與名額：已確認名單（未延出）＋待確認申請＋未付款的線上訂單都算佔位，避免超賣
-  const [roster, pendingReq, pendingOrders] = await Promise.all([
-    prisma.sessionSignup.findMany({
-      where: { sessionId: session.id, deferredToSessionId: null },
-      select: { name: true, phone: true },
-    }),
-    prisma.sessionSignupRequest.count({
-      where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
-    }),
-    prisma.sessionSignupOrder.aggregate({
-      where: { sessionId: session.id, status: "PENDING" },
-      _sum: { quantity: true },
-    }),
-  ]);
-  const taken = roster.length + pendingReq + (pendingOrders._sum.quantity ?? 0);
-
-  const state = signupState({ session, taken, now: new Date() });
-  if (!state.open) return { ok: false, error: CLOSED_MESSAGE[state.reason] };
-
-  const remaining = session.signupQuota === null ? Infinity : session.signupQuota - taken;
-  if (attendees.length > remaining) {
-    return {
-      ok: false,
-      error:
-        remaining <= 0
-          ? "本場次名額已滿"
-          : `本場次只剩 ${remaining} 個名額，無法一次報名 ${attendees.length} 位`,
-    };
-  }
-
-  // 已在正式名單裡的人不重複報名
-  for (const a of attendees) {
-    if (roster.some((r) => isSamePerson(r, a))) {
-      return {
-        ok: false,
-        error: `「${a.name}」已經報名過這個場次了。若確定是同名的不同人，請確認手機號碼填的是本人的`,
-      };
-    }
-  }
 
   // 自動新舊生判定（伺服器端重算，前端改不了價）：逐位查手機/email 的上課史，
   // 上過任一複訓資格課程＝複訓價，否則新生價。isRetrain 一律以自動判定為準（覆蓋手動勾選）。
@@ -141,24 +104,83 @@ export async function createSessionCheckout(
   // orderNo 隨機不可枚舉；撞 orderNo 換一個重試，撞 checkoutKey 才是重複下單。
   let createdOrder;
   try {
-    // 場次單號由 generate 產生隨機值，不查課程 Order 的流水號。
-    createdOrder = await createOrderWithRetry({}, (orderNo) => prisma.sessionSignupOrder.create({
-        data: {
-          orderNo,
-          sessionId: session.id,
-          checkoutKey: `${session.id}:${buyerEmail}`,
-          buyerEmail,
-          buyerName: buyer.name,
-          buyerPhone: buyer.phone,
-          attendees: priced as unknown as Prisma.InputJsonValue,
-          quantity: priced.length,
-          unitPrice,
-          total,
-          status: "PENDING",
-          provider: provider.name,
-        },
-        select: { id: true },
-      }), { generate: () => makeWebOrderNo() });
+    createdOrder = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`signup:${session.id}`}))`;
+      const [roster, pendingPeople, pendingOrders] = await Promise.all([
+        tx.sessionSignup.findMany({
+          where: { sessionId: session.id, deferredToSessionId: null },
+          select: { name: true, phone: true },
+        }),
+        tx.sessionSignupRequest.findMany({
+          where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
+          select: { name: true, phone: true },
+        }),
+        tx.sessionSignupOrder.findMany({
+          where: { sessionId: session.id, status: "PENDING" },
+          select: { quantity: true, attendees: true },
+        }),
+      ]);
+      const taken = roster.length + pendingPeople.length +
+        pendingOrders.reduce((sum, order) => sum + order.quantity, 0);
+      const state = signupState({ session, taken, now: new Date() });
+      if (!state.open) return { ok: false as const, error: CLOSED_MESSAGE[state.reason] };
+
+      const remaining = session.signupQuota === null ? Infinity : session.signupQuota - taken;
+      if (attendees.length > remaining) {
+        return {
+          ok: false as const,
+          error: remaining <= 0
+            ? "本場次名額已滿"
+            : `本場次只剩 ${remaining} 個名額，無法一次報名 ${attendees.length} 位`,
+        };
+      }
+
+      const pendingOrderPeople = pendingOrders.flatMap((order) =>
+        Array.isArray(order.attendees) ? order.attendees : [],
+      ).filter((person): person is { name: string; phone: string } =>
+        !!person && typeof person === "object" && !Array.isArray(person) &&
+        typeof (person as Record<string, unknown>).name === "string" &&
+        typeof (person as Record<string, unknown>).phone === "string",
+      );
+      for (const a of attendees) {
+        if ([...roster, ...pendingPeople, ...pendingOrderPeople].some((r) => isSamePerson(r, a))) {
+          return {
+            ok: false as const,
+            error: `「${a.name}」已經報名過這個場次了。若確定是同名的不同人，請確認手機號碼填的是本人的`,
+          };
+        }
+      }
+
+      // 場次單號由 generate 產生隨機值，不查課程 Order 的流水號。
+      const result = await createOrderWithRetry({}, async (orderNo) => {
+        // 唯一鍵撞號後回到 savepoint，才能在同一 transaction 重試下一號。
+        await tx.$executeRawUnsafe("SAVEPOINT signup_order_no");
+        try {
+          return await tx.sessionSignupOrder.create({
+            data: {
+              orderNo,
+              sessionId: session.id,
+              checkoutKey: `${session.id}:${buyerEmail}`,
+              buyerEmail,
+              buyerName: buyer.name,
+              buyerPhone: buyer.phone,
+              attendees: priced as unknown as Prisma.InputJsonValue,
+              quantity: priced.length,
+              unitPrice,
+              total,
+              status: "PENDING",
+              provider: provider.name,
+            },
+            select: { id: true },
+          });
+        } catch (e) {
+          await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT signup_order_no");
+          throw e;
+        }
+      }, { generate: () => makeWebOrderNo() });
+      if (!result.ok) return { ok: false as const, error: "系統忙碌中，請稍後再試" };
+      return { ok: true as const, orderNo: result.orderNo, orderId: result.value.id };
+    });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return {
@@ -168,12 +190,9 @@ export async function createSessionCheckout(
     }
     throw e;
   }
-  if (!createdOrder.ok) {
-    console.error("[session-checkout] 訂單編號連撞 8 次，放棄", { slug });
-    return { ok: false, error: "系統忙碌中，請稍後再試" };
-  }
+  if (!createdOrder.ok) return { ok: false, error: createdOrder.error };
   const { orderNo } = createdOrder;
-  const orderId = createdOrder.value.id;
+  const { orderId } = createdOrder;
 
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
   try {

@@ -139,6 +139,7 @@ npx tsx --conditions=react-server scripts/test-board-throttle-db.ts     # /board
 npx tsx --conditions=react-server scripts/test-checkout-settle-db.ts    # 結帳結算 D 層 59 項（同單併發／同人同課併發鎖／金額竄改／total=0／取號重試 createOrderWithRetry）
 npx tsx --conditions=react-server scripts/test-course-access-db.ts      # 課程觀看權限 35 項（Enrollment／訂閱與限時開放／專區停用即失效／頁面靜態契約）
 npx tsx --conditions=react-server scripts/test-zone-invite-db.ts        # 邀請碼與專區會籍 37 項（格式／過期／停用／冪等兌換 usedCount 只算人數／自動開通範圍）
+npx tsx --conditions=react-server scripts/test-session-signup-abuse-db.ts # 公開報名頁／訪客結帳 D 層 47 項（名額併發鎖／60 秒連點只擋同一組人／報名方式守門／長度與人數上限）
 npx tsx scripts/test-claude-test-counts.ts                               # 核對本區測試項數與實際輸出（僅 localhost DB）
 ```
 

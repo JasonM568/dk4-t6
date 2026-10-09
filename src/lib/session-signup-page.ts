@@ -22,6 +22,17 @@ export const SIGNUP_REQUEST_STATUS = {
  *  上限存在的理由是防灌單，不是業務限制；要帶更多人請走後台手動新增。 */
 export const MAX_ATTENDEES = 6;
 
+/** 與公開報名頁一致的實際報名方式；設定缺少必要網址或價格時退回手動模式。 */
+export function resolveSignupMode(session: {
+  signupPayMode: string | null;
+  signupUrl: string | null;
+  signupPrice: number | null;
+}): "EXTERNAL" | "PLATFORM" | "MANUAL" {
+  if (session.signupPayMode === "EXTERNAL" && session.signupUrl) return "EXTERNAL";
+  if (session.signupPayMode === "PLATFORM" && session.signupPrice) return "PLATFORM";
+  return "MANUAL";
+}
+
 // ───────────────── 課程詳情區塊（圖片／影片混排，順序即顯示順序）─────────────────
 
 export type DmBlock = { type: "image" | "video"; url: string };

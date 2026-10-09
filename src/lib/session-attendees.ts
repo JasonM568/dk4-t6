@@ -30,6 +30,8 @@ export function parseAttendee(
   if (!name && !phoneRaw && !email) return null;
   const who = name || `第 ${i + 1} 位參加者`;
   if (!name) return { error: `請填寫第 ${i + 1} 位參加者的姓名` };
+  if (name.length > 50) return { error: `「${who}」的姓名過長（最多 50 字）` };
+  if (email.length > 254) return { error: `「${who}」的 Email 過長（最多 254 字）` };
 
   if (!phoneRaw) return { error: `請填寫「${who}」本人的手機（每位參加者要留自己的號碼）` };
   const { mobile, reject, overseas } = explainMobile(phoneRaw);

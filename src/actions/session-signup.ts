@@ -15,6 +15,7 @@ import {
   makeWebOrderNo,
   signupState,
   CLOSED_MESSAGE,
+  resolveSignupMode,
 } from "@/lib/session-signup-page";
 
 // 場次公開報名頁：後台設定 ＋ 訪客送出報名（手動收款模式）＋ 管理員確認收款轉入名單。
@@ -193,97 +194,101 @@ export async function submitSignupAction(
     where: { signupSlug: slug.toLowerCase() },
   });
   if (!session) return { error: "找不到這個報名頁" };
+  if (resolveSignupMode(session) !== "MANUAL") return { error: "這個場次不是用本表單報名" };
 
   const buyerEmail = String(formData.get("buyerEmail") ?? "").trim().toLowerCase();
   if (!EMAIL_RE.test(buyerEmail)) return { error: "請填寫正確的 Email（報名確認信會寄到這裡）" };
   const note = String(formData.get("note") ?? "").trim() || null;
+  if (note && note.length > 1000) return { error: "備註過長（最多 1000 字）" };
 
   const collected = collectAttendees(formData);
   if ("error" in collected) return { error: collected.error };
   const { attendees } = collected;
 
-  // 開放與名額判定：已確認名單（未延出）＋ 待確認申請都算佔位
-  const [roster, pendingCount, recentDup] = await Promise.all([
-    prisma.sessionSignup.findMany({
-      where: { sessionId: session.id, deferredToSessionId: null },
-      select: { name: true, phone: true },
-    }),
-    prisma.sessionSignupRequest.count({
-      where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
-    }),
-    prisma.sessionSignupRequest.findFirst({
-      where: {
-        sessionId: session.id,
-        buyerEmail,
-        status: SIGNUP_REQUEST_STATUS.PENDING,
-        createdAt: { gt: new Date(Date.now() - DUP_WINDOW_MS) },
-      },
-      select: { id: true },
-    }),
-  ]);
-
-  // 連點兩次送出：不再寫一筆，直接回成功（使用者看到的結果與第一次相同）
-  if (recentDup) return { success: "報名已送出，確認信將寄到你的信箱！" };
-
-  const state = signupState({
-    session,
-    taken: roster.length + pendingCount,
-    now: new Date(),
-  });
-  if (!state.open) return { error: CLOSED_MESSAGE[state.reason] };
-
-  const remaining =
-    session.signupQuota === null
-      ? Infinity
-      : session.signupQuota - roster.length - pendingCount;
-  if (attendees.length > remaining) {
-    return {
-      error:
-        remaining <= 0
-          ? "本場次名額已滿"
-          : `本場次只剩 ${remaining} 個名額，無法一次報名 ${attendees.length} 位`,
-    };
-  }
-
-  // 已在名單裡的人（含已確認與待確認）不重複報名
-  const pendingPeople = await prisma.sessionSignupRequest.findMany({
-    where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
-    select: { name: true, phone: true },
-  });
-  const existing = [...roster, ...pendingPeople];
-  for (const a of attendees) {
-    const dup = existing.find((r) => isSamePerson(r, a));
-    if (dup) {
-      return {
-        error: `「${a.name}」已經報名過這個場次了。若確定是同名的不同人，請確認手機號碼填的是本人的`,
-      };
-    }
-  }
-
-  const orderNo = makeWebOrderNo();
   const buyer = attendees[0];
-
+  let result;
   try {
-    await prisma.sessionSignupRequest.createMany({
-      data: attendees.map((a, i) => ({
-        sessionId: session.id,
-        orderNo,
-        attendeeKey: attendeeKeyAt(i),
-        name: a.name,
-        email: a.email,
-        phone: a.phone,
-        meal: a.meal,
-        isRetrain: a.isRetrain,
-        buyerName: buyer.name,
-        buyerEmail,
-        buyerPhone: buyer.phone,
-        note: i === 0 ? note : null, // 備註只記在訂購人那列
-      })),
+    result = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`signup:${session.id}`}))`;
+      // 三類佔位使用同一把場次鎖，手動與平台結帳互相看見剛寫入的名額。
+      const [roster, pendingPeople, pendingOrders, recentRows] = await Promise.all([
+        tx.sessionSignup.findMany({
+          where: { sessionId: session.id, deferredToSessionId: null },
+          select: { name: true, phone: true },
+        }),
+        tx.sessionSignupRequest.findMany({
+          where: { sessionId: session.id, status: SIGNUP_REQUEST_STATUS.PENDING },
+          select: { name: true, phone: true },
+        }),
+        tx.sessionSignupOrder.aggregate({
+          where: { sessionId: session.id, status: "PENDING" },
+          _sum: { quantity: true },
+        }),
+        tx.sessionSignupRequest.findMany({
+          where: {
+            sessionId: session.id,
+            buyerEmail,
+            status: SIGNUP_REQUEST_STATUS.PENDING,
+            createdAt: { gt: new Date(Date.now() - DUP_WINDOW_MS) },
+          },
+          select: { phone: true },
+        }),
+      ]);
+      const recentPhones = new Set(recentRows.map((r) => r.phone));
+      const attendeePhones = new Set(attendees.map((a) => a.phone));
+      if (recentPhones.size > 0 && recentPhones.size === attendeePhones.size &&
+          [...attendeePhones].every((phone) => recentPhones.has(phone))) {
+        return { kind: "duplicate" as const };
+      }
+
+      const taken = roster.length + pendingPeople.length + (pendingOrders._sum.quantity ?? 0);
+      const state = signupState({ session, taken, now: new Date() });
+      if (!state.open) return { kind: "error" as const, error: CLOSED_MESSAGE[state.reason] };
+      const remaining = session.signupQuota === null ? Infinity : session.signupQuota - taken;
+      if (attendees.length > remaining) {
+        return {
+          kind: "error" as const,
+          error: remaining <= 0
+            ? "本場次名額已滿"
+            : `本場次只剩 ${remaining} 個名額，無法一次報名 ${attendees.length} 位`,
+        };
+      }
+
+      for (const a of attendees) {
+        if ([...roster, ...pendingPeople].some((r) => isSamePerson(r, a))) {
+          return {
+            kind: "error" as const,
+            error: `「${a.name}」已經報名過這個場次了。若確定是同名的不同人，請確認手機號碼填的是本人的`,
+          };
+        }
+      }
+
+      const orderNo = makeWebOrderNo();
+      await tx.sessionSignupRequest.createMany({
+        data: attendees.map((a, i) => ({
+          sessionId: session.id,
+          orderNo,
+          attendeeKey: attendeeKeyAt(i),
+          name: a.name,
+          email: a.email,
+          phone: a.phone,
+          meal: a.meal,
+          isRetrain: a.isRetrain,
+          buyerName: buyer.name,
+          buyerEmail,
+          buyerPhone: buyer.phone,
+          note: i === 0 ? note : null, // 備註只記在訂購人那列
+        })),
+      });
+      return { kind: "created" as const, orderNo };
     });
   } catch (e) {
-    console.error("[session-signup] 報名寫入失敗", { slug, orderNo, e });
+    console.error("[session-signup] 報名寫入失敗", { slug, e });
     return { error: "報名送出失敗，請稍後再試或直接與我們聯繫" };
   }
+  if (result.kind === "duplicate") return { success: "報名已送出，確認信將寄到你的信箱！" };
+  if (result.kind === "error") return { error: result.error };
+  const { orderNo } = result;
 
   // 自動加入名單群組（失敗不影響報名成立）
   if (session.signupGroupId) {

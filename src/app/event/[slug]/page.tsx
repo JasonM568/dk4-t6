@@ -7,6 +7,7 @@ import {
   mapUrl,
   SIGNUP_REQUEST_STATUS,
   parseDmBlocks,
+  resolveSignupMode,
   type DmBlock,
 } from "@/lib/session-signup-page";
 import { youTubeEmbedUrl } from "@/lib/video-embed";
@@ -58,8 +59,9 @@ export default async function EventSignupPage({
   if (!session) notFound();
 
   // 報名方式：EXTERNAL 導 1shop（席次對方控管，本頁不算名額）／PLATFORM 平台金流／MANUAL 手動收款
-  const isExternal = session.signupPayMode === "EXTERNAL" && !!session.signupUrl;
-  const isPlatform = session.signupPayMode === "PLATFORM" && !!session.signupPrice;
+  const signupMode = resolveSignupMode(session);
+  const isExternal = signupMode === "EXTERNAL";
+  const isPlatform = signupMode === "PLATFORM";
 
   // 平台/手動模式的名額：已確認名單（未延出）＋待確認申請＋未付款的線上訂單都算佔位，避免超賣
   let taken = 0;
