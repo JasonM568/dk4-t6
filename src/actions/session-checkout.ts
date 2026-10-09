@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { getPaymentProvider } from "@/lib/payment";
 import { collectAttendees } from "@/lib/session-attendees";
+import { FORM_THROTTLE_ERROR, reserveCurrentFormAttempt } from "@/lib/form-throttle";
 import { classifyTiers, priceForTier } from "@/lib/session-student-tier";
 import { isSamePerson } from "@/lib/session-roster";
 import { createOrderWithRetry } from "@/lib/order-create";
@@ -28,7 +29,7 @@ export type PricingPreview =
  *  純顯示用，實際定價一律在 createSessionCheckout 伺服器端重算。 */
 export async function previewSessionPricing(
   slug: string,
-  contacts: { phone?: string | null; email?: string | null }[],
+  contacts: { name?: string | null; phone?: string | null; email?: string | null }[],
 ): Promise<PricingPreview> {
   if (!Array.isArray(contacts) || contacts.length > MAX_ATTENDEES) return { ok: false };
   const session = await prisma.courseSession.findUnique({
@@ -82,11 +83,14 @@ export async function createSessionCheckout(
   const parsed = collectAttendees(formData);
   if ("error" in parsed) return { ok: false, error: parsed.error };
   const { attendees } = parsed;
+  if (await reserveCurrentFormAttempt("session-checkout")) {
+    return { ok: false, error: FORM_THROTTLE_ERROR };
+  }
 
   // 自動新舊生判定（伺服器端重算，前端改不了價）：逐位查手機/email 的上課史，
   // 上過任一複訓資格課程＝複訓價，否則新生價。isRetrain 一律以自動判定為準（覆蓋手動勾選）。
   const tiers = await classifyTiers(
-    attendees.map((a) => ({ phone: a.phone, email: a.email })),
+    attendees.map((a) => ({ name: a.name, phone: a.phone, email: a.email })),
     session.signupRetrainCourseIds,
   );
   const priced = attendees.map((a, i) => ({

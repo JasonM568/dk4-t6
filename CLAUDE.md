@@ -135,14 +135,14 @@ npx tsx scripts/test-webinar-survey.ts                                  # 問卷
 npx tsx scripts/test-tracking-id.ts                                      # 追蹤碼 ID 解析（貼整段安裝碼）＋表單受控契約 17 項
 npx tsx --conditions=react-server scripts/test-edm-link-db.ts           # EDM 逐連結 webhook 冪等 7 項（本機 DB）
 npx tsx --conditions=react-server scripts/test-rbac-guards.ts           # 後台 RBAC 與越權 62 項（靜態掃描 184 個 server action 守門＋敏感欄位不外洩＋看板 token）
-npx tsx --conditions=react-server scripts/test-board-throttle-db.ts     # /board 登入限流 12 項（5 次鎖 15 分／全域冷卻；需 .env 的 BOARD_SESSION_SECRET）
+npx tsx --conditions=react-server scripts/test-board-throttle-db.ts     # /board 登入限流 17 項（預約語意：5 次放行第 6 次擋／併發 30 恰 5 放行／全域冷卻；需 .env 的 BOARD_SESSION_SECRET）
 npx tsx --conditions=react-server scripts/test-checkout-settle-db.ts    # 結帳結算 D 層 59 項（同單併發／同人同課併發鎖／金額竄改／total=0／取號重試 createOrderWithRetry）
 npx tsx --conditions=react-server scripts/test-course-access-db.ts      # 課程觀看權限 35 項（Enrollment／訂閱與限時開放／專區停用即失效／頁面靜態契約）
 npx tsx --conditions=react-server scripts/test-zone-invite-db.ts        # 邀請碼與專區會籍 37 項（格式／過期／停用／冪等兌換 usedCount 只算人數／自動開通範圍）
 npx tsx --conditions=react-server scripts/test-session-signup-abuse-db.ts # 公開報名頁／訪客結帳 D 層 47 項（名額併發鎖／60 秒連點只擋同一組人／報名方式守門／長度與人數上限）
 npx tsx --conditions=react-server scripts/test-import-export-abuse-db.ts # 匯入匯出 D 層 64 項（CSV 公式注入含 Tab/CR／學員名單匯入共用解析器與 5,000 列上限／金額日期嚴格解析／壓縮炸彈）
 npx tsx --conditions=react-server scripts/test-broadcast-abuse-db.ts     # EDM／簡訊群發 D 層 50 項（requestKey 冪等／補寄原子認領／簡訊 5 則上限／退訂端點偽造；假寄信商）
-npx tsx --conditions=react-server scripts/test-public-forms-abuse-db.ts  # 公開表單 D 層 51 項（4 位碼限流原子計次／學員記錄認領比姓名／講座與企業包班併發／長度上限；Supabase 全替身）
+npx tsx --conditions=react-server scripts/test-public-forms-abuse-db.ts  # 公開表單 D 層 60 項（4 位碼限流原子計次／學員記錄認領比姓名／講座與企業包班併發／長度上限／同 IP 限流 20 次；Supabase 全替身）
 npx tsx scripts/test-idor-static.ts                                      # IDOR 靜態掃描 29 項（會員端資料範圍／落地頁欄位最小化／後台子資源寫入那一句的 where 綁父層＋掃描器自測）
 # 付款通知路由 D 層 74 項需起「隔離 dev server」（全假金鑰＋127.0.0.1:1 死埠，紅線見檔頭）：
 #   source scripts/dev-env.example.sh && pnpm dev -p 3100   → 另開終端 npx tsx scripts/test-payment-notify-abuse-db.ts → 用完 pkill -f "next dev -p 3100"

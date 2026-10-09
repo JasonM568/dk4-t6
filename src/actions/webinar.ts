@@ -28,6 +28,7 @@ import {
 // 海外門號 normalizeMobile 會回 null → upsertStudent 自動退回信箱路徑，正確。
 import { upsertStudent } from "@/lib/student-upsert";
 import { isSamePerson } from "@/lib/session-roster";
+import { FORM_THROTTLE_ERROR, reserveCurrentFormAttempt } from "@/lib/form-throttle";
 import {
   parseSurveyAnswers,
   validateQuestions,
@@ -395,6 +396,7 @@ export async function requestWebinarLinkAction(
     formData.getAll(field).map((v) => String(v)),
   );
   if (!survey.ok) return { error: survey.error, questionId: survey.questionId };
+  if (await reserveCurrentFormAttempt("webinar")) return { error: FORM_THROTTLE_ERROR };
 
   // 新信箱用唯一鍵認領；舊信箱用條件更新認領，兩者都在寄信前完成。
   const freshClaim = await prisma.webinarRequest.createMany({

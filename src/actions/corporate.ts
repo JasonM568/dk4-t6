@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
+import { FORM_THROTTLE_ERROR, reserveCurrentFormAttempt } from "@/lib/form-throttle";
 import {
   BUDGET_OPTIONS,
   HEADCOUNT_OPTIONS,
@@ -69,6 +70,7 @@ export async function submitCorporateInquiryAction(
   const headcount = pickOption(field(formData, "headcount", 20), HEADCOUNT_OPTIONS);
   const trainingType = pickOption(field(formData, "trainingType", 20), TRAINING_TYPE_OPTIONS);
   const budget = pickOption(field(formData, "budget", 20), BUDGET_OPTIONS);
+  if (await reserveCurrentFormAttempt("corporate")) return { error: FORM_THROTTLE_ERROR };
 
   // 防重：同 email 十分鐘內已有單 → 直接回成功，不重複入庫也不重複轟炸通知信
   const created = await prisma.$transaction(async (tx) => {

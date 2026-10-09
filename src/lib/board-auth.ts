@@ -96,7 +96,7 @@ export async function boardAuthStatus(): Promise<{ expiresAt: Date | null }> {
 // ─────────────────── 共享限流（DB 表，跨 serverless instance）───────────────────
 
 const IP_WINDOW_MS = 15 * 60 * 1000; // 失敗計數視窗
-const IP_MAX_FAILS = 5; // 第 5 次失敗即鎖 → 第 6 次嘗試被擋
+const IP_MAX_FAILS = 5; // 每次嘗試先預約額度：5 次內放行，第 6 次嘗試被擋（鎖在第 6 次當下寫入）
 const IP_LOCK_MS = 15 * 60 * 1000;
 const GLOBAL_WINDOW_MS = 10 * 60 * 1000; // 全域異常門檻（分散來源掃碼）
 const GLOBAL_MAX_FAILS = 100;

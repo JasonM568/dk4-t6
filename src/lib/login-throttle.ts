@@ -39,7 +39,8 @@ export async function reserveLoginAttempt(
   `;
   const row = rows[0];
   if (row.lockedUntil && row.lockedUntil.getTime() > Date.now()) return true;
-  if (row.failCount < maxFails) return false;
+  // 先計次再比對：第 N 次嘗試時 failCount 已是 N，所以 N ≤ maxFails 都放行、第 maxFails+1 次才鎖
+  if (row.failCount <= maxFails) return false;
   await prisma.boardLoginThrottle.update({
     where: { key },
     data: { lockedUntil: new Date(Date.now() + lockMs) },

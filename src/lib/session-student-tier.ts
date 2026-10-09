@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { findStudentByContact } from "@/lib/student-history";
+import { isSamePerson } from "@/lib/session-roster";
+import { normalizeMobile } from "@/lib/sms/phone";
 
 // 場次報名自動新舊生判定：用手機/email 查學員上課史，上過任一「複訓資格課程」
 // （場次設定的 signupRetrainCourseIds，對應 CanonicalCourse.id）＝複訓，否則＝新生。
@@ -11,7 +13,7 @@ export type StudentTier = "NEW" | "RETRAIN";
 /** 逐位參加者判新舊生。qualifyingCourseIds 空 = 不分新舊生，一律 NEW。
  *  查學員：手機優先、email 備援（僅唯一一筆才採信）；查無此人＝新生。 */
 export async function classifyTiers(
-  contacts: { phone?: string | null; email?: string | null }[],
+  contacts: { name?: string | null; phone?: string | null; email?: string | null }[],
   qualifyingCourseIds: string[],
 ): Promise<StudentTier[]> {
   if (qualifyingCourseIds.length === 0) return contacts.map(() => "NEW");
@@ -28,6 +30,10 @@ export async function classifyTiers(
     contacts.map(async (c) => {
       const record = await findStudentByContact(c.phone, c.email);
       if (!record) return "NEW" as const;
+      if (record.name && c.name && !isSamePerson(
+        { name: record.name, phone: record.phone },
+        { name: c.name, phone: normalizeMobile(c.phone) ?? c.phone },
+      )) return "NEW" as const;
       const hit = await prisma.studentCourseHistory.findFirst({
         where: { studentId: record.id, courseName: { in: rawNames } },
         select: { id: true },

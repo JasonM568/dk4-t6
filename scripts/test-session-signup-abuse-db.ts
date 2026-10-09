@@ -28,6 +28,12 @@ import Module from "node:module";
 
 // ── 替身：所有會碰外部或需要 Next 請求環境的模組 ──
 const sentMails: { to: string; subject: string }[] = [];
+// R13 起公開表單依來源 IP 限流（同 IP 10 分鐘 20 次）。直打 action 沒有 request，這裡用 next/headers 替身
+// 提供 x-real-ip，並在每個段落換一個 pid 隔離的 IP——門檻不放寬，只是避免不同段落共用同一個額度。
+const PID = process.pid;
+let ipN = 0;
+let currentIp = `198.51.100.${PID}-0`;
+const setIp = () => { currentIp = `198.51.100.${PID}-${++ipN}`; };
 type LoadFn = (request: string, ...rest: unknown[]) => unknown;
 const M = Module as unknown as { _load: LoadFn };
 const origLoad = M._load;
@@ -37,6 +43,7 @@ M._load = function (this: unknown, request: string, ...rest: unknown[]) {
     return { requireEditor: ok, requireStaff: ok, requireFullAdmin: ok, currentStaffRole: async () => null };
   }
   if (request === "next/cache") return { revalidatePath() {}, revalidateTag() {} };
+  if (request === "next/headers") return { headers: async () => new Headers({ "x-real-ip": currentIp }), cookies: async () => ({ get: () => undefined, set() {}, delete() {} }) };
   if (request === "@/lib/email/broadcast") {
     return {
       buildBroadcastHtml: () => "<p>stub</p>",
@@ -126,6 +133,7 @@ async function main() {
   await cleanup();
 
   console.log("\nA. 基準");
+  setIp();
   {
     await resetSession({ signupQuota: 10 });
     const r = await submitSignupAction(SLUG, null, form({ buyerEmail: "a1@localhost.test", attendees: [{ name: "王小明", email: "friend@localhost.test" }] }));
@@ -135,6 +143,7 @@ async function main() {
   }
 
   console.log("\nB. 名額超賣（名額 3、8 人同時各報 1 位）");
+  setIp();
   {
     await resetSession({ signupQuota: 3 });
     const rs = await Promise.all(Array.from({ length: 8 }, (_, i) => submitSignupAction(SLUG, null, form({ buyerEmail: `race${i}@localhost.test`, attendees: [{ name: `搶位${i}` }] }))));
@@ -144,6 +153,7 @@ async function main() {
   }
 
   console.log("\nC. 重複報名");
+  setIp();
   {
     await resetSession({ signupQuota: null });
     const same = { name: "同一人", phone: phone() };
@@ -159,6 +169,7 @@ async function main() {
   }
 
   console.log("\nD. 60 秒重複視窗的副作用");
+  setIp();
   {
     await resetSession({ signupQuota: null });
     await submitSignupAction(SLUG, null, form({ buyerEmail: "mom@localhost.test", attendees: [{ name: "大寶" }] }));
@@ -170,6 +181,7 @@ async function main() {
   }
 
   console.log("\nE. 報名方式不是 MANUAL，手動報名入口仍收件？");
+  setIp();
   for (const mode of ["PLATFORM", "EXTERNAL"]) {
     await resetSession({ signupPayMode: mode, signupQuota: 5, signupUrl: mode === "EXTERNAL" ? "https://example.test/1shop" : null });
     const r = await submitSignupAction(SLUG, null, form({ buyerEmail: `mode-${mode}@localhost.test` }));
@@ -179,6 +191,7 @@ async function main() {
   }
 
   console.log("\nF. 關閉狀態");
+  setIp();
   {
     const cases: [string, Record<string, unknown>][] = [
       ["總開關關閉", { isSignupOpen: false }],
@@ -201,6 +214,7 @@ async function main() {
   }
 
   console.log("\nG. 蜜罐、人數上限、畸形與超長欄位");
+  setIp();
   {
     await resetSession({ signupQuota: null });
     const r = await submitSignupAction(SLUG, null, form({ buyerEmail: "bot@localhost.test", extra: { hp_extra_note: "http://spam" } }));
@@ -256,6 +270,7 @@ async function main() {
   }
 
   console.log("\nH. 惡意 slug");
+  setIp();
   {
     await resetSession({ signupQuota: null });
     for (const [label, slug] of [["不存在", "no-such-slug"], ["空字串", ""], ["SQL 字樣", "' OR '1'='1"], ["10000 字元", "a".repeat(10_000)], ["大寫（頁面會轉小寫）", SLUG.toUpperCase()]] as const) {
@@ -267,6 +282,7 @@ async function main() {
   }
 
   console.log("\nI. 平台金流結帳（PLATFORM）");
+  setIp();
   {
     await resetSession({ signupPayMode: "PLATFORM", signupPrice: 1000, signupQuota: 3 });
     const rs = await Promise.all(Array.from({ length: 8 }, (_, i) => createSessionCheckout(SLUG, form({ buyerEmail: `pay${i}@localhost.test`, attendees: [{ name: `付${i}` }] }))));
@@ -300,6 +316,7 @@ async function main() {
   }
 
   console.log("\nJ. 試算端點被灌入大量聯絡人");
+  setIp();
   {
     await prisma.canonicalCourse.create({ data: { id: CC, name: "D層測試標準課程" } });
     await prisma.studentCourseAlias.create({ data: { rawName: RAW, courseId: CC } });
@@ -313,6 +330,7 @@ async function main() {
   }
 
   console.log("\nK. 複訓價（自動新舊生）能否被冒用");
+  setIp();
   {
     const vet = await prisma.studentRecord.create({ data: { phone: VET_PHONE, email: VET_EMAIL, name: "老學員" } });
     await prisma.studentCourseHistory.create({ data: { studentId: vet.id, courseName: RAW } });
@@ -324,10 +342,10 @@ async function main() {
     check("基準：查無上課紀錄 → 新生價 1000", (await totalOf("new@localhost.test")) === 1000);
     await createSessionCheckout(SLUG, form({ buyerEmail: "fake1@localhost.test", attendees: [{ name: "冒名者", phone: VET_PHONE }] }));
     const t1 = await totalOf("fake1@localhost.test");
-    check("【現行行為，待 Jason 決定】姓名完全不同的人填了舊生的手機 → 目前享複訓價 800（現行以手機為唯一身分；若改成要核對姓名，這項要改成 1000）", t1 === 800, `實際 ${t1}`);
+    check("姓名完全不同的人填了舊生的手機 → 不享複訓價（Jason 決定：自動比對學員姓名），照新生價 1000", t1 === 1000, `實際 ${t1}`);
     await createSessionCheckout(SLUG, form({ buyerEmail: "fake2@localhost.test", attendees: [{ name: "另一個冒名者", phone: phone(), email: VET_EMAIL }] }));
     const t2 = await totalOf("fake2@localhost.test");
-    check("【現行行為，待 Jason 決定】只知道舊生的 Email、手機與姓名都不同 → 目前享複訓價 800（若改成要核對姓名，這項要改成 1000）", t2 === 800, `實際 ${t2}`);
+    check("只知道舊生的 Email、手機與姓名都不同 → 不享複訓價，照新生價 1000", t2 === 1000, `實際 ${t2}`);
   }
 
   await cleanup();

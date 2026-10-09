@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireEditor } from "@/lib/auth/staff";
 import { isRetrainProduct, isSamePerson } from "@/lib/session-roster";
 import { collectAttendees, type ParsedAttendee } from "@/lib/session-attendees";
+import { FORM_THROTTLE_ERROR, reserveCurrentFormAttempt } from "@/lib/form-throttle";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import {
   SIGNUP_SLUG_RE,
@@ -204,6 +205,7 @@ export async function submitSignupAction(
   const collected = collectAttendees(formData);
   if ("error" in collected) return { error: collected.error };
   const { attendees } = collected;
+  if (await reserveCurrentFormAttempt("session-signup")) return { error: FORM_THROTTLE_ERROR };
 
   const buyer = attendees[0];
   let result;

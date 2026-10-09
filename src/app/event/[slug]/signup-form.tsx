@@ -72,12 +72,13 @@ export function SessionSignupForm({
   const total = preview?.total ?? fallbackTotal;
 
   // 手機/email 一變就重新試算（debounce 500ms）。至少要有第一位的手機才查。
-  const contactsKey = attendees.map((a) => `${a.phone}|${a.email}`).join(",") + `|${email}`;
+  const contactsKey = attendees.map((a) => `${a.name}|${a.phone}|${a.email}`).join(",") + `|${email}`;
   useEffect(() => {
     if (mode !== "PAYMENT") return;
     const first = attendees[0];
     const valid = !!first?.phone && first.phone.replace(/\D/g, "").length >= 9;
     const contacts = attendees.map((a, i) => ({
+      name: a.name,
       phone: a.phone,
       email: a.email || (i === 0 ? email : ""),
     }));

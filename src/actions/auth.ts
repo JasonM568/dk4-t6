@@ -23,6 +23,7 @@ import {
 import { PRIVACY_POLICY_VERSION } from "@/lib/privacy";
 import { getAuthUser } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-redirect";
+import { FORM_THROTTLE_ERROR, reserveCurrentFormAttempt } from "@/lib/form-throttle";
 
 export type ActionState = {
   error?: string;
@@ -297,6 +298,7 @@ export async function registerAction(
     return { error: profileFields.error };
   }
   const phone = profileFields.phone!;
+  if (await reserveCurrentFormAttempt("register")) return { error: FORM_THROTTLE_ERROR };
 
   // 企業專區邀請碼（選填）：先驗證再建帳號，碼無效就不註冊，
   // 避免使用者以為拿到專區身分卻沒有
@@ -445,6 +447,7 @@ export async function forgotPasswordAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "輸入有誤" };
   }
+  if (await reserveCurrentFormAttempt("forgot-password")) return { error: FORM_THROTTLE_ERROR };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(
