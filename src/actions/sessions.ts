@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireEditor } from "@/lib/auth/staff";
+import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { importOrders, type ImportReport } from "@/lib/session-import";
 import { explainMobile, normalizeContactPhone, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { findStudentByPhone } from "@/lib/student-history";
@@ -1124,7 +1124,7 @@ export async function saveBoardCodeAction(
   _prev: SessionFormState,
   formData: FormData,
 ): Promise<SessionFormState> {
-  await requireEditor();
+  await requireFullAdmin();
   const code = String(formData.get("code") ?? "").trim();
   const hours = Math.round(Number(String(formData.get("hours") ?? "").trim()));
   if (!/^\d{4}$/.test(code)) return { error: "登入碼須為 4 位數字" };

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireEditor } from "@/lib/auth/staff";
+import { requireEditor, requireFullAdmin } from "@/lib/auth/staff";
 import { getAuthUser } from "@/lib/supabase/server";
 import { normalizeMobile, explainMobile, MOBILE_REJECT_LABEL } from "@/lib/sms/phone";
 import { countSms, composeSmsText, hasEmoji, applySmsMergeTags, MAX_SMS_SEGMENTS } from "@/lib/sms/message";
@@ -532,7 +532,7 @@ export async function addSmsOptOutAction(
 }
 
 export async function removeSmsOptOutAction(mobile: string) {
-  await requireEditor();
+  await requireFullAdmin();
   await prisma.smsOptOut.deleteMany({ where: { mobile } });
   revalidatePath("/admin/sms/optouts");
 }
@@ -541,7 +541,7 @@ export async function updateSmsSettingsAction(
   _prev: SmsState,
   formData: FormData,
 ): Promise<SmsState> {
-  await requireEditor();
+  await requireFullAdmin();
   for (const key of ["pricePerSegment", "dailyLimit", "singleSendLimit", "brandPrefix"] as const) {
     const v = String(formData.get(key) ?? "").trim();
     if (v) await setSmsSetting(key, v);

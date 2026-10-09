@@ -187,8 +187,29 @@ console.log("\n3. API route 守門");
   for (const p of routes.filter((r) => /payment\/(ecpay|payuni)\/(session-)?notify/.test(r))) {
     check(`${p.replace("src/app/api/", "")} 驗金流簽章`, /verifyCallback/.test(read(p)));
   }
+  // 講義下載路由不是『公開端點』：它必須經登入與授權才會回內容（專門斷言如下），所以不放進公開白名單
+  const mat = routes.find((r) => r.includes("/api/materials/"));
+  if (mat) {
+    const src = read(mat);
+    const iUser = src.indexOf("getAuthUser()");
+    const iLogin = src.search(/redirect\(new URL\("\/login"/);
+    const iFind = src.indexOf("courseMaterial.findUnique");
+    const iWatch = src.indexOf("canWatchCourse(");
+    const iAdmin = src.indexOf("canAccessAdmin(");
+    const iSign = src.indexOf("createSignedUrl");
+    const iRedirectOut = src.search(/NextResponse\.redirect\((data|material)/);
+    check("講義下載路由：先驗登入（未登入轉 /login）→ 查講義 → canWatchCourse 或 canAccessAdmin → 才簽名或轉址",
+      iUser > 0 && iLogin > iUser && iFind > iLogin && iWatch > iFind && iAdmin > iFind && iSign > iWatch && iRedirectOut > iWatch,
+      JSON.stringify({ iUser, iLogin, iFind, iWatch, iAdmin, iSign, iRedirectOut }));
+    check("講義下載路由：沒有權限的分支回 404（不是 200）、查無也回 404，且所有回應都帶 no-store",
+      /!allowed\s*&&\s*!canAccessAdmin\([^{]*\)\s*\{\s*return new Response\(null,\s*\{\s*status:\s*404/.test(src) && /if \(!material\) return new Response\(null,\s*\{\s*status:\s*404/.test(src) && !/headers:\s*undefined/.test(src) && (src.match(/noStore/g) ?? []).length >= 5);
+    check("講義下載路由：簽名有效期不超過 60 秒，且不使用任何公開網址 API（getPublicUrl）", /createSignedUrl\([^,]+,\s*(\d+)\)/.test(src) && Number(/createSignedUrl\([^,]+,\s*(\d+)\)/.exec(src)?.[1]) <= 60 && !/getPublicUrl/.test(src));
+    check("講義下載路由只匯出 GET", /export async function GET/.test(src) && !/export (async )?function (POST|PUT|DELETE|PATCH)/.test(src));
+  } else {
+    check("講義下載路由存在（/api/materials/[id]）", false, "找不到路由，請更新測試");
+  }
   const unlisted = routes.filter(
-    (r) => !r.includes("/api/admin/") && !r.includes("/webhooks/") && !r.includes("/cron/") && !r.includes("/payment/"),
+    (r) => !r.includes("/api/admin/") && !r.includes("/webhooks/") && !r.includes("/cron/") && !r.includes("/payment/") && !r.includes("/api/materials/"),
   );
   // 其餘公開端點應是已知清單；多出新的要人工看過
   const KNOWN_OPEN = ["api/unsubscribe/route.ts", "api/csp-report/route.ts", "api/student-history/template/route.ts"];
@@ -225,6 +246,23 @@ console.log("\n4. 僅限管理員的頁面");
     const body = staffActions.slice(i, i + 400);
     check(`${fn} 限管理員`, i >= 0 && /requireFullAdmin\s*\(/.test(body));
   }
+  // Jason 決定（2026-10-09）：下列三個動作只有管理員能做；操作人員仍可做刪除類與把人加進專區
+  const levelOf = (file: string, fn: string): string => {
+    const src = read(`src/actions/${file}`);
+    const i = src.indexOf(`export async function ${fn}`);
+    if (i < 0) return "找不到";
+    const body = src.slice(i, i + 600);
+    return /requireFullAdmin\(/.test(body) ? "FULL" : /requireEditor\(/.test(body) ? "EDITOR" : /requireStaff\(/.test(body) ? "STAFF" : "無";
+  };
+  for (const [file, fn, why] of [
+    ["sms.ts", "removeSmsOptOutAction", "把號碼移出簡訊退訂名單（合規風險）"],
+    ["sessions.ts", "saveBoardCodeAction", "改看板登入碼（合作方存取權限）"],
+    ["sms.ts", "updateSmsSettingsAction", "改簡訊單價設定（影響成本顯示）"],
+  ] as const) check(`${fn} 限管理員：${why}`, levelOf(file, fn) === "FULL", `目前是 ${levelOf(file, fn)}`);
+  for (const [file, fn] of [
+    ["admin.ts", "deleteCourse"], ["sessions.ts", "deleteSessionAction"], ["webinar.ts", "deleteWebinarAction"], ["admin.ts", "deleteZoneAction"],
+    ["admin.ts", "addZoneMemberAction"], ["admin.ts", "importZoneMembersAction"], ["admin.ts", "createZoneInviteAction"], ["admin.ts", "addMembersToZoneBulkAction"],
+  ] as const) check(`${fn} 維持操作人員可做（Jason 決定刪除類與加專區成員不升級）`, levelOf(file, fn) === "EDITOR", `目前是 ${levelOf(file, fn)}`);
   const guardSrc = read("src/actions/admin.ts");
   const pg = guardSrc.indexOf("async function passwordResetGuard");
   const pgBody = guardSrc.slice(pg, pg + 500);

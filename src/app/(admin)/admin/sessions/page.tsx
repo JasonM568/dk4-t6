@@ -99,7 +99,7 @@ export default async function AdminSessionsPage() {
               看板網址：<code className="rounded bg-white px-2 py-0.5">course.huangxi.info/board</code>
               （傳給需要看報名情況的人，輸入登入碼即可查看）
             </div>
-            <BoardCodeForm current={boardCode?.value ?? null} currentHours={currentHours} />
+            {isAdminNow && <BoardCodeForm current={boardCode?.value ?? null} currentHours={currentHours} />}
           </section>
 
           {/* 上傳訂單 */}

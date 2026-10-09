@@ -1,4 +1,5 @@
-import { pageGuardEditor } from "@/lib/auth/staff";
+import { currentStaffRole, pageGuardEditor } from "@/lib/auth/staff";
+import { isFullAdmin } from "@/lib/auth/role";
 import { prisma } from "@/lib/db";
 import { formatMobile } from "@/lib/sms/phone";
 import { removeSmsOptOutAction } from "@/actions/sms";
@@ -18,6 +19,7 @@ const SOURCE_LABEL: Record<string, { label: string; cls: string }> = {
 
 export default async function SmsOptOutsPage() {
   await pageGuardEditor();
+  const isAdminNow = isFullAdmin(await currentStaffRole());
   const rows = await prisma.smsOptOut.findMany({ orderBy: { createdAt: "desc" } });
 
   return (
@@ -70,14 +72,16 @@ export default async function SmsOptOutsPage() {
                         {r.createdAt.toLocaleString("zh-TW", TPE)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <form action={removeSmsOptOutAction.bind(null, r.mobile)}>
-                          <SubmitButton
-                            pendingText="移除中…"
-                            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50"
-                          >
-                            移除
-                          </SubmitButton>
-                        </form>
+                        {isAdminNow ? (
+                          <form action={removeSmsOptOutAction.bind(null, r.mobile)}>
+                            <SubmitButton
+                              pendingText="移除中…"
+                              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50"
+                            >
+                              移除
+                            </SubmitButton>
+                          </form>
+                        ) : <span className="text-xs text-gray-400">僅管理員可移除</span>}
                       </td>
                     </tr>
                   );
