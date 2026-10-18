@@ -9,6 +9,7 @@ import {
   getProfilesByEmails,
   findAuthUserIdByEmail,
   listProfiles,
+  searchProfiles,
   createMember,
   setUserPassword,
   createCourseImageSignedUpload,
@@ -56,6 +57,7 @@ import {
   markPendingClaimed,
 } from "@/lib/pending-enroll";
 import { findIdentityConflictEmails } from "@/lib/course-roster";
+import { isSearchableQuery } from "@/lib/roster-search";
 import { prisma } from "@/lib/db";
 
 // 後台 action 守門分三級（定義見 src/lib/auth/staff.ts）：
@@ -515,6 +517,68 @@ export async function grantEnrollmentAction(
   revalidatePath("/admin/people");
   revalidatePath(`/admin/people/member/${userId}`);
   return { success: `已開通「${course.title}」` };
+}
+
+// ─────────────────── 單人開通（批次開通頁） ───────────────────
+// 「輸入姓名或 Email 就能開通給這位會員」：找人與開通分兩步。
+// 找人走 searchProfiles（資料庫端過濾、最多 20 筆），開通沿用 grantEnrollmentAction，
+// 寫 Enrollment 的實作只有那一份，不另開第二條寫入路徑。
+
+export type SingleEnrollMatch = {
+  userId: string;
+  name: string;
+  email: string;
+  archived: boolean; // 已封存會員仍可開通，但要標出來讓操作者知道
+  enrolledCourseIds: string[];
+};
+
+export type SingleEnrollSearchState =
+  | { query: string; matches: SingleEnrollMatch[]; error?: undefined }
+  | { query: string; matches?: undefined; error: string }
+  | null;
+
+// 不可 export："use server" 檔案只能匯出 async 函式（pnpm check:actions 會擋）
+const SINGLE_ENROLL_SEARCH_LIMIT = 20;
+
+/** 單人開通第一步：用姓名／暱稱／Email 子字串找會員（不分大小寫）。 */
+export async function searchMemberForEnrollAction(
+  _prev: SingleEnrollSearchState,
+  formData: FormData,
+): Promise<SingleEnrollSearchState> {
+  await requireEditor();
+  const query = String(formData.get("q") ?? "").trim();
+  if (query.length > 100) return { query, error: "關鍵字最多 100 字" };
+  if (!isSearchableQuery(query)) {
+    return { query, error: "請輸入姓名（至少 1 個中文字）或 Email／英文（至少 2 個字元）" };
+  }
+
+  const profiles = await searchProfiles(query, SINGLE_ENROLL_SEARCH_LIMIT);
+  if (profiles.length === 0) return { query, matches: [] };
+
+  const ids = profiles.map((p) => p.id);
+  const [enrollments, archives] = await Promise.all([
+    prisma.enrollment.findMany({
+      where: { userId: { in: ids } },
+      select: { userId: true, courseId: true },
+    }),
+    prisma.memberArchive.findMany({ where: { userId: { in: ids } }, select: { userId: true } }),
+  ]);
+  const enrolledBy = new Map<string, string[]>();
+  for (const e of enrollments) {
+    enrolledBy.set(e.userId, [...(enrolledBy.get(e.userId) ?? []), e.courseId]);
+  }
+  const archivedIds = new Set(archives.map((a) => a.userId));
+
+  return {
+    query,
+    matches: profiles.map((p) => ({
+      userId: p.id,
+      name: p.display_name?.trim() || p.nickname?.trim() || "（未填姓名）",
+      email: p.email ?? "",
+      archived: archivedIds.has(p.id),
+      enrolledCourseIds: enrolledBy.get(p.id) ?? [],
+    })),
+  };
 }
 
 /** 移除單一課程權限（客戶端先 confirm） */
