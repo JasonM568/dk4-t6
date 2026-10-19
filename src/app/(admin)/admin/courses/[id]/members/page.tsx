@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { BatchEnrollForm, CourseMembersManager } from "./members-manager";
 import { buildCourseRoster } from "@/lib/course-roster";
 import { RosterOverview } from "./roster-overview";
+import { SingleEnrollForm } from "@/components/admin/single-enroll-form";
 
 export const metadata = { title: "觀看權限名單 — 管理後台" };
 
@@ -102,6 +103,15 @@ export default async function CourseMembersPage({
           </>
         )}
       </p>
+
+      {/* 單人開通（課程固定）：Jason 的直覺路徑是「先到這門課、再撈會員加進名單」。
+          搜尋走 searchProfiles（全站會員），開通走 grantEnrollmentAction，與批次路徑共用同一份寫入。
+          放在最上面但自成一區；下方「步驟 1／2 → 步驟 2／2」的相鄰關係不動（2026-09-24 事故）。 */}
+      {canEditNow && (
+        <div className="mb-4">
+          <SingleEnrollForm courses={[course]} fixedCourse={course} />
+        </div>
+      )}
 
       {canEditNow && <form className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
         <label className="block text-sm font-medium text-blue-900">

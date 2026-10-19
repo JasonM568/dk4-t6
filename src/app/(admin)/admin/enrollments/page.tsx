@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { EnrollForm } from "./enroll-form";
-import { SingleEnrollForm } from "./single-enroll-form";
+import { SingleEnrollForm } from "@/components/admin/single-enroll-form";
 
 export const metadata = { title: "批次開通 — 管理後台" };
 

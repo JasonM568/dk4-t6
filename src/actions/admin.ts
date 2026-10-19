@@ -516,6 +516,7 @@ export async function grantEnrollmentAction(
   revalidatePath(`/admin/members/${userId}`);
   revalidatePath("/admin/people");
   revalidatePath(`/admin/people/member/${userId}`);
+  revalidatePath(`/admin/courses/${courseId}/members`);
   return { success: `已開通「${course.title}」` };
 }
 
