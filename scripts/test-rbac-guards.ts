@@ -212,8 +212,10 @@ console.log("\n3. API route 守門");
     (r) => !r.includes("/api/admin/") && !r.includes("/webhooks/") && !r.includes("/cron/") && !r.includes("/payment/") && !r.includes("/api/materials/"),
   );
   // 其餘公開端點應是已知清單；多出新的要人工看過
-  const KNOWN_OPEN = ["api/unsubscribe/route.ts", "api/csp-report/route.ts", "api/student-history/template/route.ts"];
-  check("其餘無守門的公開 API 只有已審過的三支（退訂憑 token、CSP 回報、空白匯入範本）",
+  // 2026-10-20 新增 api/check/wealth5：五種財富檢測的公開收名單端點（蜜罐＋同 IP 限流＋輸入驗證＋
+  // 伺服器重算分數；只寫自己的 Webinar 名單，不讀任何會員資料），契約見 scripts/test-wealth5-check.ts
+  const KNOWN_OPEN = ["api/unsubscribe/route.ts", "api/csp-report/route.ts", "api/student-history/template/route.ts", "api/check/wealth5/route.ts"];
+  check("其餘無守門的公開 API 只有已審過的四支（退訂憑 token、CSP 回報、空白匯入範本、五種財富檢測收名單）",
     unlisted.every((r) => KNOWN_OPEN.some((k) => r.endsWith(k))), unlisted.join(", "));
 }
 
