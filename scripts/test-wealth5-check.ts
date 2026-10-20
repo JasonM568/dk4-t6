@@ -249,6 +249,7 @@ console.log("\n答案快照與報告信");
   check("nurture：講座 CTA 在課程 CTA 之前", result.ctaBand === "nurture" && mail.body.indexOf("先來聽聽看") < mail.body.indexOf("三合一進階"));
   check("空的 10/31 連結不產生按鈕", !mail.body.includes("[10/31 實體公益講座]"));
   check("站內相對連結轉絕對網址", mail.body.includes("https://course.huangxi.info/webinar/book-club"));
+  check("讀冊會文案是每週三、不帶單一日期（Jason 2026-10-20）", mail.body.includes("每週三線上讀冊會") && !/11\/18/.test(mail.body) && !/11\/18/.test(HTML));
   check("信尾免責", mail.body.includes("非心理測驗、非醫療診斷"));
 
   const convert = computeWealth5(answersOf([4, 4, 4, 4, 3], 4));

@@ -25,7 +25,7 @@ export const WEALTH5_GROUP_NAMES = {
 export const WEALTH5_DEFAULT_LINKS = {
   course: "https://www.seehope66.com/svipyx",
   talk1031: "", // 10/31 實體公益講座：導 seehope66 報名頁，網址待 Jason 提供；空字串＝按鈕顯示「即將開放」
-  reading1118: "/webinar/book-club",
+  reading1118: "/webinar/book-club", // 每週三線上讀冊會的登記頁（名稱沿用規格的 1118，實際是每週固定場）
   self: "https://course.huangxi.info/check/wealth5",
 };
 export type Wealth5Links = { course: string; talk1031: string; reading1118: string; self: string };
@@ -238,7 +238,7 @@ export function buildWealth5ReportMail(
   const courseBtn = course ? `[查看 11/22–23 三合一進階課程](${course})` : "";
   const talkBtns = [
     talk ? `[10/31 實體公益講座](${talk})` : "",
-    reading ? `[11/18 線上讀冊](${reading})` : "",
+    reading ? `[每週三線上讀冊會・登記](${reading})` : "",
   ]
     .filter(Boolean)
     .join("\n");

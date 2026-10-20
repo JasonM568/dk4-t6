@@ -129,7 +129,7 @@ npx tsx scripts/test-session-groups.ts                                  # 場次
 npx tsx scripts/test-session-order.ts                                   # 場次手動排序的陣列運算 18 項
 npx tsx scripts/test-batch-enroll-form.ts                               # 批次開通表單契約 23 項（受控欄位／版面順序／兩步驟標示）
 npx tsx scripts/test-single-enroll-form.ts                              # 「單人開通」契約 33 項（批次開通頁＋課程觀看名單頁課程固定模式／受控欄位／只走 grantEnrollmentAction／searchProfiles 上限 20／requireEditor）
-npx tsx scripts/test-wealth5-check.ts                                   # 五種財富檢測（/check/wealth5）離線契約 86 項（計分 T1–T6＋TS/JS 兩實作隨機 300 組一致／HTML 零外部資源與蜜罐／名單驗證／報告信／路由）
+npx tsx scripts/test-wealth5-check.ts                                   # 五種財富檢測（/check/wealth5）離線契約 87 項（計分 T1–T6＋TS/JS 兩實作隨機 300 組一致／HTML 零外部資源與蜜罐／名單驗證／報告信／路由）
 npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示 6 項（radio／textarea；複選維持伺服端驗證）
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
 npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 25 項（既有講座頁零變化是回歸線）
