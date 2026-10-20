@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { WEALTH5_CHECK_PATH, WEALTH5_CHECK_SLUG } from "@/lib/wealth5-check";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { WebinarRequestForm } from "./request-form";
 
@@ -26,6 +27,9 @@ export default async function WebinarPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  // 五種財富檢測的名單掛在 slug=wealth5-check 的素材索取講座底下，但它的「頁面」是檢測頁本身：
+  // 後台「開啟頁面」或任何人打到這個網址，一律導去檢測頁，不露出通用索取表單
+  if (slug === WEALTH5_CHECK_SLUG) redirect(WEALTH5_CHECK_PATH);
   // 一併帶出啟用中的題目：問卷與基本資料同一頁、一次送出（分兩步會流失名單）
   const webinar = await prisma.webinar.findUnique({
     where: { slug },

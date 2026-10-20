@@ -62,6 +62,8 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // /check/wealth5 以 route handler 讀 src/content 的 HTML 回傳；Vercel 只打包被追蹤到的檔案，明列保險
+  outputFileTracingIncludes: { "/check/wealth5": ["./src/content/wealth5-check.html"] },
   experimental: {
     serverActions: {
       // 後台課程圖片走 server action 上傳，放寬 body 上限（預設 1MB）

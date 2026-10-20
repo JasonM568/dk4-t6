@@ -8,6 +8,8 @@ export const SITE_PAGES = [
   { key: "speaking", path: "/speaking", title: "講座邀約" },
   { key: "corporate", path: "/corporate", title: "企業包班" },
   { key: "shihua", path: "/zone/shihua", title: "世華會學習專區" },
+  // 五種財富自我檢測（引流頁，route handler 回傳單檔 HTML；關閉後 GET 回 404）
+  { key: "wealth5", path: "/check/wealth5", title: "五力檢測" },
 ] as const;
 
 export type SitePageKey = (typeof SITE_PAGES)[number]["key"];

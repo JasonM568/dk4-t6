@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>五種財富自我檢測｜希望學院</title>
+  <meta name="description" content="19 題，約 3 分鐘。看見事業、財富、健康、家庭與關係的現況，並定位真正的根源。">
+  <meta property="og:title" content="五種財富自我檢測｜希望學院">
+  <meta property="og:description" content="不只看見哪裡弱，更看見為什麼弱。">
+  <meta property="og:image" content="">
+  <!--W5C_INJECT-->
+  <style>
+    :root{--bg:#0B0B0D;--surface:#1A1A1F;--surface-2:#26262D;--amber:#E8933A;--amber-hi:#F7B267;--amber-dk:#B36A1E;--text:#FFFFFF;--muted:#9A9AA3;--dim:#767680;--line:#2E2E36;--danger:#FF9A8B;--success:#86C9A6}
+    *{box-sizing:border-box}
+    html{background:var(--bg);color:var(--text);font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;scroll-behavior:smooth}
+    body{margin:0;min-width:0;min-height:100vh;min-height:100dvh;background:radial-gradient(circle at 50% -20%,rgba(232,147,58,.12),transparent 42%),var(--bg);overflow-x:hidden}
+    button,input,textarea{font:inherit}
+    button,a{touch-action:manipulation}
+    button{border:0}
+    :focus-visible{outline:3px solid var(--amber-hi);outline-offset:3px}
+    .shell{width:min(100%,720px);margin:0 auto;min-height:100vh;min-height:100dvh;padding:calc(20px + env(safe-area-inset-top)) 20px calc(32px + env(safe-area-inset-bottom))}
+    .screen{animation:screen-in .24s ease both}
+    @keyframes screen-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+    .eyebrow{display:flex;align-items:center;gap:10px;color:var(--amber-hi);font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase}
+    .eyebrow:before{content:"";width:28px;height:1px;background:var(--amber)}
+    .cover{display:grid;align-content:center;min-height:calc(100vh - 72px);min-height:calc(100dvh - 72px);padding:32px 0}
+    .cover h1{margin:22px 0 16px;font-size:clamp(34px,10vw,52px);line-height:1.17;letter-spacing:-.04em}
+    .cover h1 span{display:block;color:var(--amber-hi)}
+    .lede{margin:0;color:#E9E9ED;font-size:18px;line-height:1.75;max-width:580px}
+    .five-areas{display:flex;flex-wrap:wrap;gap:8px 14px;margin:28px 0;color:var(--muted);font-size:14px;letter-spacing:.08em}
+    .five-areas span:not(:last-child):after{content:"·";margin-left:14px;color:var(--amber-dk)}
+    .disclaimer{margin:18px 0 0;color:var(--dim);font-size:12px;line-height:1.65}
+    .btn{display:inline-flex;width:100%;min-height:52px;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:13px 18px;cursor:pointer;text-decoration:none;font-weight:700;transition:transform .14s ease,background .18s ease,border-color .18s ease,opacity .18s ease}
+    .btn:active{transform:scale(.98)}
+    .btn-primary{background:var(--amber);color:#2A1806}
+    .btn-primary:hover{background:var(--amber-hi)}
+    .btn-secondary{background:transparent;color:var(--amber-hi);border:1px solid var(--amber)}
+    .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+    .btn[disabled],.btn.disabled{cursor:not-allowed;opacity:.42;pointer-events:none}
+    .cover-actions{display:grid;gap:10px;margin-top:28px}
+    .topbar{position:sticky;top:0;z-index:5;background:linear-gradient(var(--bg) 82%,transparent);padding:8px 0 19px}
+    .progress-meta{display:grid;grid-template-columns:80px 1fr 80px;align-items:center;margin-bottom:12px}
+    .back{justify-self:start;padding:8px 0;background:none;color:var(--muted);cursor:pointer;font-size:14px}
+    .back[hidden]{visibility:hidden;display:block}
+    .counter{text-align:center;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+    .part{text-align:right;color:var(--dim);font-size:12px}
+    .progress{height:3px;background:var(--line);overflow:hidden;border-radius:99px}
+    .progress>i{display:block;height:100%;background:var(--amber);transition:width .3s ease}
+    .question-wrap{padding:38px 0 28px}
+    .question-prefix{margin:0 0 12px;color:var(--amber-hi);font-size:13px;line-height:1.6}
+    .question{margin:0 0 28px;font-size:clamp(19px,5.4vw,22px);line-height:1.55;font-weight:700;letter-spacing:.01em}
+    .options{display:grid;gap:10px}
+    .option{display:grid;grid-template-columns:32px 1fr;align-items:center;gap:10px;width:100%;min-height:56px;padding:14px 17px;text-align:left;color:var(--text);background:var(--surface-2);border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
+    .option:hover,.option:focus-visible{border-color:var(--amber-dk)}
+    .option.selected{background:var(--amber);border-color:var(--amber);color:#2A1806;transform:translateY(-1px)}
+    .option-num{display:grid;place-items:center;width:26px;height:26px;border:1px solid currentColor;border-radius:50%;font-size:12px;font-weight:700;opacity:.72}
+    .option-text{font-size:16px;line-height:1.55}
+    .divider{display:grid;align-content:center;min-height:calc(100vh - 72px);min-height:calc(100dvh - 72px);padding:48px 0}
+    .divider h2{margin:22px 0 24px;font-size:clamp(29px,8vw,42px);line-height:1.35;letter-spacing:-.035em}
+    .divider p{margin:0 0 12px;color:var(--muted);font-size:17px;line-height:1.75}
+    .divider .btn{margin-top:24px}
+    .calculating{display:grid;place-items:center;align-content:center;gap:28px;min-height:calc(100vh - 72px);min-height:calc(100dvh - 72px);text-align:center}
+    .orbit{position:relative;width:94px;height:94px;border:1px solid var(--line);border-radius:50%}
+    .orbit:before,.orbit:after{content:"";position:absolute;border-radius:50%}
+    .orbit:before{inset:14px;border:1px solid var(--amber-dk)}
+    .orbit:after{width:13px;height:13px;top:-7px;left:40px;background:var(--amber);box-shadow:0 0 22px var(--amber);transform-origin:7px 54px;animation:orbit 1.2s linear infinite}
+    @keyframes orbit{to{transform:rotate(360deg)}}
+    .calculating p{margin:0;color:var(--muted);font-size:16px}
+    .result-head{padding:20px 0 8px}
+    .result-head h1{margin:14px 0 8px;font-size:28px;line-height:1.35}
+    .radar-card{margin:24px 0 12px;padding:10px;background:linear-gradient(145deg,rgba(255,255,255,.035),transparent),var(--surface);border:1px solid var(--line);border-radius:24px;overflow:hidden}
+    .radar{width:100%;display:block;overflow:visible}
+    .scoreline{margin:0 0 36px;text-align:center;color:var(--muted);font-size:13px}
+    .opening{margin:0 0 26px;color:#D6D6DB;font-size:17px;line-height:1.8;white-space:pre-line}
+    .weak-card{position:relative;margin:0 0 18px;padding:28px;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+    .weak-card:after{content:"";position:absolute;right:-36px;top:-36px;width:120px;height:120px;border-radius:50%;background:rgba(232,147,58,.08)}
+    .weak-name{position:relative;z-index:1;color:var(--amber-hi);font-size:clamp(38px,11vw,52px);font-weight:800;line-height:1.1;letter-spacing:-.04em}
+    .weak-score{margin:8px 0 20px;color:var(--muted);font-size:15px}
+    .weak-desc{margin:0;color:#E6E6EA;font-size:17px;line-height:1.75}
+    .root-card{margin:0 0 18px;padding:28px;background:linear-gradient(140deg,#171719,#202025);border:1px solid rgba(232,147,58,.35);border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}
+    .label{display:inline-flex;align-items:center;gap:8px;color:var(--amber-hi);font-size:12px;font-weight:700;letter-spacing:.2em}
+    .label:before{content:"";width:18px;height:1px;background:currentColor}
+    .root-kicker{margin:20px 0 16px;color:#D9D9DE;font-size:18px;font-weight:600}
+    .root-name{margin:0 0 14px;color:var(--amber-hi);font-size:clamp(32px,9vw,42px);font-weight:800}
+    .root-copy{margin:0;color:#E6E6EA;font-size:17px;line-height:1.85;white-space:pre-line}
+    .second-root{margin:22px 0 0;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+    .cross-card{margin:0 0 18px;padding:25px;background:var(--surface);border-radius:18px}
+    .cross-card p{margin:0;color:var(--muted);font-size:15px;line-height:1.8}
+    .cross-quote{margin:18px 0 0!important;padding-left:18px;border-left:2px solid var(--amber);color:var(--text)!important;font-size:17px!important}
+    .health-note{margin:0 0 18px;padding:15px 17px;border:1px solid #554136;background:#211B18;border-radius:12px;color:#D9C1B3;font-size:13px;line-height:1.65}
+    .gate{margin:36px 0 18px;padding:28px;background:linear-gradient(145deg,rgba(232,147,58,.09),transparent 70%),var(--surface);border:1px solid var(--line);border-radius:18px}
+    .gate h2{margin:0 0 15px;font-size:22px}
+    .gate ul{margin:0 0 24px;padding:0;list-style:none;color:var(--muted);line-height:1.9}
+    .gate li:before{content:"✓";margin-right:10px;color:var(--amber)}
+    .form-card{margin:14px 0 34px;padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:18px;animation:screen-in .24s ease both}
+    .form-card h2{margin:0 0 7px;font-size:24px}
+    .form-intro{margin:0 0 24px;color:var(--muted);font-size:14px;line-height:1.65}
+    .field{margin-bottom:18px}
+    .field>label,.field>legend{display:block;margin:0 0 8px;color:#E8E8EC;font-size:14px;font-weight:600}
+    .required{color:var(--amber-hi)}
+    input[type=text],input[type=email],textarea{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--text);padding:13px 14px;min-height:48px}
+    textarea{min-height:96px;resize:vertical;line-height:1.6}
+    input::placeholder,textarea::placeholder{color:#777780}
+    fieldset{border:0;padding:0;margin:0 0 18px}
+    .radio-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .choice{display:flex;align-items:center;gap:10px;min-height:48px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);cursor:pointer}
+    .choice input{accent-color:var(--amber);width:18px;height:18px}
+    .consent{align-items:flex-start;font-size:13px;line-height:1.6;background:transparent;padding:0;border:0}
+    .consent input{flex:0 0 auto;margin-top:3px}
+    .error{min-height:20px;margin:5px 0 0;color:var(--danger);font-size:12px;line-height:1.5}
+    .report{margin-top:42px;padding-top:38px;border-top:1px solid var(--line);animation:screen-in .35s ease both}
+    .section-title{margin:0 0 9px;font-size:28px;line-height:1.35}
+    .section-lede{margin:0 0 26px;color:var(--muted);line-height:1.7}
+    .bars{display:grid;gap:15px;margin:0 0 44px}
+    .bar-row{display:grid;grid-template-columns:58px 1fr 34px;gap:10px;align-items:center}
+    .bar-name{font-size:14px;font-weight:600}
+    .bar-track{height:10px;background:var(--surface-2);border-radius:99px;overflow:hidden}
+    .bar-fill{display:block;width:0;height:100%;background:#707079;border-radius:99px;animation:bar-grow .7s ease-out forwards;animation-delay:var(--delay)}
+    .bar-row.root .bar-fill{background:var(--amber)}
+    .bar-score{text-align:right;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+    .root-tag{grid-column:1/-1;justify-self:start;margin-top:-8px;margin-left:68px;color:var(--amber-hi);font-size:11px;font-weight:700;letter-spacing:.12em}
+    @keyframes bar-grow{to{width:var(--score)}}
+    .actions{display:grid;gap:12px;margin:24px 0 36px}
+    .action{display:grid;grid-template-columns:38px 1fr;gap:14px;align-items:start;padding:18px;background:var(--surface);border-radius:14px}
+    .action-num{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--amber);color:#2A1806;font-weight:800}
+    .action p{margin:2px 0 0;color:#E4E4E8;font-size:15px;line-height:1.75}
+    .closing{margin:0 0 40px;color:#F0F0F2;font-size:20px;line-height:1.7;font-weight:600}
+    .cta-grid{display:grid;gap:14px;margin-bottom:40px}
+    .cta-card{padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:18px}
+    .cta-card.primary{border-color:rgba(232,147,58,.55);background:linear-gradient(145deg,rgba(232,147,58,.1),transparent 65%),var(--surface)}
+    .cta-order{display:inline-block;margin-bottom:12px;color:var(--amber-hi);font-size:11px;font-weight:700;letter-spacing:.14em}
+    .cta-card h3{margin:0 0 9px;font-size:21px}
+    .cta-card p{margin:0 0 20px;color:var(--muted);font-size:14px;line-height:1.7}
+    .cta-buttons{display:grid;gap:9px}
+    .share{margin:0 0 36px;padding:24px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .share h3{margin:0 0 17px;font-size:18px}
+    .share-buttons{display:grid;gap:10px}
+    .toast{min-height:24px;margin:10px 0 0;color:var(--success);font-size:12px;text-align:center}
+    .retry-note{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.6;text-align:center}
+    .restart{display:block;margin:0 auto 36px;padding:8px;background:none;color:var(--muted);text-decoration:underline;text-underline-offset:4px;cursor:pointer}
+    footer{padding:26px 0 6px;border-top:1px solid var(--line);color:var(--dim);font-size:12px;line-height:1.7;text-align:center}
+    .fatal{display:grid;align-content:center;min-height:80vh;text-align:center}
+    .fatal h1{font-size:28px}
+    .fatal p{color:var(--muted);line-height:1.7}
+    @media(min-width:700px){.shell{padding-left:28px;padding-right:28px}.cover-actions{grid-template-columns:1.35fr 1fr}.option-text{font-size:17px}.share-buttons{grid-template-columns:1fr 1fr}.cta-grid{grid-template-columns:1fr 1fr}.cta-card.primary{transform:translateY(-6px)}}
+    @media(max-width:359px){.shell{padding-left:14px;padding-right:14px}.weak-card,.root-card,.cross-card,.gate,.form-card{padding:21px}.option{padding:13px}.question-wrap{padding-top:26px}.progress-meta{grid-template-columns:64px 1fr 64px}.bar-row{grid-template-columns:52px 1fr 30px;gap:7px}.root-tag{margin-left:59px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transform:none!important}}
+    @media print{html,body{background:#fff;color:#111}.shell{max-width:720px}.topbar,.gate,.form-card,.share,.restart,.btn{display:none!important}.result-head,.radar-card,.weak-card,.root-card,.cross-card,.report,.cta-card,.action{background:#fff!important;color:#111!important;border-color:#aaa;box-shadow:none}.weak-name,.root-name,.label,.cta-order{color:#444!important}.root-copy,.weak-desc,.cross-quote,.action p,.closing{color:#111!important}.opening,.scoreline,.section-lede,.cta-card p,.second-root,footer{color:#555!important}.bar-fill{background:#777!important}.bar-row.root .bar-fill{background:#333!important}.report{display:block!important}.cta-grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <main id="app" class="shell"></main>
+  <script>
+  const CONFIG = {
+    meta: {
+      title: "五種財富自我檢測｜希望學院",
+      description: "19 題，約 3 分鐘。看見事業、財富、健康、家庭與關係的現況，並定位真正的根源。",
+      ogDescription: "不只看見哪裡弱，更看見為什麼弱。",
+      ogImage: "",
+      brand: "希望學院．顧及然",
+      disclaimer: "本工具為自我覺察參考，非心理測驗、非醫療診斷。",
+      healthNote: "本工具不提供醫療建議。身體不適請諮詢專業醫療人員。"
+    },
+    theme: { bg:"#0B0B0D", surface:"#1A1A1F", surface2:"#26262D", amber:"#E8933A", amberHi:"#F7B267", amberDk:"#B36A1E", text:"#FFFFFF", muted:"#9A9AA3", dim:"#767680", line:"#2E2E36" },
+    endpoint: "/api/check/wealth5",
+    ctaThreshold: 60,
+    priorityBonus: [12, 9, 6, 3, 0],
+    timing: { answerDelay:180, calculationStep:400, radarDuration:600, submitTimeout:8000, progressMaxAge:86400000 },
+    links: { course:"https://www.seehope66.com/svipyx", talk1031:"", reading1118:"/webinar/book-club", self:"https://course.huangxi.info/check/wealth5" },
+    ui: {
+      coverEyebrow:"3 分鐘・19 題・不需登入", coverTitle1:"五種財富", coverTitle2:"自我檢測", coverSubtitle:"19 題，約 3 分鐘。不告訴你哪裡弱——告訴你為什麼弱。", coverAreas:["事業","財富","健康","家庭","關係"], start:"開始檢測", resume:n=>`接續上次（第 ${n} 題）`, back:"← 上一題", part:n=>`第 ${n} 部`, count:(n,total)=>`第 ${n} / ${total} 題`, commonPrefix:"最近三個月，這句話有多符合你？",
+      dividerEyebrow:"第二部・根源定位", dividerTitle:"接下來要問的，是你平常不會被問到的事", dividerLines:["前面問的是「你現在過得怎麼樣」。","接下來 14 題，問的是「為什麼會這樣」。","請憑直覺作答，不要想「哪個答案比較好看」。"], continue:"繼續",
+      calculating:["正在比對五大領域…","正在交叉七個維度…","正在定位根源…"], resultEyebrow:"你的五力地圖", resultTitle:"檢測結果", score:n=>`你的五力總分：${n} / 100`, normalOpening:"五格之中，最需要先處理的是——", outOf100:n=>`${n} / 100`, rootLabel:"根源", rootKicker:"但你的問題，可能不在這裡。", secondRoot:n=>`次要根源：${n}`, crossIntro:(d,a)=>`當「${d}」沒有處理好，它會這樣影響你的「${a}」：`,
+      gateTitle:"完整報告還包含：", gateItems:["七個維度的完整分數","針對你的根源，接下來 90 天可以做的三件事"], gateButton:"取得完整報告", formTitle:"把完整報告交給你", formIntro:"留下 Email，完整報告會立即展開，並同步寄一份到你的信箱。送出異常也不會擋住閱讀。", name:"姓名", email:"Email", phone:"手機（選填，開課提醒用）", lineId:"LINE ID（選填）", concern:"目前最想處理的事（選填）", concernPlaceholder:"如果只能解決一件事，你會選哪一件？", consent:"我同意希望學院以 Email（及選填的手機）提供檢測報告與課程資訊。", submit:"立即展開完整報告", required:"必填", errors:{name:"請輸入 1–20 字的姓名。",email:"請輸入有效的 Email。",phone:"手機格式看起來不對，請再確認（可留空）。",lineId:"LINE ID 最多 50 字。",consent:"請先勾選同意。"}, retryNote:"報告已為你開啟；資料稍後會自動重送。",
+      fullEyebrow:"完整報告", dimsTitle:"七個維度，一次看清楚", dimsLede:"分數由低到高排列。最低處不是缺點，而是最值得先投入的入口。", rootTag:"根源", actionsTitle:"接下來 90 天，從這三件事開始", closing:"你不需要同時解決五件事。先把根源那一格鬆開，其他四格會跟著動。", primaryCta:"優先建議", secondaryCta:"也適合你", courseTitle:"三合一進階．11/22–23", courseDesc:"兩天，把你卡住的那一格打通。量子思維 × 投資判斷 × AI 升級。", courseButton:"查看課程與報名", talkTitle:"先來聽聽看", talkDesc:"10/31 實體公益講座　／　11/18 線上讀冊", talkButton:"10/31 實體公益講座", readingButton:"11/18 線上讀冊", coming:"（即將開放）", shareTitle:"留存這次的覺察", saveRadar:"儲存我的雷達圖", copyResult:"複製結果文字", saved:"雷達圖已下載。", copied:"結果文字已複製。", copyFailed:"無法自動複製，請稍後再試。", restart:"重新檢測", restartConfirm:"確定要清除本次結果並重新檢測嗎？", fatalTitle:"畫面暫時無法載入", fatalText:"你的作答仍保存在這台裝置，請重新整理後再試一次。", retry:"重新整理", shareTemplate:(a,d,s,u)=>`我的五種財富檢測結果：\n最需要處理的是「${a}」，但根源在「${d}」。\n${s}\n你也可以測測看：${u}`
+    },
+    // 題庫／文案／矩陣／計分參數由伺服器注入（src/lib/wealth5-content.ts 是唯一真相；links 也可被注入覆寫）
+    ...(window.__W5C_CONTENT__||{})
+  };
+
+  const state = { view:"cover", questionIndex:0, answers:{}, result:null, showForm:false, fullUnlocked:false, submitWarning:false, calcStep:0, utmSource:new URLSearchParams(location.search).get("utm_source") || "direct", resume:null, toast:"" };
+  const app = document.getElementById("app");
+  const areaById = id => CONFIG.areas.find(x=>x.id===id);
+  const dimById = id => CONFIG.dims.find(x=>x.id===id);
+  const esc = value => String(value ?? "").replace(/[&<>'"]/g, char=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+  const safeStorage = { get(key){try{return localStorage.getItem(key)}catch(e){return null}}, set(key,value){try{localStorage.setItem(key,value)}catch(e){}}, remove(key){try{localStorage.removeItem(key)}catch(e){}} };
+
+  function applyConfig(){
+    document.title=CONFIG.meta.title;
+    document.querySelector('meta[name="description"]').content=CONFIG.meta.description;
+    document.querySelector('meta[property="og:title"]').content=CONFIG.meta.title;
+    document.querySelector('meta[property="og:description"]').content=CONFIG.meta.ogDescription;
+    document.querySelector('meta[property="og:image"]').content=CONFIG.meta.ogImage;
+    const root=document.documentElement.style;
+    Object.entries({"--bg":CONFIG.theme.bg,"--surface":CONFIG.theme.surface,"--surface-2":CONFIG.theme.surface2,"--amber":CONFIG.theme.amber,"--amber-hi":CONFIG.theme.amberHi,"--amber-dk":CONFIG.theme.amberDk,"--text":CONFIG.theme.text,"--muted":CONFIG.theme.muted,"--dim":CONFIG.theme.dim,"--line":CONFIG.theme.line}).forEach(([k,v])=>root.setProperty(k,v));
+  }
+
+  function getResume(){
+    const raw=safeStorage.get("w5c_progress"); if(!raw) return null;
+    try{const saved=JSON.parse(raw); if(Date.now()-saved.ts>=CONFIG.timing.progressMaxAge || saved.index>=CONFIG.questions.length){safeStorage.remove("w5c_progress");return null} return saved}catch(e){safeStorage.remove("w5c_progress");return null}
+  }
+  function saveProgress(){safeStorage.set("w5c_progress",JSON.stringify({answers:state.answers,index:state.questionIndex,ts:Date.now()}))}
+  function start(resume=false){
+    if(resume && state.resume){state.answers={...state.resume.answers};state.questionIndex=state.resume.index}else{state.answers={};state.questionIndex=0;safeStorage.remove("w5c_progress")}
+    state.view=state.questionIndex===5?"divider":"question";state.resume=null;render();
+  }
+  function answer(value){
+    const q=CONFIG.questions[state.questionIndex];state.answers[q.id]=value;saveProgress();render();
+    window.setTimeout(()=>{state.questionIndex+=1;if(state.questionIndex===5){state.view="divider";saveProgress()}else if(state.questionIndex>=CONFIG.questions.length){beginCalculation()}else{state.view="question";saveProgress()}render()},CONFIG.timing.answerDelay);
+  }
+  function previous(){
+    if(state.questionIndex<=0)return;
+    state.questionIndex-=1;state.view="question";saveProgress();render();
+  }
+  function continuePart(){state.view="question";render()}
+  function beginCalculation(){
+    state.view="calculating";state.calcStep=0;safeStorage.remove("w5c_progress");render();
+    const tick=()=>{state.calcStep+=1;if(state.calcStep<CONFIG.ui.calculating.length){render();window.setTimeout(tick,CONFIG.timing.calculationStep)}else{try{state.result=calculate(state.answers);state.view="result";render();window.scrollTo({top:0,behavior:"smooth"})}catch(e){fatal(e)}}};
+    window.setTimeout(tick,CONFIG.timing.calculationStep);
+  }
+  function calculate(answers){
+    const areaScores={};CONFIG.areas.forEach(a=>areaScores[a.id]=Math.round((answers[a.id]-1)/4*100));
+    const dimScores={};CONFIG.dims.forEach(d=>dimScores[d.id]=Math.round((((answers[d.id+"a"]+answers[d.id+"b"])/2)-1)/4*100));
+    const totalScore=Math.round(Object.values(areaScores).reduce((a,b)=>a+b,0)/CONFIG.areas.length);
+    const minArea=Math.min(...Object.values(areaScores));let candidates=CONFIG.areas.filter(a=>areaScores[a.id]===minArea).map(a=>a.id);
+    if(candidates.length>1){const averages=Object.fromEntries(candidates.map(a=>[a,CONFIG.priority[a].reduce((sum,d)=>sum+dimScores[d],0)/CONFIG.priority[a].length]));const low=Math.min(...Object.values(averages));candidates=candidates.filter(a=>averages[a]===low)}
+    const tieOrder=["A2","A1","A3","A5","A4"];const weakestArea=tieOrder.find(id=>candidates.includes(id));
+    const ranked=CONFIG.priority[weakestArea].map((id,index)=>({id,score:dimScores[id]-CONFIG.priorityBonus[index],index})).sort((a,b)=>a.score-b.score||a.index-b.index);
+    const profile=totalScore<30?"all_low":(totalScore>=80&&Object.values(areaScores).every(v=>v>=70)?"balanced_high":"normal");
+    return {areaScores,dimScores,totalScore,weakestArea,rootDim:ranked[0].id,secondDim:ranked[1].id,profile,ctaBand:totalScore<CONFIG.ctaThreshold?"nurture":"convert"};
+  }
+
+  function render(){
+    try{
+      if(state.view==="cover")renderCover();
+      else if(state.view==="question")renderQuestion();
+      else if(state.view==="divider")renderDivider();
+      else if(state.view==="calculating")renderCalculating();
+      else if(state.view==="result")renderResult();
+      bind();
+    }catch(e){fatal(e)}
+  }
+  function renderCover(){
+    const r=state.resume;
+    app.innerHTML=`<section class="screen cover"><div class="eyebrow">${esc(CONFIG.ui.coverEyebrow)}</div><h1>${esc(CONFIG.ui.coverTitle1)}<span>${esc(CONFIG.ui.coverTitle2)}</span></h1><p class="lede">${esc(CONFIG.ui.coverSubtitle)}</p><div class="five-areas">${CONFIG.ui.coverAreas.map(x=>`<span>${esc(x)}</span>`).join("")}</div><div class="cover-actions"><button class="btn btn-primary" data-action="start">${esc(CONFIG.ui.start)}</button>${r?`<button class="btn btn-secondary" data-action="resume">${esc(CONFIG.ui.resume(r.index+1))}</button>`:""}</div><p class="disclaimer">${esc(CONFIG.meta.disclaimer)}</p></section>`;
+  }
+  function renderQuestion(){
+    const q=CONFIG.questions[state.questionIndex], options=q.options==="common"?CONFIG.commonOptions:q.options, selected=state.answers[q.id];
+    app.innerHTML=`<section class="screen"><header class="topbar"><div class="progress-meta"><button class="back" data-action="back" ${state.questionIndex===0?"hidden":""}>${esc(CONFIG.ui.back)}</button><div class="counter">${esc(CONFIG.ui.count(state.questionIndex+1,CONFIG.questions.length))}</div><div class="part">${esc(CONFIG.ui.part(q.part))}</div></div><div class="progress" aria-hidden="true"><i style="width:${(state.questionIndex+1)/CONFIG.questions.length*100}%"></i></div></header><div class="question-wrap"><p class="question-prefix">${q.part===1?esc(CONFIG.ui.commonPrefix):""}</p><h1 class="question" id="question-title">${esc(q.text)}</h1><div class="options" role="group" aria-labelledby="question-title">${options.map((text,i)=>`<button class="option ${selected===i+1?"selected":""}" data-score="${i+1}" aria-pressed="${selected===i+1}" tabindex="${i===0?0:-1}"><span class="option-num">${i+1}</span><span class="option-text">${esc(text)}</span></button>`).join("")}</div></div></section>`;
+  }
+  function renderDivider(){app.innerHTML=`<section class="screen divider"><div class="eyebrow">${esc(CONFIG.ui.dividerEyebrow)}</div><h2>${esc(CONFIG.ui.dividerTitle)}</h2>${CONFIG.ui.dividerLines.map(x=>`<p>${esc(x)}</p>`).join("")}<button class="btn btn-primary" data-action="continue">${esc(CONFIG.ui.continue)}</button></section>`}
+  function renderCalculating(){app.innerHTML=`<section class="screen calculating" aria-live="polite"><div class="orbit" aria-hidden="true"></div><p>${esc(CONFIG.ui.calculating[Math.min(state.calcStep,CONFIG.ui.calculating.length-1)])}</p></section>`}
+
+  function radarSVG(result,download=false){
+    const cx=180,cy=180,maxR=116,angles=CONFIG.areas.map((_,i)=>-Math.PI/2+i*Math.PI*2/5),point=(angle,r)=>[cx+Math.cos(angle)*r,cy+Math.sin(angle)*r],pts=values=>values.map((v,i)=>point(angles[i],maxR*v/100).join(",")).join(" ");
+    const rings=[25,50,75,100].map(v=>`<polygon points="${pts(CONFIG.areas.map(()=>v))}" fill="none" stroke="${download?'#3C3C43':'var(--line)'}" stroke-width="1"/>`).join("");
+    const axes=angles.map(a=>{const [x,y]=point(a,maxR);return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${download?'#3C3C43':'var(--line)'}" stroke-width="1"/>`}).join("");
+    const labels=CONFIG.areas.map((a,i)=>{const [x,y]=point(angles[i],maxR+31);const anchor=Math.abs(x-cx)<5?"middle":x>cx?"start":"end";return `<text x="${x}" y="${y}" fill="${download?'#EDEDEF':'var(--muted)'}" font-size="12" text-anchor="${anchor}" dominant-baseline="middle">${esc(a.name)} ${result.areaScores[a.id]}</text>`}).join("");
+    const values=CONFIG.areas.map(a=>result.areaScores[a.id]),dataPts=pts(values),dots=values.map((v,i)=>{const [x,y]=point(angles[i],maxR*v/100);return `<circle cx="${x}" cy="${y}" r="4" fill="${CONFIG.theme.amberHi}" stroke="${CONFIG.theme.bg}" stroke-width="2"/>`}).join("");
+    const aria=CONFIG.areas.map(a=>`${a.name} ${result.areaScores[a.id]} 分`).join("、");
+    return `<svg class="radar" id="radar-svg" viewBox="0 0 360 360" ${download?'width="720" height="720"':'width="100%"'} role="img" aria-label="${esc(aria)}" xmlns="http://www.w3.org/2000/svg"><g>${rings}${axes}</g><polygon points="${dataPts}" fill="rgba(232,147,58,.28)" stroke="${CONFIG.theme.amber}" stroke-width="2" style="transform-origin:${cx}px ${cy}px;animation:radar-in ${CONFIG.timing.radarDuration}ms ease-out both"/><g>${dots}</g><g>${labels}</g><style>@keyframes radar-in{from{transform:scale(0);opacity:.2}to{transform:scale(1);opacity:1}}@media(prefers-reduced-motion:reduce){polygon{animation:none!important}}</style></svg>`;
+  }
+  function track(name,params){try{if(window.fbq)window.fbq("track",name,params||{});if(window.gtag)window.gtag("event",name==="Lead"?"generate_lead":"view_item",params||{})}catch(e){}}
+  function renderResult(){
+    if(!state.resultTracked){state.resultTracked=true;track("ViewContent",{content_name:"wealth5-result"})}
+    const r=state.result,a=areaById(r.weakestArea),d=dimById(r.rootDim),second=dimById(r.secondDim),special=CONFIG.special[`${r.weakestArea}_${r.rootDim}`],opening=r.profile==="normal"?CONFIG.ui.normalOpening:CONFIG.profiles[r.profile];
+    const rootBlock=special?`<p class="root-kicker">${esc(special.kicker)}</p><h2 class="root-name">${esc(special.name)}</h2><p class="root-copy">${esc(special.copy)}</p>`:`<p class="root-kicker">${esc(CONFIG.ui.rootKicker)}</p><h2 class="root-name">${esc(d.name)}</h2><p class="root-copy">${esc(d.root)}</p><p class="second-root">${esc(CONFIG.ui.secondRoot(second.name))}</p>`;
+    app.innerHTML=`<section class="screen"><header class="result-head"><div class="eyebrow">${esc(CONFIG.ui.resultEyebrow)}</div><h1>${esc(CONFIG.ui.resultTitle)}</h1><p class="disclaimer">${esc(CONFIG.meta.disclaimer)}</p></header><div class="radar-card">${radarSVG(r)}</div><p class="scoreline">${esc(CONFIG.ui.score(r.totalScore))}</p><p class="opening">${esc(opening)}</p><section class="weak-card"><div class="weak-name">${esc(a.name)}</div><div class="weak-score">${esc(CONFIG.ui.outOf100(r.areaScores[a.id]))}</div><p class="weak-desc">${esc(a.desc)}</p></section><section class="root-card"><div class="label">${esc(CONFIG.ui.rootLabel)}</div>${rootBlock}</section><section class="cross-card"><p>${esc(CONFIG.ui.crossIntro(d.name,a.name))}</p><p class="cross-quote">「${esc(CONFIG.matrix[d.id][a.id])}」</p></section>${a.id==="A3"?`<p class="health-note">${esc(CONFIG.meta.healthNote)}</p>`:""}${state.fullUnlocked?renderFullReport():renderGate()}<footer>${esc(CONFIG.meta.brand)}　｜　${esc(CONFIG.meta.disclaimer)}</footer></section>`;
+  }
+  function renderGate(){return `<section class="gate"><h2>${esc(CONFIG.ui.gateTitle)}</h2><ul>${CONFIG.ui.gateItems.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><button class="btn btn-primary" data-action="show-form">${esc(CONFIG.ui.gateButton)}</button></section>${state.showForm?renderForm():""}`}
+  function renderForm(){return `<form class="form-card" id="lead-form" novalidate><h2>${esc(CONFIG.ui.formTitle)}</h2><p class="form-intro">${esc(CONFIG.ui.formIntro)}</p><div class="field"><label for="lead-name">${esc(CONFIG.ui.name)} <span class="required">${esc(CONFIG.ui.required)}</span></label><input id="lead-name" name="name" type="text" minlength="1" maxlength="20" autocomplete="name"><p class="error" data-error="name"></p></div><div class="field"><label for="lead-email">${esc(CONFIG.ui.email)} <span class="required">${esc(CONFIG.ui.required)}</span></label><input id="lead-email" name="email" type="email" maxlength="254" autocomplete="email" inputmode="email"><p class="error" data-error="email"></p></div><div class="field"><label for="lead-phone">${esc(CONFIG.ui.phone)}</label><input id="lead-phone" name="phone" type="tel" maxlength="20" autocomplete="tel" inputmode="tel"><p class="error" data-error="phone"></p></div><div class="field"><label for="lead-line">${esc(CONFIG.ui.lineId)}</label><input id="lead-line" name="lineId" type="text" maxlength="50" autocomplete="off"><p class="error" data-error="lineId"></p></div><div class="field"><label for="lead-concern">${esc(CONFIG.ui.concern)}</label><textarea id="lead-concern" name="topConcern" maxlength="100" placeholder="${esc(CONFIG.ui.concernPlaceholder)}"></textarea></div><div class="field"><label class="choice consent"><input type="checkbox" name="consent"><span>${esc(CONFIG.ui.consent)}</span></label><p class="error" data-error="consent" aria-live="polite"></p></div><div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden"><label for="lead-hp">備註</label><input id="lead-hp" name="hp_extra_note" type="text" tabindex="-1" autocomplete="off" readonly></div><button class="btn btn-primary" type="submit">${esc(CONFIG.ui.submit)}</button></form>`}
+  function renderFullReport(){
+    const r=state.result,sorted=CONFIG.dims.slice().sort((a,b)=>r.dimScores[a.id]-r.dimScores[b.id]),root=dimById(r.rootDim),primary=r.ctaBand==="nurture"?"talk":"course";
+    return `<section class="report" id="full-report"><div class="eyebrow">${esc(CONFIG.ui.fullEyebrow)}</div><h2 class="section-title">${esc(CONFIG.ui.dimsTitle)}</h2><p class="section-lede">${esc(CONFIG.ui.dimsLede)}</p><div class="bars">${sorted.map((d,i)=>`<div class="bar-row ${d.id===r.rootDim?"root":""}"><span class="bar-name">${esc(d.name)}</span><span class="bar-track"><i class="bar-fill" style="--score:${r.dimScores[d.id]}%;--delay:${i*60}ms"></i></span><span class="bar-score">${r.dimScores[d.id]}</span>${d.id===r.rootDim?`<span class="root-tag">${esc(CONFIG.ui.rootTag)}</span>`:""}</div>`).join("")}</div><h2 class="section-title">${esc(CONFIG.ui.actionsTitle)}</h2><div class="actions">${root.actions.map((x,i)=>`<div class="action"><span class="action-num">${i+1}</span><p>${esc(x)}</p></div>`).join("")}</div><p class="closing">${esc(CONFIG.ui.closing)}</p><div class="cta-grid">${renderTalkCard(primary==="talk")}${renderCourseCard(primary==="course")}</div><section class="share"><h3>${esc(CONFIG.ui.shareTitle)}</h3><div class="share-buttons"><button class="btn btn-secondary" data-action="save-radar">${esc(CONFIG.ui.saveRadar)}</button><button class="btn btn-ghost" data-action="copy-result">${esc(CONFIG.ui.copyResult)}</button></div><p class="toast" aria-live="polite">${esc(state.toast)}</p>${state.submitWarning?`<p class="retry-note">${esc(CONFIG.ui.retryNote)}</p>`:""}</section><button class="restart" data-action="restart">${esc(CONFIG.ui.restart)}</button></section>`;
+  }
+  function linkButton(url,label,primary=true){return url?`<a class="btn ${primary?"btn-primary":"btn-secondary"}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`:`<span class="btn ${primary?"btn-primary":"btn-secondary"} disabled" aria-disabled="true">${esc(label+CONFIG.ui.coming)}</span>`}
+  function renderCourseCard(isPrimary){return `<article class="cta-card ${isPrimary?"primary":""}"><span class="cta-order">${esc(isPrimary?CONFIG.ui.primaryCta:CONFIG.ui.secondaryCta)}</span><h3>${esc(CONFIG.ui.courseTitle)}</h3><p>${esc(CONFIG.ui.courseDesc)}</p>${linkButton(CONFIG.links.course,CONFIG.ui.courseButton,isPrimary)}</article>`}
+  function renderTalkCard(isPrimary){return `<article class="cta-card ${isPrimary?"primary":""}"><span class="cta-order">${esc(isPrimary?CONFIG.ui.primaryCta:CONFIG.ui.secondaryCta)}</span><h3>${esc(CONFIG.ui.talkTitle)}</h3><p>${esc(CONFIG.ui.talkDesc)}</p><div class="cta-buttons">${linkButton(CONFIG.links.talk1031,CONFIG.ui.talkButton,isPrimary)}${linkButton(CONFIG.links.reading1118,CONFIG.ui.readingButton,false)}</div></article>`}
+
+  function bind(){
+    app.querySelector('[data-action="start"]')?.addEventListener("click",()=>start(false));
+    app.querySelector('[data-action="resume"]')?.addEventListener("click",()=>start(true));
+    app.querySelector('[data-action="back"]')?.addEventListener("click",previous);
+    app.querySelector('[data-action="continue"]')?.addEventListener("click",continuePart);
+    app.querySelectorAll("[data-score]").forEach(btn=>{btn.addEventListener("click",()=>answer(Number(btn.dataset.score)));btn.addEventListener("keydown",optionKeys)});
+    app.querySelector('[data-action="show-form"]')?.addEventListener("click",()=>{state.showForm=true;render();requestAnimationFrame(()=>document.getElementById("lead-form")?.scrollIntoView({behavior:"smooth",block:"start"}))});
+    document.getElementById("lead-form")?.addEventListener("submit",submitLead);
+    app.querySelector('[data-action="save-radar"]')?.addEventListener("click",saveRadar);
+    app.querySelector('[data-action="copy-result"]')?.addEventListener("click",copyResult);
+    app.querySelector('[data-action="restart"]')?.addEventListener("click",restart);
+    app.querySelector('[data-action="reload"]')?.addEventListener("click",()=>location.reload());
+  }
+  function optionKeys(e){
+    const options=[...app.querySelectorAll("[data-score]")],i=options.indexOf(e.currentTarget);let next=i;
+    if(["ArrowDown","ArrowRight"].includes(e.key))next=(i+1)%options.length;else if(["ArrowUp","ArrowLeft"].includes(e.key))next=(i-1+options.length)%options.length;else if(e.key==="Enter"||e.key===" "){e.preventDefault();answer(Number(e.currentTarget.dataset.score));return}else return;
+    e.preventDefault();options.forEach(x=>x.tabIndex=-1);options[next].tabIndex=0;options[next].focus();
+  }
+  function validate(form){
+    const data=new FormData(form),values={name:String(data.get("name")||"").trim(),email:String(data.get("email")||"").trim().toLowerCase(),phone:String(data.get("phone")||"").trim(),lineId:String(data.get("lineId")||"").trim(),topConcern:String(data.get("topConcern")||"").trim(),consent:data.get("consent")==="on",hp_extra_note:String(data.get("hp_extra_note")||"")},errors={};
+    if(values.name.length<1||values.name.length>20)errors.name=CONFIG.ui.errors.name;
+    if(values.email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))errors.email=CONFIG.ui.errors.email;
+    if(values.phone&&!/^\+?[\d\s()-]{8,20}$/.test(values.phone))errors.phone=CONFIG.ui.errors.phone;
+    if(values.lineId.length>50)errors.lineId=CONFIG.ui.errors.lineId;
+    if(!values.consent)errors.consent=CONFIG.ui.errors.consent;
+    form.querySelectorAll("[data-error]").forEach(x=>x.textContent=errors[x.dataset.error]||"");
+    return {values,valid:Object.keys(errors).length===0};
+  }
+
+  function timestamp(){const d=new Date(),pad=n=>String(n).padStart(2,"0"),off=-d.getTimezoneOffset(),sign=off>=0?"+":"-";return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(Math.abs(off)/60))}:${pad(Math.abs(off)%60)}`}
+  async function submitLead(e){
+    e.preventDefault();const form=e.currentTarget,{values,valid}=validate(form);if(!valid)return;
+    const lead={ts:timestamp(),...values};delete lead.consent;Object.assign(lead,{source:state.utmSource,answers:state.answers,result:state.result});safeStorage.set("w5c_lead",JSON.stringify(lead));
+    const button=form.querySelector("button[type=submit]");button.disabled=true;
+    let success=!CONFIG.endpoint;
+    if(CONFIG.endpoint){try{const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),CONFIG.timing.submitTimeout),response=await fetch(CONFIG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(lead),signal:ctrl.signal});clearTimeout(timer);success=response.ok}catch(err){success=false}}
+    if(success){safeStorage.remove("w5c_lead");track("Lead",{content_name:"wealth5-check"})}state.submitWarning=!success;state.fullUnlocked=true;state.showForm=false;render();requestAnimationFrame(()=>document.getElementById("full-report")?.scrollIntoView({behavior:"smooth",block:"start"}));
+  }
+  async function retryLead(){
+    if(!CONFIG.endpoint)return;const raw=safeStorage.get("w5c_lead");if(!raw)return;
+    try{const response=await fetch(CONFIG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:raw});if(response.ok)safeStorage.remove("w5c_lead")}catch(e){}
+  }
+  function saveRadar(){
+    try{const svg=radarSVG(state.result,true),blob=new Blob([svg],{type:"image/svg+xml;charset=utf-8"}),url=URL.createObjectURL(blob),img=new Image();img.onload=()=>{const canvas=document.createElement("canvas");canvas.width=720;canvas.height=720;const ctx=canvas.getContext("2d");ctx.fillStyle=CONFIG.theme.bg;ctx.fillRect(0,0,720,720);ctx.drawImage(img,0,0,720,720);URL.revokeObjectURL(url);const a=document.createElement("a");a.download="五種財富檢測_我的雷達圖.png";a.href=canvas.toDataURL("image/png");a.click();state.toast=CONFIG.ui.saved;render()};img.src=url}catch(e){state.toast=CONFIG.ui.copyFailed;render()}
+  }
+  async function copyResult(){
+    const a=areaById(state.result.weakestArea),d=dimById(state.result.rootDim),first=d.root.split("。")[0]+"。",text=CONFIG.ui.shareTemplate(a.name,d.name,first,CONFIG.links.self);
+    try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(text);else{const ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();if(!document.execCommand("copy"))throw new Error();ta.remove()}state.toast=CONFIG.ui.copied}catch(e){state.toast=CONFIG.ui.copyFailed}render();
+  }
+  function restart(){if(!confirm(CONFIG.ui.restartConfirm))return;safeStorage.remove("w5c_progress");state.view="cover";state.questionIndex=0;state.answers={};state.result=null;state.showForm=false;state.fullUnlocked=false;state.submitWarning=false;state.resume=null;state.toast="";window.scrollTo({top:0});render()}
+  function fatal(error){console.error(error);app.innerHTML=`<section class="fatal"><h1>${esc(CONFIG.ui.fatalTitle)}</h1><p>${esc(CONFIG.ui.fatalText)}</p><button class="btn btn-primary" data-action="reload">${esc(CONFIG.ui.retry)}</button></section>`;bind()}
+
+  window.Wealth5Test={calculate};
+  applyConfig();state.resume=getResume();retryLead();render();
+  </script>
+</body>
+</html>

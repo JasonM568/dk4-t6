@@ -129,6 +129,7 @@ npx tsx scripts/test-session-groups.ts                                  # 場次
 npx tsx scripts/test-session-order.ts                                   # 場次手動排序的陣列運算 18 項
 npx tsx scripts/test-batch-enroll-form.ts                               # 批次開通表單契約 23 項（受控欄位／版面順序／兩步驟標示）
 npx tsx scripts/test-single-enroll-form.ts                              # 「單人開通」契約 33 項（批次開通頁＋課程觀看名單頁課程固定模式／受控欄位／只走 grantEnrollmentAction／searchProfiles 上限 20／requireEditor）
+npx tsx scripts/test-wealth5-check.ts                                   # 五種財富檢測（/check/wealth5）離線契約 86 項（計分 T1–T6＋TS/JS 兩實作隨機 300 組一致／HTML 零外部資源與蜜罐／名單驗證／報告信／路由）
 npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示 6 項（radio／textarea；複選維持伺服端驗證）
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
 npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 25 項（既有講座頁零變化是回歸線）
@@ -146,6 +147,7 @@ npx tsx --conditions=react-server scripts/test-broadcast-abuse-db.ts     # EDM�
 npx tsx --conditions=react-server scripts/test-public-forms-abuse-db.ts  # 公開表單 D 層 64 項（4 位碼限流原子計次／學員記錄認領比姓名／講座與企業包班併發／長度上限／同 IP 限流預設 20、講座索取與場次報名 60；Supabase 全替身）
 npx tsx scripts/test-idor-static.ts                                      # IDOR 靜態掃描 29 項（會員端資料範圍／落地頁欄位最小化／後台子資源寫入那一句的 where 綁父層＋掃描器自測）
 npx tsx --conditions=react-server scripts/test-material-brief-abuse-db.ts # 講義下載授權／剪報圖片網址 D 層 73 項（未登入／無權 404 無探針／簽名 ≤60 秒／外部網址 7 種不轉址／穿越與上限）
+npx tsx --conditions=react-server scripts/test-wealth5-lead-db.ts        # 五種財富檢測收名單 API 42 項（假 Resend：快照伺服器重算／三個名單群組／記錄卡／蜜罐／60 秒冷卻／寄失敗仍存名單／限流 429）
 npx tsx --conditions=react-server scripts/test-material-access-db.ts     # 講義路由基本授權 9 項（未開通／已開通／幹部／停用專區／外部 url）
 npx tsx scripts/test-brief-image-url.ts                                  # 剪報站內網址純函式 6 項
 npx tsx --conditions=react-server scripts/test-profile-gate-behavior-db.ts # 補填閘門改提醒 33 項（舊生登入直達／三頁不導走／結帳仍擋／補填頁 next 安全；Supabase 全替身）
