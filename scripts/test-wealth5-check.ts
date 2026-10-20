@@ -177,7 +177,12 @@ console.log("\n計分：伺服器 TS 與檢測頁 JS 兩份實作逐項一致");
 console.log("\n檢測頁 HTML 契約");
 {
   check("沒有外部 script src", !/<script[^>]*\ssrc=/.test(HTML));
-  check("沒有外部 stylesheet（Google Fonts 已移除，平台 CSP 不放行）", !/<link[^>]*rel="stylesheet"/.test(HTML) && !/fonts\.googleapis/.test(HTML));
+  const stylesheets = HTML.match(/<link[^>]*rel="stylesheet"[^>]*>/g) ?? [];
+  check("外部 stylesheet 只有 Google Fonts 一條（標題明體；載入失敗退回系統字體）", stylesheets.length === 1 && /fonts\.googleapis\.com/.test(stylesheets[0]));
+  check("CSP 放行 fonts.googleapis（style-src）與 fonts.gstatic（font-src）", /style-src[^"]*https:\/\/fonts\.googleapis\.com/.test(NEXT_CONFIG) && /font-src[^"]*https:\/\/fonts\.gstatic\.com/.test(NEXT_CONFIG));
+  check("色票是量子星空：深藍紫底＋金主色（Jason 2026-10-20）", /--bg:#0A0F2C/.test(HTML) && /--amber:#D9B55A/.test(HTML) && !/232,147,58/.test(HTML));
+  check("標題用 Noto Serif TC", /\.cover h1,[^{]*\{font-family:"Noto Serif TC"/.test(HTML));
+  check("字級：題幹 ≥22px、選項 ≥18px、免責 ≥14px", /\.question\{[^}]*clamp\(22px/.test(HTML) && /\.option-text\{font-size:18px/.test(HTML) && /\.disclaimer\{[^}]*font-size:14px/.test(HTML));
   check("有注入點 <!--W5C_INJECT--> 在 </head> 之前", HTML.indexOf("<!--W5C_INJECT-->") > 0 && HTML.indexOf("<!--W5C_INJECT-->") < HTML.indexOf("</head>"));
   check("CONFIG 以 window.__W5C_CONTENT__ 注入內容", /\.\.\.\(window\.__W5C_CONTENT__\|\|\{\}\)/.test(HTML));
   check("HTML 內不再有題庫（questions: [）", !/^\s*questions:\s*\[/m.test(HTML));

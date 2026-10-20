@@ -23,9 +23,10 @@ const REPORT_ONLY_CSP = [
   // Next.js inline bootstrap 與 GA/Pixel 起始碼需要 'unsafe-inline'（未採 nonce 架構的取捨）；
   // 外部 script 來源仍鎖白名單，未列入的網域一律擋
   "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://connect.facebook.net",
-  "style-src 'self' 'unsafe-inline'",
+  // 五種財富檢測頁標題用 Noto Serif TC（Google Fonts）
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   `img-src 'self' data: blob: https://${SUPABASE_HOST} https://www.googletagmanager.com https://*.google-analytics.com https://www.facebook.com https://i.ytimg.com`,
-  "font-src 'self' data:",
+  "font-src 'self' data: https://fonts.gstatic.com",
   // 自訂頁短影片：YouTube 走 frame-src；影片檔直連（Supabase）走 media-src
   `media-src 'self' https://${SUPABASE_HOST}`,
   "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://docs.google.com https://www.canva.com https://www.googletagmanager.com",
