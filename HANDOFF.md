@@ -1,7 +1,7 @@
 # HANDOFF — 線上課程學習平台（希望學院）
 
 > 工作交接文件。每次告一段落更新此檔，下次開工先讀這裡。
-> 最後更新：**2026-10-20（五種財富自我檢測引流頁 `/check/wealth5` 上線 c2b2061：Codex 單檔 HTML＋伺服器重算＋名單掛 Webinar wealth5-check＋三個名單群組＋自動寄報告信；10/31 講座連結待補，見 docs/worklogs/2026-10-20-五種財富檢測引流頁.md）／2026-10-19（課程觀看名單頁 `/admin/courses/[id]/members` 最上面加「單人開通」課程固定模式：搜姓名或 Email → 一顆開通鈕，d0c32fe；表單搬到 src/components/admin/single-enroll-form.tsx；test-single-enroll-form 33 項）／2026-10-18（批次開通頁加「單人開通」：輸入姓名或 Email 找會員即可開通，210459a；讀冊會索取信＝索取當下寄一次、固定 Zoom 連結；見 docs/worklogs/2026-10-18-單人開通與讀冊會查核.md）／2026-10-09（QA 全系統補測 5 支 191 項，揪出 3 P2＋6 P3；2026-10-09 收工：R2–R17＋限流 60 全部上線（最後 33b217f），17 支新測試；收工總結見 worklog 末段。派工狀態、決定不修清單、等 Jason 拍板的設計題見 docs/worklogs/2026-10-09-QA全系統補測與派工.md）**
+> 最後更新：**2026-10-20（五種財富自我檢測引流頁 `/check/wealth5` 上線 c2b2061：Codex 單檔 HTML＋伺服器重算＋名單掛 Webinar wealth5-check＋三個名單群組＋自動寄報告信；10/31 講座連結已補（SiteSetting），見 docs/worklogs/2026-10-20-五種財富檢測引流頁.md）／2026-10-19（課程觀看名單頁 `/admin/courses/[id]/members` 最上面加「單人開通」課程固定模式：搜姓名或 Email → 一顆開通鈕，d0c32fe；表單搬到 src/components/admin/single-enroll-form.tsx；test-single-enroll-form 33 項）／2026-10-18（批次開通頁加「單人開通」：輸入姓名或 Email 找會員即可開通，210459a；讀冊會索取信＝索取當下寄一次、固定 Zoom 連結；見 docs/worklogs/2026-10-18-單人開通與讀冊會查核.md）／2026-10-09（QA 全系統補測 5 支 191 項，揪出 3 P2＋6 P3；2026-10-09 收工：R2–R17＋限流 60 全部上線（最後 33b217f），17 支新測試；收工總結見 worklog 末段。派工狀態、決定不修清單、等 Jason 拍板的設計題見 docs/worklogs/2026-10-09-QA全系統補測與派工.md）**
 >
 > 🔑 **重要：course schema 現在可直接查了**——已 expose 且 `GRANT SELECT ... TO service_role`。
 > 用 supabase service key + `sb.schema("course").from("Enrollment"/"MailGroup"/...)` 即可查正式 course 資料，
