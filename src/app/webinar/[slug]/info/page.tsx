@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { WEALTH5_CHECK_PATH, WEALTH5_CHECK_SLUG } from "@/lib/wealth5-check";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { publicMeetingNotes } from "@/lib/meeting";
 
 // 活動資訊頁：報名頁（/webinar/[slug]）的姊妹頁，訪客填完表單可點進來，也可直接轉傳。
 // 只放 DM、說明、會議補充資訊（時間／注意事項）；**不放**講座連結、會議 ID、密碼——
@@ -33,6 +34,8 @@ export default async function WebinarInfoPage({ params }: { params: Promise<{ sl
   });
   if (!webinar) notFound();
   const isResource = webinar.kind === "RESOURCE";
+  // 會議補充資訊常被貼整段 Zoom 邀請（含網址／ID／密碼）：公開頁只留時間與注意事項那些行
+  const notes = publicMeetingNotes(webinar.meetingInfo);
   const open =
     webinar.isActive &&
     !hasEndedInTaipei(webinar.endDate) &&
@@ -57,10 +60,10 @@ export default async function WebinarInfoPage({ params }: { params: Promise<{ sl
           </p>
         )}
 
-        {webinar.meetingInfo && (
+        {notes && (
           <section className="mb-6 rounded-xl bg-gray-50 px-4 py-3">
             <div className="mb-1 text-sm font-bold">{isResource ? "補充說明" : "會議資訊"}</div>
-            <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700">{webinar.meetingInfo}</p>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700">{notes}</p>
           </section>
         )}
 

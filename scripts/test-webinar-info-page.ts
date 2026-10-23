@@ -10,6 +10,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { publicMeetingNotes } from "../src/lib/meeting";
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -40,13 +41,42 @@ console.log("A. 活動資訊頁（公開，不露連結）");
   check("select 不取 meetingPassword", !/meetingPassword/.test(selectBlock));
   check("整頁沒出現 lectureUrl／meetingPassword 字樣（連註解外的程式碼都不能摸）",
     !/webinar\.(lectureUrl|meetingId|meetingPassword)/.test(src));
-  check("有顯示 meetingInfo（時間／注意事項）", /webinar\.meetingInfo/.test(src));
+  check("meetingInfo 一律先過 publicMeetingNotes 才渲染（正式站曾把整段 Zoom 邀請貼進這欄）",
+    /publicMeetingNotes\(webinar\.meetingInfo\)/.test(src) && !/\{webinar\.meetingInfo\}/.test(src));
   check("有顯示 DM 與說明", /webinar\.dmImage/.test(src) && /webinar\.description/.test(src));
   check("結束判斷與報名頁同一套（isActive＋hasEndedInTaipei＋unpublishAt）",
     /webinar\.isActive\s*&&[\s\S]*hasEndedInTaipei\(webinar\.endDate\)[\s\S]*unpublishAt/.test(src));
   check("開放中才給「前往報名頁」按鈕", /open\s*\?/.test(src) && /前往報名頁/.test(src));
   check("五力檢測 slug 一樣導去檢測頁", /WEALTH5_CHECK_SLUG\)\s*redirect\(WEALTH5_CHECK_PATH\)/.test(src));
   check("force-dynamic（到期要即時）", /export const dynamic = "force-dynamic"/.test(src));
+}
+
+console.log("\nA2. publicMeetingNotes：公開頁過濾（純函式）");
+{
+  const sample = [
+    "10/28（二）19:30 開放進場，請提前 10 分鐘上線。",
+    "",
+    "Jason 邀請你參加 Zoom 會議。",
+    "加入 Zoom 會議",
+    "https://us02web.zoom.us/j/81234567890?pwd=AbCdEf123",
+    "會議 ID：812 3456 7890",
+    "密碼：668866",
+    "Meeting ID: 81234567890",
+    "Passcode: 668866",
+    "www.zoom.us 也可以手動輸入",
+    "進場後請改名為「姓名＿地區」。",
+  ].join("\n");
+  const out = publicMeetingNotes(sample);
+  check("保留時間行", /19:30 開放進場/.test(out));
+  check("保留注意事項行", /改名為/.test(out));
+  check("保留一般文字行", /邀請你參加/.test(out) && /加入 Zoom 會議/.test(out));
+  check("丟掉網址行", !/zoom\.us\/j/.test(out) && !/pwd=/.test(out));
+  check("丟掉 www. 行", !/www\./.test(out));
+  check("丟掉中文會議 ID 行", !/812 3456 7890/.test(out));
+  check("丟掉中文密碼行", !/668866/.test(out));
+  check("丟掉英文 Meeting ID／Passcode 行", !/Meeting ID/.test(out) && !/Passcode/.test(out));
+  check("空值回空字串", publicMeetingNotes(null) === "" && publicMeetingNotes("") === "");
+  check("全是敏感行時回空字串（頁面就不渲染區塊）", publicMeetingNotes("https://zoom.us/j/1\n密碼：1") === "");
 }
 
 console.log("\nB. 送出 action：joinUrl 只在寄出時回");
