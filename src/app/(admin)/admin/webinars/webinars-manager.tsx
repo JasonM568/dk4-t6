@@ -355,9 +355,14 @@ function WebinarFields({
       </>)}
       {/* 講座 DM 圖：瀏覽器直傳 Storage（同課程封面），存公開網址 */}
       <div className="rounded-lg border border-dashed border-gray-300 p-3">
-        <div className="mb-1.5 text-xs font-medium text-gray-500">
-          {isResource ? "主視覺" : "講座 DM 圖"}（選填，顯示在頁面說明上方；JPG/PNG/WebP，5MB 內）
+        <div className="mb-1 text-xs font-medium text-gray-500">
+          {isResource ? "主視覺" : "講座 DM 圖"}（選填，顯示在頁面說明上方與首頁講座卡片；JPG/PNG/WebP，5MB 內）
         </div>
+        {/* 圖片規格說明：讓管理員上傳前就知道要準備什麼尺寸（歷來講座 DM 皆為 16:9 橫式） */}
+        <p className="mb-2 text-xs leading-relaxed text-gray-400">
+          建議橫式 16:9、寬 1600px 以上（例：1600×900）。直式也可以，頁面會依寬度等比縮放、整張完整顯示不裁切；
+          手機上寬度約 400px，圖上文字別太小。
+        </p>
         <input type="hidden" name="dmImage" value={dmImage} />
         <div className="flex flex-wrap items-center gap-3">
           {dmImage && (

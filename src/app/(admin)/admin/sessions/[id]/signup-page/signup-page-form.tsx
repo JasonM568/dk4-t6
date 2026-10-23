@@ -361,9 +361,14 @@ export function SignupPageForm({
         <h2 className="text-base font-bold">課程 DM 圖</h2>
 
         <div className="rounded-lg border border-dashed border-gray-300 p-3">
-          <div className="mb-2 text-xs font-medium text-gray-500">
+          <div className="mb-1 text-xs font-medium text-gray-500">
             主視覺（顯示在標題上方，也會用作分享到 LINE／FB 的預覽圖；JPG/PNG/WebP/GIF，5MB 內）
           </div>
+          {/* 圖片規格說明：與講座 DM 圖同一套建議，分享預覽圖以 16:9 橫式最不會被裁 */}
+          <p className="mb-2 text-xs leading-relaxed text-gray-400">
+            建議橫式 16:9、寬 1600px 以上（例：1600×900）；LINE／FB 分享預覽會以這張為準，直式會被裁成橫式。
+            報名頁本身依寬度等比縮放、整張完整顯示；手機上寬度約 400px，圖上文字別太小。
+          </p>
           <input type="hidden" name="dmImage" value={dmImage} />
           <div className="flex flex-wrap items-center gap-3">
             {dmImage && (
