@@ -586,6 +586,7 @@ export function WebinarCard({
     null,
   );
   const url = `https://course.huangxi.info/webinar/${webinar.slug}`;
+  const infoUrl = `${url}/info`;
   const problemCount = webinar.requests.filter(
     (r) =>
       r.deliveryStatus === "BOUNCED" ||
@@ -656,6 +657,27 @@ export function WebinarCard({
           >
             複製
           </button>
+        </div>
+        {/* 活動資訊頁：訪客填完後點「查看活動資訊」到這裡；只有 DM／說明／會議補充資訊，不含連結，可直接轉傳 */}
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-gray-500">活動資訊頁網址：</span>
+          <code className="rounded bg-gray-100 px-2 py-0.5 text-xs">{infoUrl}</code>
+          <a
+            href={`/webinar/${webinar.slug}/info`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded border border-indigo-300 px-2 py-0.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-50"
+          >
+            📋 開啟資訊頁
+          </a>
+          <button
+            type="button"
+            onClick={() => navigator.clipboard.writeText(infoUrl)}
+            className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 transition hover:bg-gray-50"
+          >
+            複製
+          </button>
+          <span className="text-xs text-gray-400">（不含會議連結，填完表單的人會看到；也可直接轉傳）</span>
         </div>
 
         {canEdit && (

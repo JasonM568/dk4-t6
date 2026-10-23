@@ -7,6 +7,7 @@ import { requireEditor } from "@/lib/auth/staff";
 import { buildBroadcastHtml, sendBroadcast } from "@/lib/email/broadcast";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
 import { buildWebinarMail, defaultEmailBody } from "@/lib/webinar-mail";
+import { buildJoinUrl } from "@/lib/meeting";
 import {
   dismissBlockedWebinarAttempt,
   HONEYPOT_SUCCESS_MESSAGE,
@@ -40,7 +41,14 @@ import {
 export type WebinarFormState = { error?: string; success?: string } | null;
 // questionId：問卷必填未答時回報是哪一題，前端據此把該題標紅、捲到定位
 export type WebinarRequestState =
-  | { error?: string; success?: string; questionId?: string }
+  | {
+      error?: string;
+      success?: string;
+      questionId?: string;
+      // 線上講座寄信成功後直接給進會議連結（帶密碼），訪客不用等信也能進場。
+      // 只在真的寄出（或 60 秒內剛寄過）時附上；蜜罐路徑絕不帶。素材索取頁不給（素材在信裡成清單）。
+      joinUrl?: string;
+    }
   | null;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -416,7 +424,10 @@ export async function requestWebinarLinkAction(
       data: { lastSentAt: new Date() },
     });
     if (claimed.count === 0) {
-      return { success: "確認信剛剛已寄出，請稍候並到信箱查收（也請檢查垃圾郵件夾）" };
+      return {
+        success: "確認信剛剛已寄出，請稍候並到信箱查收（也請檢查垃圾郵件夾）",
+        ...(webinar.kind === "RESOURCE" ? {} : { joinUrl: buildJoinUrl(webinar.lectureUrl, webinar.meetingPassword) }),
+      };
     }
   }
   const existing = await prisma.webinarRequest.findUnique({
@@ -429,7 +440,7 @@ export async function requestWebinarLinkAction(
 
   // 信件內容組裝抽在 lib/webinar-mail：後台預覽頁走同一支，兩邊不會各說各話。
   // （{name}/{email} 合併變數先替換再轉 HTML，esc 在 buildBroadcastHtml 內處理防注入）
-  const { subject, body } = buildWebinarMail(webinar, { email, name });
+  const { subject, body, joinUrl } = buildWebinarMail(webinar, { email, name });
 
   // 帶 webinar_id tag：Resend webhook 事件回流 → 更新這筆索取的寄送狀態
   const result = await sendBroadcast(
@@ -531,7 +542,10 @@ export async function requestWebinarLinkAction(
     console.error("[webinar] 學員記錄卡寫入失敗（不影響寄信）", { slug, email, e });
   }
 
-  return { success: "確認信已寄出，請到信箱查收（也請檢查垃圾郵件夾）！" };
+  return {
+    success: "確認信已寄出，請到信箱查收（也請檢查垃圾郵件夾）！",
+    ...(webinar.kind === "RESOURCE" ? {} : { joinUrl }),
+  };
 }
 
 export type WebinarDeliveryStatus =

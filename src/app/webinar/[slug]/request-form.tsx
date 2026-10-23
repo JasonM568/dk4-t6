@@ -122,6 +122,26 @@ export function WebinarRequestForm({
           </div>
         </div>
 
+        {/* 線上講座：寄信成功就直接給進會議連結，不用等信；活動資訊頁放時間與注意事項（不含連結，可轉傳） */}
+        <div className="flex flex-wrap items-center gap-2">
+          {state.joinUrl && (
+            <a
+              href={state.joinUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-700"
+            >
+              🎥 直接進入會議
+            </a>
+          )}
+          <a
+            href={`/webinar/${slug}/info`}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+          >
+            📋 查看活動資訊
+          </a>
+        </div>
+
         {delivery === "DELIVERED" && (
           <div className="rounded-xl bg-green-100 px-4 py-3 text-sm text-green-800">
             ✅ <strong>信件已確認送達你的信箱服務商</strong>
