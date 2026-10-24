@@ -680,7 +680,7 @@ model Webinar {
   slug            String    @unique // 公開網址 /webinar/[slug]
   title           String
   description     String    @db.Text // 頁面說明（純文字換行顯示）
-  lectureUrl      String // 講座連結（寄信用，不直接露出在頁面）
+  lectureUrl      String // 講座連結（寄信用；報名頁不露，但公開活動資訊頁 /webinar/<slug>/info 會完整顯示）
   meetingId       String? // 會議 ID（Zoom 等；只進信件不露出在頁面）
   meetingPassword String? // 會議密碼；連結無 pwd 參數時自動附加 ?pwd=
   meetingInfo     String?   @db.Text // 會議補充資訊（時間/注意事項，附在信末資訊區塊）

@@ -131,7 +131,7 @@ npx tsx scripts/test-batch-enroll-form.ts                               # 批次
 npx tsx scripts/test-single-enroll-form.ts                              # 「單人開通」契約 33 項（批次開通頁＋課程觀看名單頁課程固定模式／受控欄位／只走 grantEnrollmentAction／searchProfiles 上限 20／requireEditor）
 npx tsx scripts/test-wealth5-check.ts                                   # 五種財富檢測（/check/wealth5）離線契約 91 項（計分 T1–T6＋TS/JS 兩實作隨機 300 組一致／HTML 零外部資源與蜜罐／名單驗證／報告信／路由）
 npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示 6 項（radio／textarea；複選維持伺服端驗證）
-npx tsx scripts/test-webinar-info-page.ts                               # 活動資訊頁（/webinar/<slug>/info）35 項（公開頁不取連結／ID／密碼、會議補充資訊逐行濾掉網址／密碼／會議 ID；joinUrl 只在寄出時回、蜜罐與素材索取不帶；成功畫面兩顆按鈕；後台列資訊頁網址）
+npx tsx scripts/test-webinar-info-page.ts                               # 活動資訊頁（/webinar/<slug>/info）31 項（公開頁完整顯示會議資訊：進會議按鈕與信同一條連結、網址只放行 http(s)、素材索取頁不給、ID／密碼不重複列；joinUrl 只在寄出時回、蜜罐與素材索取不帶；成功畫面兩顆按鈕；後台註記是公開頁）
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
 npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 25 項（既有講座頁零變化是回歸線）
 npx tsx scripts/test-webinar-survey.ts                                  # 問卷驗證 27 項（必填／選項竄改／題數上限／快照）

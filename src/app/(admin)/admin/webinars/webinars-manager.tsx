@@ -349,7 +349,7 @@ function WebinarFields({
       <p className="text-xs text-gray-400">
         有填密碼且講座連結沒帶 pwd 參數時，信裡的連結會自動加上 ?pwd=密碼；
         ID/密碼/補充資訊會附在信末「會議資訊」區塊（不露出在報名頁）。
-        補充資訊也會出現在公開的「活動資訊頁」，但含網址、密碼、會議 ID 的行會自動隱藏，只留時間與注意事項。
+        連結、ID、密碼與補充資訊也會完整顯示在公開的「活動資訊頁」（拿到網址的人不填表也能進會議）。
         Zoom 建議直接貼邀請信裡含 pwd 的完整連結最保險。
       </p>
 
@@ -659,7 +659,7 @@ export function WebinarCard({
             複製
           </button>
         </div>
-        {/* 活動資訊頁：訪客填完後點「查看活動資訊」到這裡；只有 DM／說明／會議補充資訊，不含連結，可直接轉傳 */}
+        {/* 活動資訊頁：訪客填完後點「查看活動資訊」到這裡；DM／說明／完整會議資訊（含連結），公開可轉傳 */}
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-gray-500">活動資訊頁網址：</span>
           <code className="rounded bg-gray-100 px-2 py-0.5 text-xs">{infoUrl}</code>
@@ -678,7 +678,7 @@ export function WebinarCard({
           >
             複製
           </button>
-          <span className="text-xs text-gray-400">（不含會議連結，填完表單的人會看到；也可直接轉傳）</span>
+          <span className="text-xs text-gray-400">（公開頁，含會議連結與密碼；轉傳出去的人不填表也能進會議）</span>
         </div>
 
         {canEdit && (

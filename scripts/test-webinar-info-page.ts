@@ -4,13 +4,14 @@
  *   npx tsx scripts/test-webinar-info-page.ts
  *
  * 守的三件事：
- *   1. 資訊頁是公開網址，**不得**取 lectureUrl／meetingId／meetingPassword（落地頁欄位最小化）
+ *   1. 資訊頁是**公開**頁，2026-10-24 Jason 拍板完整顯示會議資訊（連結／ID／密碼／補充資訊）：
+ *      進會議按鈕與信件同一條連結（buildJoinUrl）、網址只放行 http(s)、素材索取頁沒有進會議這件事、
+ *      結構欄位的 ID／密碼與補充資訊重複時不列兩次；曾有的逐行過濾（publicMeetingNotes）已刻意移除，別又長回來
  *   2. joinUrl 只在真的寄出（或 60 秒內剛寄過）時回給前端；蜜罐路徑與素材索取頁不帶
- *   3. 報名表單成功畫面有「直接進入會議」（有 joinUrl 才顯示）與「查看活動資訊」；後台列表列出資訊頁網址
+ *   3. 報名表單成功畫面有「直接進入會議」（有 joinUrl 才顯示）與「查看活動資訊」；後台列表列出資訊頁網址並說明是公開頁
  */
 import fs from "node:fs";
 import path from "node:path";
-import { publicMeetingNotes } from "../src/lib/meeting";
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -30,53 +31,39 @@ function fnBody(src: string, name: string): string {
   return src.slice(start, next < 0 ? undefined : next);
 }
 
-console.log("A. 活動資訊頁（公開，不露連結）");
+console.log("A. 活動資訊頁（公開，完整會議資訊）");
 {
   const p = "src/app/webinar/[slug]/info/page.tsx";
   const src = read(p);
-  const selectBlock = src.match(/select:\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+  // generateMetadata 也有一個小 select，取最長的那個才是頁面主查詢
+  const selectBlock = [...src.matchAll(/select:\s*\{([\s\S]*?)\}/g)].map((m) => m[1]).sort((a, b) => b.length - a.length)[0] ?? "";
   check("info 頁存在且用 select 白名單取欄位", selectBlock.length > 0);
-  check("select 不取 lectureUrl", !/lectureUrl/.test(selectBlock));
-  check("select 不取 meetingId", !/meetingId/.test(selectBlock));
-  check("select 不取 meetingPassword", !/meetingPassword/.test(selectBlock));
-  check("整頁沒出現 lectureUrl／meetingPassword 字樣（連註解外的程式碼都不能摸）",
-    !/webinar\.(lectureUrl|meetingId|meetingPassword)/.test(src));
-  check("meetingInfo 一律先過 publicMeetingNotes 才渲染（正式站曾把整段 Zoom 邀請貼進這欄）",
-    /publicMeetingNotes\(webinar\.meetingInfo\)/.test(src) && !/\{webinar\.meetingInfo\}/.test(src));
+  check("select 取 lectureUrl／meetingId／meetingPassword／meetingInfo（完整顯示是 Jason 的決定）",
+    /lectureUrl/.test(selectBlock) && /meetingId/.test(selectBlock) && /meetingPassword/.test(selectBlock) && /meetingInfo/.test(selectBlock));
+  check("進會議連結與信件同一條：buildJoinUrl(lectureUrl, meetingPassword)",
+    /buildJoinUrl\(webinar\.lectureUrl, webinar\.meetingPassword\)/.test(src));
+  check("連結先過 isSafeHttpUrl 才渲染成 <a>（擋 javascript:／data:）",
+    /!isResource && isSafeHttpUrl\(webinar\.lectureUrl\)/.test(src));
+  check("素材索取頁（RESOURCE）沒有進會議按鈕、不列 ID／密碼",
+    /joinUrl = !isResource &&/.test(src) && /showId =\s*!isResource &&/.test(src) && /showPwd = !isResource &&/.test(src));
+  check("進會議按鈕另開分頁且 rel=noreferrer",
+    /href=\{joinUrl\}[\s\S]{0,120}target="_blank"[\s\S]{0,60}rel="noreferrer"/.test(src) && /進入會議/.test(src));
+  check("補充資訊經 linkify 渲染（網址變可點），不是原字串直出",
+    /\{linkify\(info\)\}/.test(src) && !/\{webinar\.meetingInfo\}/.test(src));
+  check("linkify 只放行 isSafeHttpUrl 過的網址，其餘留純文字",
+    /function linkify/.test(src) && /i % 2 === 1 && isSafeHttpUrl\(part\)/.test(src) && /URL_RE = \/\(https\?:\\\/\\\/\[\^\\s\]\+\)\/g/.test(src));
+  check("linkify 出來的 <a> 另開分頁且 rel=noreferrer",
+    /href=\{part\}[\s\S]{0,40}target="_blank"[\s\S]{0,40}rel="noreferrer"/.test(src));
+  check("補充資訊已含 ID／密碼時，結構欄位那兩行不重複列（比數字／比字串）",
+    /infoDigits\.includes\(digitsOnly\(webinar\.meetingId\)\)/.test(src) && /info\.includes\(webinar\.meetingPassword\)/.test(src));
+  check("逐行過濾 publicMeetingNotes 已移除（頁面與 lib 都沒有）",
+    !/publicMeetingNotes/.test(src) && !/publicMeetingNotes/.test(read("src/lib/meeting.ts")));
   check("有顯示 DM 與說明", /webinar\.dmImage/.test(src) && /webinar\.description/.test(src));
   check("結束判斷與報名頁同一套（isActive＋hasEndedInTaipei＋unpublishAt）",
     /webinar\.isActive\s*&&[\s\S]*hasEndedInTaipei\(webinar\.endDate\)[\s\S]*unpublishAt/.test(src));
   check("開放中才給「前往報名頁」按鈕", /open\s*\?/.test(src) && /前往報名頁/.test(src));
   check("五力檢測 slug 一樣導去檢測頁", /WEALTH5_CHECK_SLUG\)\s*redirect\(WEALTH5_CHECK_PATH\)/.test(src));
   check("force-dynamic（到期要即時）", /export const dynamic = "force-dynamic"/.test(src));
-}
-
-console.log("\nA2. publicMeetingNotes：公開頁過濾（純函式）");
-{
-  const sample = [
-    "10/28（二）19:30 開放進場，請提前 10 分鐘上線。",
-    "",
-    "Jason 邀請你參加 Zoom 會議。",
-    "加入 Zoom 會議",
-    "https://us02web.zoom.us/j/81234567890?pwd=AbCdEf123",
-    "會議 ID：812 3456 7890",
-    "密碼：668866",
-    "Meeting ID: 81234567890",
-    "Passcode: 668866",
-    "www.zoom.us 也可以手動輸入",
-    "進場後請改名為「姓名＿地區」。",
-  ].join("\n");
-  const out = publicMeetingNotes(sample);
-  check("保留時間行", /19:30 開放進場/.test(out));
-  check("保留注意事項行", /改名為/.test(out));
-  check("保留一般文字行", /邀請你參加/.test(out) && /加入 Zoom 會議/.test(out));
-  check("丟掉網址行", !/zoom\.us\/j/.test(out) && !/pwd=/.test(out));
-  check("丟掉 www. 行", !/www\./.test(out));
-  check("丟掉中文會議 ID 行", !/812 3456 7890/.test(out));
-  check("丟掉中文密碼行", !/668866/.test(out));
-  check("丟掉英文 Meeting ID／Passcode 行", !/Meeting ID/.test(out) && !/Passcode/.test(out));
-  check("空值回空字串", publicMeetingNotes(null) === "" && publicMeetingNotes("") === "");
-  check("全是敏感行時回空字串（頁面就不渲染區塊）", publicMeetingNotes("https://zoom.us/j/1\n密碼：1") === "");
 }
 
 console.log("\nB. 送出 action：joinUrl 只在寄出時回");
@@ -109,12 +96,14 @@ console.log("\nC. 報名表單成功畫面");
   check("重寄表單仍在（60 秒冷卻文案沒被拿掉）", /秒後可重寄/.test(success));
 }
 
-console.log("\nD. 後台列表");
+console.log("\nD. 後台列表與欄位說明");
 {
   const src = read("src/app/(admin)/admin/webinars/webinars-manager.tsx");
   check("報名頁網址底下多一列「活動資訊頁網址」", /報名頁網址：[\s\S]*活動資訊頁網址：/.test(src));
   check("資訊頁網址 = 報名頁網址 + /info", /const infoUrl = `\$\{url\}\/info`/.test(src));
   check("有「開啟資訊頁」與複製", /開啟資訊頁/.test(src) && /writeText\(infoUrl\)/.test(src));
+  check("列表註記與欄位說明都講明資訊頁是公開頁、含連結與密碼（別讓管理員以為沒露）",
+    /公開頁，含會議連結與密碼/.test(src) && /完整顯示在公開的「活動資訊頁」/.test(src) && !/會自動隱藏/.test(src));
 }
 
 console.log(`\n${fail === 0 ? "🎉" : "💥"} 通過 ${pass}／${pass + fail}`);
