@@ -34,3 +34,32 @@ body {
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "PingFang TC", "Microsoft JhengHei", sans-serif;
 }
+
+/* 院長乾貨區匯入文章（Gutenberg HTML 經 sanitizeArticleHtml 後）的排版 */
+.article-html { line-height: 1.85; color: #374151; overflow-wrap: anywhere; }
+.article-html p { margin: 0 0 1em; }
+.article-html h2 { font-size: 1.5rem; font-weight: 700; margin: 1.6em 0 0.6em; color: #111827; }
+.article-html h3 { font-size: 1.25rem; font-weight: 700; margin: 1.4em 0 0.5em; color: #111827; }
+.article-html h4 { font-size: 1.1rem; font-weight: 700; margin: 1.2em 0 0.4em; }
+.article-html a { color: #4f46e5; text-decoration: underline; }
+.article-html strong { font-weight: 700; color: #111827; }
+.article-html ul { list-style: disc; padding-left: 1.5em; margin: 0 0 1em; }
+.article-html ol { list-style: decimal; padding-left: 1.5em; margin: 0 0 1em; }
+.article-html li { margin: 0.25em 0; }
+.article-html blockquote { border-left: 4px solid #c7d2fe; padding-left: 1em; margin: 1em 0; color: #4b5563; }
+.article-html hr { border: 0; border-top: 1px solid #e5e7eb; margin: 2em 0; }
+.article-html img { max-width: 100%; height: auto; border-radius: 0.75rem; }
+.article-html figure { margin: 1.25em 0; }
+.article-html figcaption { font-size: 0.85rem; color: #6b7280; text-align: center; margin-top: 0.4em; }
+.article-html .wp-block-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+@media (min-width: 640px) { .article-html .wp-block-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.article-html .wp-block-gallery figure { margin: 0; }
+.article-html .wp-block-gallery img { width: 100%; }
+.article-html iframe { max-width: 100%; border: 0; }
+.article-html .wp-block-embed iframe,
+.article-html .wp-block-embed__wrapper iframe { width: 100%; aspect-ratio: 16 / 9; height: auto; border-radius: 0.75rem; }
+.article-html audio { width: 100%; margin: 0.5em 0 1em; }
+.article-html table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin: 1em 0; }
+.article-html th, .article-html td { border: 1px solid #e5e7eb; padding: 0.45em 0.6em; vertical-align: top; }
+.article-html th { background: #f9fafb; font-weight: 700; }
+.article-html pre { background: #f3f4f6; padding: 1em; border-radius: 0.5rem; overflow-x: auto; font-size: 0.9em; }

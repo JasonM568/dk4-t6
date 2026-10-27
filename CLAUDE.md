@@ -99,7 +99,7 @@ Supabase 專案 qubjpayeopvscrgrvrci（hope 站與 course 站共用）
 0. P1–P3 約 25 項安全/邏輯 bug（越權改密碼、結帳冪等、免費課 total=0、open redirect 等）
 1. 場次報名接金流（票種 → UPP 建單 → 付款成功自動轉入正式名單）
 2. hope 站 Confirm email 回歸測試（開關是專案層級，已影響 hope 站）
-3. 三分頁（量子講師群 / 知識專區 / 講座邀約）補正式內容
+3. 「講座邀約」分頁補正式內容（量子講師群／關於我們／學員見證／院長乾貨區 已於 2026-10-28 從舊官網複刻）
 
 ## 常用指令
 
@@ -112,6 +112,8 @@ npx tsx scripts/test-ezpay-invoice.ts # 驗 ezPay 發票加密/CheckCode/稅額 
 npx tsx scripts/check-webinar-mail-refactor.ts # 講座索取信組裝 6 項：預覽與實際寄信同一條路徑（離線）
 npx tsx scripts/test-purchase-flow.ts # 付款 webhook 端到端（需 dev server）
 npx tsx scripts/reset-testuser.ts     # 重置測試會員
+npx tsx --conditions=react-server scripts/import-wp-knowledge.ts --dir <資料夾> [--apply] [--allow-remote]  # 舊官網院長乾貨區匯入（預設 dry-run；資料夾由 ego 瀏覽器登入 wp-admin 抓 REST API，見 docs/worklogs/2026-10-28-舊官網五頁複刻.md）
+npx tsx --conditions=react-server scripts/upload-site-images.ts <圖片資料夾>  # 關於我們／講師群靜態圖上傳 Storage（course-assets/site/）
 pnpm check:actions                    # 檢查 "use server" 檔案的匯出（build 也會跑）
 
 # 以下會寫入資料庫，只能對本機 localhost 跑
@@ -132,6 +134,7 @@ npx tsx scripts/test-single-enroll-form.ts                              # 「單
 npx tsx scripts/test-wealth5-check.ts                                   # 五種財富檢測（/check/wealth5）離線契約 91 項（計分 T1–T6＋TS/JS 兩實作隨機 300 組一致／HTML 零外部資源與蜜罐／名單驗證／報告信／路由）
 npx tsx scripts/test-lead-capture-form.ts                               # 問卷必填題瀏覽器提示 6 項（radio／textarea；複選維持伺服端驗證）
 npx tsx scripts/test-webinar-info-page.ts                               # 活動資訊頁（/webinar/<slug>/info）31 項（公開頁完整顯示會議資訊：進會議按鈕與信同一條連結、網址只放行 http(s)、素材索取頁不給、ID／密碼不重複列；joinUrl 只在寄出時回、蜜罐與素材索取不帶；成功畫面兩顆按鈕；後台註記是公開頁）
+npx tsx scripts/test-site-pages-clone.ts                                # 舊官網五頁複刻 55 項（匯入 HTML 消毒白名單／匯入轉換分類與可見性／四頁開關與註冊／CSP／見證 iframe／唯一 dangerouslySetInnerHTML）
 npx tsx scripts/test-webinar-csv.ts                                     # 名單收集 CSV 跳脫／BOM／被擋下欄 24 項
 npx tsx scripts/test-lead-capture-mail.ts                               # 素材清單信件渲染 25 項（既有講座頁零變化是回歸線）
 npx tsx scripts/test-webinar-survey.ts                                  # 問卷驗證 27 項（必填／選項竄改／題數上限／快照）
@@ -180,8 +183,20 @@ src/app/live/                 學員憑上課碼索取 Zoom 連結
 src/actions/student-history.ts 學員記錄卡匯入（upsertStudent：姓名不同＝不同人，絕不併卡）
 src/lib/student-course.ts     標準課程 kind/level 標籤（課名歸戶）
 src/lib/student-segment.ts    分眾圈人查詢（上過 X 未上過 Y → MailGroup 快照）
+src/lib/site-pages.ts         前台分頁註冊表（about／lecturers／knowledge／testimonials／speaking…，後台分頁管理只控開關）
+src/lib/site-content/         關於我們／講師群／學員見證的文案與圖片網址（舊官網複刻，單一來源）
+src/lib/article-html.ts       匯入文章 HTML 白名單消毒（全專案唯一允許 dangerouslySetInnerHTML 的入口是 components/article-html.tsx）
+src/lib/knowledge-categories.ts 院長乾貨區六個分類（文章以 tags 存分類名稱）
 prisma/schema.prisma          資料模型（course schema only）
 ```
+
+## 院長乾貨區（/knowledge，舊官網 academy4hope.com 複刻）
+
+- 2,168 篇由舊站 WordPress 匯入（`scripts/import-wp-knowledge.ts`，以 `wpId` 冪等 upsert）；內文存 `contentHtml`（原始 Gutenberg HTML），
+  渲染一律過 `sanitizeArticleHtml`；平台自己寫的文章仍走 `content`＋RichText
+- 分類＝`tags` 裡的分類名稱（新聞速報／財經快報／全球財經／顧名思易／晨間小語／搶先試看）；只有搶先試看樹是 PUBLIC，其餘 SUBSCRIBER
+- 文章內 3.5 萬張圖與音訊仍連舊站 CDN（`academy4hope-com.sfo3.cdn.digitaloceanspaces.com`，約 9.3GB，未複製）；Podcast／YouTube 用 iframe
+- 後台「知識專欄」列表只取最近 100 篇且不帶 HTML；匯入文章在後台不可改內文（改舊站重跑匯入）
 
 ## 學員資料庫（/admin/students）
 

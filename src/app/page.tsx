@@ -5,12 +5,13 @@ import { TIER_SYSTEM_ENABLED } from "@/lib/membership/tier";
 import { publicCourseWhere } from "@/lib/course-access";
 import { isPageEnabled } from "@/lib/site-pages";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { ChancellorIntro } from "@/components/chancellor-intro";
 
 // 自動下架是時間觸發，沒有管理員操作可觸發 revalidate；首頁需即時判斷。
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [courses, webinars, corporateEnabled] = await Promise.all([
+  const [courses, webinars, corporateEnabled, aboutEnabled] = await Promise.all([
     prisma.course.findMany({
       where: publicCourseWhere(),
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -32,6 +33,7 @@ export default async function HomePage() {
     }),
     // 企業包班區塊跟 /corporate 分頁共用開關（後台「分頁管理」）
     isPageEnabled("corporate"),
+    isPageEnabled("about"),
   ]);
 
   // 舊講座以 endDate（隔天起下架）相容；新講座可設定精確的 unpublishAt。
@@ -152,6 +154,14 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* 院長介紹（照舊官網首頁；關閉「關於我們」分頁時整段隱藏） */}
+      {aboutEnabled && (
+        <section className="mx-auto max-w-6xl px-4 py-12">
+          <h2 className="mb-6 text-center text-2xl font-bold">院長介紹</h2>
+          <ChancellorIntro compact />
+        </section>
+      )}
 
       {/* 企業包班 CTA（關閉「企業包班」分頁時整段隱藏） */}
       {corporateEnabled && (

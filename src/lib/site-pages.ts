@@ -3,8 +3,11 @@ import { prisma } from "@/lib/db";
 // 前台導覽分頁註冊表：頁面本體寫死在程式，後台只控制開/關。
 // 開關存 SiteSetting（key = page:<key>，value = "on"/"off"），無資料列視為開啟。
 export const SITE_PAGES = [
+  // 2026-10-28 從舊官網 academy4hope.com 複刻：關於我們／量子講師群／院長乾貨區／學員見證
+  { key: "about", path: "/about", title: "關於我們" },
   { key: "lecturers", path: "/lecturers", title: "量子講師群" },
-  { key: "knowledge", path: "/knowledge", title: "知識專區" },
+  { key: "knowledge", path: "/knowledge", title: "院長乾貨區" },
+  { key: "testimonials", path: "/testimonials", title: "學員見證" },
   { key: "speaking", path: "/speaking", title: "講座邀約" },
   { key: "corporate", path: "/corporate", title: "企業包班" },
   { key: "shihua", path: "/zone/shihua", title: "世華會學習專區" },

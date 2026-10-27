@@ -25,11 +25,13 @@ const REPORT_ONLY_CSP = [
   "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://connect.facebook.net",
   // 五種財富檢測頁標題用 Noto Serif TC（Google Fonts）
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  `img-src 'self' data: blob: https://${SUPABASE_HOST} https://www.googletagmanager.com https://*.google-analytics.com https://www.facebook.com https://i.ytimg.com`,
+  // 院長乾貨區匯入文章的圖片與音訊仍連舊官網 CDN（DigitalOcean Spaces）
+  `img-src 'self' data: blob: https://${SUPABASE_HOST} https://www.googletagmanager.com https://*.google-analytics.com https://www.facebook.com https://i.ytimg.com https://academy4hope-com.sfo3.cdn.digitaloceanspaces.com https://academy4hope.com`,
   "font-src 'self' data: https://fonts.gstatic.com",
   // 自訂頁短影片：YouTube 走 frame-src；影片檔直連（Supabase）走 media-src
-  `media-src 'self' https://${SUPABASE_HOST}`,
-  "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://docs.google.com https://www.canva.com https://www.googletagmanager.com",
+  `media-src 'self' https://${SUPABASE_HOST} https://academy4hope-com.sfo3.cdn.digitaloceanspaces.com`,
+  // 乾貨區文章：Apple Podcasts／VideoPress 嵌入；學員見證：Instagram reel 嵌入（iframe 版，不載 embed.js）
+  "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://docs.google.com https://www.canva.com https://www.googletagmanager.com https://embed.podcasts.apple.com https://videopress.com https://video.wordpress.com https://www.instagram.com",
   `connect-src 'self' https://${SUPABASE_HOST} https://*.google-analytics.com https://analytics.google.com https://www.googletagmanager.com https://connect.facebook.net https://www.facebook.com`,
   // 結帳表單 POST 到 ECPay（正式/沙箱）
   "form-action 'self' https://payment.ecpay.com.tw https://payment-stage.ecpay.com.tw",

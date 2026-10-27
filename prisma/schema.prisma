@@ -665,6 +665,11 @@ model KnowledgeArticle {
   status      String    @default("DRAFT") // DRAFT | PUBLISHED | UNPUBLISHED
   publishedAt DateTime?
   unpublishAt DateTime?
+  // 舊官網（academy4hope.com 院長乾貨區）匯入：內文保留原始 HTML（圖庫／表格／Podcast／YouTube 嵌入），
+  // 渲染前一律過 src/lib/article-html.ts 的白名單消毒；有 contentHtml 時前台優先用它，content 只當純文字備援。
+  contentHtml String?   @db.Text
+  sourceUrl   String? // 舊站文章網址
+  wpId        Int?      @unique // WordPress post id；匯入腳本靠它冪等
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
