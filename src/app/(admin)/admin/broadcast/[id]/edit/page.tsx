@@ -17,6 +17,7 @@ import {
   broadcastWebinarIds,
 } from "@/lib/email/audience";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { signupState } from "@/lib/session-signup-page";
 
 export const metadata = { title: "編輯群發 — Email群發" };
 
@@ -54,6 +55,13 @@ export default async function BroadcastEditPage({
       select: {
         id: true,
         title: true,
+        eventDate: true,
+        // 工具列「📝 報名頁」要判斷報名是否開放
+        signupSlug: true,
+        isSignupOpen: true,
+        signupOpenAt: true,
+        signupCloseAt: true,
+        endDate: true,
         _count: { select: { signups: { where: { deferredToSessionId: null } } } },
       },
     }),
@@ -62,6 +70,7 @@ export default async function BroadcastEditPage({
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
+        slug: true,
         title: true,
         isActive: true,
         endDate: true,
@@ -107,6 +116,15 @@ export default async function BroadcastEditPage({
       endedAt: (w.endDate ?? w.unpublishAt)?.toISOString() ?? null,
     }))
     .sort((a, b) => Number(a.isEnded) - Number(b.isEnded));
+  // 工具列「📝 報名頁」：只列還開放的——名單收集頁（進行中的講座）＋場次看板的公開報名頁（signupState open）
+  const signupPages = [
+    ...webinars
+      .filter((w) => !webinarOptions.find((o) => o.id === w.id)?.isEnded)
+      .map((w) => ({ path: `/webinar/${w.slug}`, title: w.title, group: "活動報名頁（名單收集）" })),
+    ...sessions
+      .filter((s) => s.signupSlug && signupState({ session: { ...s, signupQuota: null }, taken: 0, now: nowTs }).open)
+      .map((s) => ({ path: `/event/${s.signupSlug}`, title: s.title, group: "場次報名頁（場次看板）" })),
+  ];
 
   const defaults: BroadcastFormDefaults = {
     subject: record.subject,
@@ -161,6 +179,7 @@ export default async function BroadcastEditPage({
         }))}
         webinars={webinarOptions}
         marketingPages={marketingPages}
+        signupPages={signupPages}
         memberCount={memberCount}
         members={profiles
           .filter((p) => p.email)

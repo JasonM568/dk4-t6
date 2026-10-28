@@ -17,6 +17,7 @@ import { isFollowUpFilter } from "@/lib/email/followup";
 import { BROADCAST_PRESETS } from "@/lib/email/presets";
 import { buildClassNoticeEmail } from "@/lib/class-notice";
 import { hasEndedInTaipei } from "@/lib/board-expiry";
+import { signupState } from "@/lib/session-signup-page";
 import { DeleteTemplateButton } from "./delete-template-button";
 
 export const metadata = { title: "Email群發 — 管理後台" };
@@ -138,6 +139,12 @@ export default async function BroadcastPage({
         accessCode: true,
         meetingUrl: true,
         meetingInfo: true,
+        // 工具列「📝 報名頁」要判斷報名是否開放
+        signupSlug: true,
+        isSignupOpen: true,
+        signupOpenAt: true,
+        signupCloseAt: true,
+        endDate: true,
         _count: { select: { signups: { where: { deferredToSessionId: null } } } },
       },
     }),
@@ -148,6 +155,7 @@ export default async function BroadcastPage({
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
+        slug: true,
         title: true,
         isActive: true,
         endDate: true,
@@ -221,6 +229,15 @@ export default async function BroadcastPage({
     }))
     // 進行中的排前面，其餘維持 createdAt desc（新的在上）
     .sort((a, b) => Number(a.isEnded) - Number(b.isEnded));
+  // 工具列「📝 報名頁」：只列還開放的——名單收集頁（進行中的講座）＋場次看板的公開報名頁（signupState open）
+  const signupPages = [
+    ...webinars
+      .filter((w) => !webinarOptions.find((o) => o.id === w.id)?.isEnded)
+      .map((w) => ({ path: `/webinar/${w.slug}`, title: w.title, group: "活動報名頁（名單收集）" })),
+    ...sessions
+      .filter((s) => s.signupSlug && signupState({ session: { ...s, signupQuota: null }, taken: 0, now: nowTs }).open)
+      .map((s) => ({ path: `/event/${s.signupSlug}`, title: s.title, group: "場次報名頁（場次看板）" })),
+  ];
 
   // 從場次看板「發課前通知」進來：勾好場次、填好主旨與內文，
   // 並預設標為履約通知（課前通知本來就是——退訂電子報的學員仍該收到）。
@@ -377,6 +394,7 @@ export default async function BroadcastPage({
         sessions={sessionOptions}
         webinars={webinarOptions}
         marketingPages={marketingPages}
+        signupPages={signupPages}
         memberCount={memberCount}
         members={memberOptions}
         sendAction={sendBroadcastAction}

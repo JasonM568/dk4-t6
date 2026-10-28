@@ -97,6 +97,8 @@ type BroadcastFormProps = {
   webinars: WebinarOption[];
   /** 已發佈的行銷頁（/p/<slug>）：工具列「插入行銷頁」下拉用 */
   marketingPages: { slug: string; title: string }[];
+  /** 進行中的報名頁（名單收集 /webinar/<slug>、場次看板 /event/<signupSlug>）：同一個下拉分組列出，插入「立即報名」按鈕 */
+  signupPages?: { path: string; title: string; group: string }[];
   memberCount: number;
   members: MemberOption[]; // 會員清單（「選取會員」勾選用）
   sendAction: (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
@@ -112,6 +114,7 @@ export function BroadcastForm({
   sessions,
   webinars,
   marketingPages,
+  signupPages = [],
   memberCount,
   members,
   sendAction,
@@ -475,29 +478,50 @@ export function BroadcastForm({
               >
                 {uploadingImg ? "上傳中…" : "🖼️ 圖片"}
               </button>
-              {/* 行銷頁下拉：選一頁就插好 CTA 按鈕，不用自己去複製 /p/<slug> 網址 */}
-              {marketingPages.length > 0 && (
+              {/* 行銷頁／報名頁下拉：選一頁就插好 CTA 按鈕，不用自己去複製網址。
+                  value 用 p:<slug> 與 e:<path> 區分，行銷頁與報名頁撞名也不會插錯 */}
+              {(marketingPages.length > 0 || signupPages.length > 0) && (
                 <select
                   value=""
                   onChange={(e) => {
-                    const page = marketingPages.find((p) => p.slug === e.target.value);
-                    if (!page) return;
+                    const v = e.target.value;
                     const base =
                       process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
-                    insertSnippet(
-                      `\n\n[▶ ${page.title}](${base}/p/${page.slug})\n\n`,
-                      [3, 3 + page.title.length + 2],
-                    );
+                    if (v.startsWith("p:")) {
+                      const page = marketingPages.find((p) => p.slug === v.slice(2));
+                      if (page) insertSnippet(`\n\n[▶ ${page.title}](${base}/p/${page.slug})\n\n`, [3, 3 + page.title.length + 2]);
+                    } else if (v.startsWith("e:")) {
+                      const page = signupPages.find((p) => p.path === v.slice(2));
+                      if (page) {
+                        const label = `立即報名：${page.title}`;
+                        insertSnippet(`\n\n[${label}](${base}${page.path})\n\n`, [3, 3 + label.length]);
+                      }
+                    }
                     e.target.value = "";
                   }}
-                  title="插入行銷頁連結（短影片頁／落地頁）"
+                  title="插入行銷頁或報名頁的按鈕連結"
                   className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
                 >
-                  <option value="">🎬 行銷頁</option>
-                  {marketingPages.map((p) => (
-                    <option key={p.slug} value={p.slug}>
-                      {p.title}
-                    </option>
+                  <option value="">🎬 行銷頁／📝 報名頁</option>
+                  {marketingPages.length > 0 && (
+                    <optgroup label="行銷頁（/p/）">
+                      {marketingPages.map((p) => (
+                        <option key={`p:${p.slug}`} value={`p:${p.slug}`}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {Array.from(new Set(signupPages.map((p) => p.group))).map((group) => (
+                    <optgroup key={group} label={group}>
+                      {signupPages
+                        .filter((p) => p.group === group)
+                        .map((p) => (
+                          <option key={`e:${p.path}`} value={`e:${p.path}`}>
+                            {p.title}
+                          </option>
+                        ))}
+                    </optgroup>
                   ))}
                 </select>
               )}
