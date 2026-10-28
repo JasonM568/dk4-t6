@@ -17,5 +17,5 @@ export default async function KnowledgeSettingsPage() {
     }),
     prisma.knowledgeArticle.count(),
   ]);
-  return <div className="max-w-3xl"><Link href="/admin/settings" className="text-sm text-indigo-600 hover:underline">← 分頁管理</Link><h1 className="mt-3 text-2xl font-bold">院長乾貨區</h1><p className="mb-6 mt-1 text-sm text-gray-500">文章會出現在前台「院長乾貨區」；設定為訂閱限定時，只有具任一訂閱專區會籍的會員可以閱讀。標籤填分類名稱（新聞速報／財經快報／全球財經／顧名思易／晨間小語／搶先試看）前台才會歸到對應頁籤。共 {total} 篇，這裡列最近更新的 {articles.length} 篇。</p><KnowledgeManager articles={articles.map(({ wpId, sourceUrl, ...article }) => ({ ...article, imported: wpId !== null, sourceUrl, publishedAt: article.publishedAt?.toISOString() ?? null, unpublishAt: article.unpublishAt?.toISOString() ?? null }))} /></div>;
+  return <div className="max-w-3xl"><Link href="/admin/settings" className="text-sm text-indigo-600 hover:underline">← 分頁管理</Link><h1 className="mt-3 text-2xl font-bold">院長乾貨區</h1><p className="mb-6 mt-1 text-sm text-gray-500">文章會出現在前台「院長乾貨區」；設定為訂閱限定時，只有具任一訂閱專區會籍的會員可以閱讀。標籤填分類名稱（財經快報／全球財經／顧名思易／晨間小語／搶先試看）前台才會歸到對應頁籤。共 {total} 篇，這裡列最近更新的 {articles.length} 篇。</p><KnowledgeManager articles={articles.map(({ wpId, sourceUrl, ...article }) => ({ ...article, imported: wpId !== null, sourceUrl, publishedAt: article.publishedAt?.toISOString() ?? null, unpublishAt: article.unpublishAt?.toISOString() ?? null }))} /></div>;
 }

@@ -51,7 +51,7 @@ export default async function KnowledgePage({ searchParams }: { searchParams: Pr
   return (
     <SitePageShell
       title="院長乾貨區"
-      subtitle="顧院長每日整理的新聞速報、財經快報、全球財經與晨間小語，課堂之外持續累積你的知識存摺。"
+      subtitle="顧院長每日整理的財經快報、全球財經、顧名思易與晨間小語，課堂之外持續累積你的知識存摺。"
     >
       <nav className="mb-6 flex flex-wrap gap-2" aria-label="分類">
         <Link href="/knowledge" className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${!category ? "bg-black text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}>全部</Link>

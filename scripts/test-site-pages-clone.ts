@@ -18,7 +18,8 @@ import { SITE_PAGES } from "../src/lib/site-pages";
 import { TESTIMONIAL_REELS, reelEmbedUrl } from "../src/lib/site-content/testimonials";
 import { LECTURER_CARDS, LECTURERS_GROUP_IMAGE } from "../src/lib/site-content/lecturers";
 import { ABOUT_FEATURES, CHANCELLOR } from "../src/lib/site-content/about";
-import { convertPost } from "./import-wp-knowledge";
+import { EXCLUDED_WP_CATEGORY_IDS, OLD_CDN_HOST, collectMediaUrls, convertPost, loadExport, rewriteMediaUrls, storageKeyFor } from "./import-wp-knowledge";
+import os from "node:os";
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -57,13 +58,13 @@ console.log("\nB. 匯入轉換 convertPost");
 {
   const media = new Map([[9, { id: 9, source_url: "https://cdn.test/cover.webp" }]]);
   const base = { date: "2026-10-27T09:28:00", date_gmt: "2026-10-27T01:28:00", modified_gmt: "2026-10-27T01:28:00", slug: "x", status: "publish", link: "https://academy4hope.com/57779/", excerpt: { rendered: "" }, featured_media: 9 };
-  const sub = convertPost({ ...base, id: 57779, title: { rendered: "【新聞速報】2026/10/27" }, content: { rendered: `<figure class="wp-block-gallery"><img src="https://cdn.test/1.webp"/></figure>` }, categories: [22, 31, 23] }, media);
+  const sub = convertPost({ ...base, id: 57779, title: { rendered: "【財經快報】2026/10/27" }, content: { rendered: `<figure class="wp-block-gallery"><img src="https://cdn.test/1.webp"/></figure>` }, categories: [22, 32, 23] }, media);
   check("slug = wp-<id>、wpId、sourceUrl", sub.slug === "wp-57779" && sub.wpId === 57779 && sub.sourceUrl === "https://academy4hope.com/57779/");
-  check("WP 分類 31 → tags ['新聞速報']", JSON.stringify(sub.tags) === JSON.stringify(["新聞速報"]));
+  check("WP 分類 32 → tags ['財經快報']", JSON.stringify(sub.tags) === JSON.stringify(["財經快報"]));
   check("非試看 → SUBSCRIBER + PUBLISHED", sub.visibility === "SUBSCRIBER" && sub.status === "PUBLISHED");
   check("封面由 media 對應", sub.coverImage === "https://cdn.test/cover.webp");
   check("publishedAt 以 date_gmt 當 UTC", sub.publishedAt.toISOString() === "2026-10-27T01:28:00.000Z");
-  check("只有圖的文章摘要有替代文字、content 不為空", sub.summary.includes("新聞速報") && sub.content.length > 0);
+  check("只有圖的文章摘要有替代文字、content 不為空", sub.summary.includes("財經快報") && sub.content.length > 0);
   check("contentHtml 已消毒且保留圖庫", /wp-block-gallery/.test(sub.contentHtml) && /loading="lazy"/.test(sub.contentHtml));
   const long = "字".repeat(300);
   const free = convertPost({ ...base, id: 2, featured_media: 0, title: { rendered: "【晨間小語】行動方程式 &#8217;" }, content: { rendered: `<p>${long}</p>` }, categories: [38, 40] }, media);
@@ -77,9 +78,41 @@ console.log("\nB. 匯入轉換 convertPost");
   check("沒封面 → null", free.coverImage === null);
   const none = convertPost({ ...base, id: 3, title: { rendered: "沒有分類的文章" }, content: { rendered: "<p>x</p>" }, categories: [22, 1] }, media);
   check("分類判不出來 → tags 空（只在「全部」出現，不誤歸類）", none.tags.length === 0);
-  check("categoryNameFromTitle 只認六個分類", categoryNameFromTitle("【財經快報】x") === "財經快報" && categoryNameFromTitle("【隨便】x") === null && categoryNameFromTitle("x") === null);
+  check("categoryNameFromTitle 只認五個分類（新聞速報不搬，標題也不歸類）", categoryNameFromTitle("【財經快報】x") === "財經快報" && categoryNameFromTitle("【新聞速報】x") === null && categoryNameFromTitle("【隨便】x") === null && categoryNameFromTitle("x") === null);
   check("knowledgeCategoryBySlug", knowledgeCategoryBySlug("morning")?.name === "晨間小語" && knowledgeCategoryBySlug("nope") === null && knowledgeCategoryBySlug(undefined) === null);
-  check("六個分類 slug 不重複", new Set(KNOWLEDGE_CATEGORIES.map((c) => c.slug)).size === 6);
+  check("五個分類 slug 不重複、沒有 news", new Set(KNOWLEDGE_CATEGORIES.map((c) => c.slug)).size === 5 && !(KNOWLEDGE_CATEGORIES as readonly { slug: string; name: string }[]).some((c) => c.slug === "news" || c.name === "新聞速報"));
+}
+
+console.log("\nB2. 排除新聞速報＋媒體鏡像對照表");
+{
+  const cdn = `https://${OLD_CDN_HOST}/wp-content/uploads/2026/05/a.webp`;
+  const cdnFull = `https://${OLD_CDN_HOST}/wp-content/uploads/2026/05/a-full.jpg`;
+  const mp3 = `https://${OLD_CDN_HOST}/wp-content/uploads/2026/05/x.mp3`;
+  const media = new Map([[9, { id: 9, source_url: `https://${OLD_CDN_HOST}/wp-content/uploads/2026/05/cover.webp` }]]);
+  const base = { date: "2026-10-27T09:28:00", date_gmt: "2026-10-27T01:28:00", slug: "x", status: "publish", link: "https://academy4hope.com/1/", excerpt: { rendered: "" }, featured_media: 9, title: { rendered: "【全球財經】x" } };
+  const html = `<a href="${cdnFull}"><img src="${cdn}"/></a><audio src="${mp3}"></audio><img src="http://other.test/b.png"/><a href="https://academy4hope.com/123/">文</a><img src="data:image/png;base64,AAAA"/>`;
+  const post = { ...base, id: 1, content: { rendered: html }, categories: [22, 30] };
+  check("EXCLUDED_WP_CATEGORY_IDS 只排 31 新聞速報", EXCLUDED_WP_CATEGORY_IDS.size === 1 && EXCLUDED_WP_CATEGORY_IDS.has(31));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wp-export-"));
+  fs.mkdirSync(path.join(dir, "posts"));
+  fs.writeFileSync(path.join(dir, "posts", "p.json"), JSON.stringify([post, { ...post, id: 2, categories: [22, 31, 23] }, { ...post, id: 3, status: "draft" }]));
+  fs.writeFileSync(path.join(dir, "media.json"), JSON.stringify([...media.values()]));
+  const loaded = loadExport(dir);
+  check("loadExport 丟掉分類 31 與草稿，excluded 帶原文章供刪除", loaded.posts.size === 1 && loaded.posts.has(1) && loaded.excluded.length === 1 && loaded.excluded[0].id === 2 && loaded.mediaMap === null);
+  const urls = collectMediaUrls(post, media);
+  check("collectMediaUrls：img／audio src＋封面＋CDN 燈箱原檔，不收 data: 與文章連結", urls.length === 5 && [cdn, cdnFull, mp3, "http://other.test/b.png", media.get(9)!.source_url].every((u) => urls.includes(u)), JSON.stringify(urls));
+  const map = new Map([[cdn, "https://s.test/a.webp"], [cdnFull, "https://s.test/a-full.jpg"], [mp3, "https://s.test/x.mp3"], [media.get(9)!.source_url, "https://s.test/cover.webp"]]);
+  const rewritten = rewriteMediaUrls(html, map);
+  check("rewriteMediaUrls 整段網址替換，沒對照的原樣保留", rewritten.includes(`src="https://s.test/a.webp"`) && rewritten.includes(`href="https://s.test/a-full.jpg"`) && rewritten.includes(`src="https://s.test/x.mp3"`) && rewritten.includes("http://other.test/b.png") && rewritten.includes("https://academy4hope.com/123/"));
+  check("rewriteMediaUrls 沒有對照表時原樣回傳", rewriteMediaUrls(html, null) === html && rewriteMediaUrls(html, new Map()) === html);
+  fs.writeFileSync(path.join(dir, "media-map.json"), JSON.stringify(Object.fromEntries(map)));
+  const withMap = loadExport(dir);
+  const conv = convertPost(post, media, withMap.mediaMap);
+  check("convertPost 吃對照表：內文與封面都改成 Storage 網址、不再含舊站 CDN", withMap.mediaMap?.size === 4 && conv.coverImage === "https://s.test/cover.webp" && !conv.contentHtml.includes(OLD_CDN_HOST) && conv.contentHtml.includes("https://s.test/a.webp"), conv.contentHtml);
+  check("沒對照表時封面維持原網址", convertPost(post, media).coverImage === media.get(9)!.source_url);
+  check("storageKeyFor：CDN uploads 路徑照搬到 knowledge/wp/，其他主機或穿越路徑走 sha1", storageKeyFor(cdn, "webp") === "knowledge/wp/2026/05/a.webp" && /^knowledge\/wp\/ext\/[0-9a-f]{40}\.png$/.test(storageKeyFor("http://other.test/b.png", "png")) && /^knowledge\/wp\/ext\//.test(storageKeyFor(`https://${OLD_CDN_HOST}/wp-content/uploads/../x.webp`, "webp")) && /^knowledge\/wp\/ext\//.test(storageKeyFor(`https://${OLD_CDN_HOST}/wp-content/uploads/2026/%E4%B8%AD.webp`, "webp")));
+  check("匯入 --apply 會刪掉先前匯入的排除分類文章", /deleteMany\(\{ where: \{ wpId: \{ in: excluded\.map/.test(fs.readFileSync("scripts/import-wp-knowledge.ts", "utf8")));
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 console.log("\nC. 頁面與註冊表");
