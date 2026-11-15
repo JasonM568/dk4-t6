@@ -20,6 +20,8 @@ import { SubmitButton } from "@/components/admin/submit-button";
 import { createClient } from "@/lib/supabase/client";
 import { applyMergeTags, buildContentHtml } from "@/lib/email/render-content";
 import { inspectBroadcastDraft } from "@/lib/email/preflight";
+import { EdmEditor, type EdmEditorHandle } from "./edm-editor";
+import { BODY_FORMAT, readBodyContent, serializeBodyContent, type BodyContent } from "@/lib/email/body-content";
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -131,7 +133,7 @@ export function BroadcastForm({
     if (state?.success) setRequestKey(crypto.randomUUID());
   }, [state]);
   const formRef = useRef<HTMLFormElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<EdmEditorHandle>(null);
   const tplNameRef = useRef<HTMLInputElement>(null);
   const [audience, setAudience] = useState<
     "all" | "group" | "session" | "webinar" | "manual" | "members"
@@ -278,69 +280,18 @@ export function BroadcastForm({
     };
   }, [audience, pickedWebinars, webinarPreviewKey]);
 
-  // 即時預覽：textarea 維持非受控（避免受控輸入的游標問題），
-  // 另存一份鏡像 state 供預覽渲染；程式插入語法後手動同步
-  const [bodyText, setBodyText] = useState(defaultValues?.body ?? "");
+  const initialBody = readBodyContent(defaultValues?.body ?? "");
+  const legacyBody = initialBody.kind === "legacy" && !!initialBody.text.trim();
+  const invalidBody = initialBody.kind === "invalid";
+  const emptyContent: BodyContent = { format: BODY_FORMAT, version: 1, blocks: [{ type: "paragraph", content: [] }] };
+  const [bodyText, setBodyText] = useState(defaultValues?.body ?? serializeBodyContent(emptyContent));
+  const [uploadsReady, setUploadsReady] = useState(true);
+  const [contentError, setContentError] = useState("");
   const [subjectText, setSubjectText] = useState(defaultValues?.subject ?? "");
   const preflight = inspectBroadcastDraft({ subject: subjectText, body: bodyText });
   const [showPreview, setShowPreview] = useState(initialPreview);
-  const [uploadingImg, setUploadingImg] = useState(false);
-  const [imgError, setImgError] = useState("");
   const imgInputRef = useRef<HTMLInputElement>(null);
-
-  // 把片段插入內文游標處（textarea 為非受控，直接改 value 即可送出）；
-  // selInner=true 時選取片段中第一組「佔位文字」讓使用者直接打字取代
-  const insertSnippet = (snippet: string, selectRange?: [number, number]) => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-    el.value = el.value.slice(0, start) + snippet + el.value.slice(end);
-    el.focus();
-    if (selectRange) {
-      el.setSelectionRange(start + selectRange[0], start + selectRange[1]);
-    } else {
-      const pos = start + snippet.length;
-      el.setSelectionRange(pos, pos);
-    }
-    setBodyText(el.value);
-  };
-  const insertVar = (token: string) => insertSnippet(token);
-
-  // 粗體：有選取文字就直接包 **…**，沒有就插佔位字並選取，打字即取代
-  const wrapBold = () => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? 0;
-    if (end > start) {
-      const sel = el.value.slice(start, end);
-      el.value = `${el.value.slice(0, start)}**${sel}**${el.value.slice(end)}`;
-      el.focus();
-      el.setSelectionRange(end + 4, end + 4);
-      setBodyText(el.value);
-    } else {
-      insertSnippet("**粗體文字**", [2, 6]);
-    }
-  };
-
-  const pickImage = () => {
-    setImgError("");
-    imgInputRef.current?.click();
-  };
-  const onImagePicked = async (file: File | null) => {
-    if (!file) return;
-    setUploadingImg(true);
-    setImgError("");
-    const result = await uploadBodyImage(file);
-    setUploadingImg(false);
-    if (imgInputRef.current) imgInputRef.current.value = "";
-    if (!result.ok) {
-      setImgError(result.error);
-      return;
-    }
-    insertSnippet(`\n\n![圖片說明](${result.url})\n\n`);
-  };
+  const insertVar = (token: string) => editorRef.current?.insertVariable(token);
 
   const audienceDesc = () => {
     if (followUp)
@@ -384,7 +335,7 @@ export function BroadcastForm({
 
   return (
     <>
-      <form ref={formRef} action={formAction} className="space-y-4">
+      <form ref={formRef} action={formAction} onSubmit={(event) => { if (!uploadsReady || contentError || invalidBody) event.preventDefault(); }} className="space-y-4">
         <input type="hidden" name="requestKey" value={requestKey} />
         <div>
           <label className="mb-1 block text-sm font-medium">主旨</label>
@@ -402,6 +353,7 @@ export function BroadcastForm({
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <label className="block text-sm font-medium">內文</label>
             <div className="flex flex-wrap items-center gap-1.5">
+              {!legacyBody && !invalidBody && <>
               <button
                 type="button"
                 onClick={() => insertVar("{email}")}
@@ -437,7 +389,7 @@ export function BroadcastForm({
               <span className="mx-0.5 h-4 w-px bg-gray-300" aria-hidden />
               <button
                 type="button"
-                onClick={wrapBold}
+                onClick={() => editorRef.current?.toggleBold()}
                 title="粗體：選取文字後點擊，或點擊後直接輸入"
                 className="rounded border border-gray-300 px-2 py-0.5 text-xs font-bold hover:bg-gray-50"
               >
@@ -445,7 +397,7 @@ export function BroadcastForm({
               </button>
               <button
                 type="button"
-                onClick={() => insertSnippet("\n\n## 標題文字\n\n", [4, 8])}
+                onClick={() => editorRef.current?.insertHeading()}
                 title="插入標題（一行大字）"
                 className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
               >
@@ -453,7 +405,7 @@ export function BroadcastForm({
               </button>
               <button
                 type="button"
-                onClick={() => insertSnippet("\n\n---\n\n")}
+                onClick={() => editorRef.current?.insertDivider()}
                 title="插入分隔線"
                 className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
               >
@@ -461,9 +413,7 @@ export function BroadcastForm({
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  insertSnippet("\n\n[按鈕文字](https://網址)\n\n", [3, 7])
-                }
+                onClick={() => editorRef.current?.insertButton()}
                 title="插入紅色 CTA 按鈕"
                 className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
               >
@@ -471,12 +421,11 @@ export function BroadcastForm({
               </button>
               <button
                 type="button"
-                onClick={pickImage}
-                disabled={uploadingImg}
+                onClick={() => imgInputRef.current?.click()}
                 title="上傳圖片並插入內文（JPG/PNG/WebP/GIF，5MB 內）"
                 className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 disabled:opacity-50"
               >
-                {uploadingImg ? "上傳中…" : "🖼️ 圖片"}
+                🖼️ 圖片
               </button>
               {/* 行銷頁／報名頁下拉：選一頁就插好 CTA 按鈕，不用自己去複製網址。
                   value 用 p:<slug> 與 e:<path> 區分，行銷頁與報名頁撞名也不會插錯 */}
@@ -489,12 +438,12 @@ export function BroadcastForm({
                       process.env.NEXT_PUBLIC_BASE_URL ?? "https://course.huangxi.info";
                     if (v.startsWith("p:")) {
                       const page = marketingPages.find((p) => p.slug === v.slice(2));
-                      if (page) insertSnippet(`\n\n[▶ ${page.title}](${base}/p/${page.slug})\n\n`, [3, 3 + page.title.length + 2]);
+                      if (page) editorRef.current?.insertButton(`▶ ${page.title}`, `${base}/p/${page.slug}`);
                     } else if (v.startsWith("e:")) {
                       const page = signupPages.find((p) => p.path === v.slice(2));
                       if (page) {
                         const label = `立即報名：${page.title}`;
-                        insertSnippet(`\n\n[${label}](${base}${page.path})\n\n`, [3, 3 + label.length]);
+                        editorRef.current?.insertButton(label, `${base}${page.path}`);
                       }
                     }
                     e.target.value = "";
@@ -525,6 +474,7 @@ export function BroadcastForm({
                   ))}
                 </select>
               )}
+              </>}
               <button
                 type="button"
                 onClick={() => setShowPreview((v) => !v)}
@@ -541,23 +491,15 @@ export function BroadcastForm({
           <input
             ref={imgInputRef}
             type="file"
+            multiple
             accept={ALLOWED_IMAGE_TYPES.join(",")}
             className="hidden"
-            onChange={(e) => onImagePicked(e.target.files?.[0] ?? null)}
+            onChange={(e) => { editorRef.current?.insertFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }}
           />
-          <textarea
-            ref={bodyRef}
-            name="body"
-            required
-            defaultValue={defaultValues?.body}
-            onChange={(e) => setBodyText(e.target.value)}
-            rows={8}
-            placeholder={"親愛的學員您好：\n\n希望學院推出新課程⋯⋯\n\n您的帳號：{email}\n預設密碼：a12345\n\n（空一行 = 分段）"}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-black focus:outline-none"
-          />
-          {imgError && (
-            <p className="mt-1 text-xs text-red-600">🖼️ {imgError}</p>
-          )}
+          {invalidBody ? <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">這份 EDM 內容格式或版本無法讀取，請先修復原始資料，避免覆寫。</p> : legacyBody ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3"><p className="mb-2 text-sm text-amber-900">舊格式內文以唯讀方式保留。建立新郵件可使用視覺化編輯器。</p><pre className="whitespace-pre-wrap text-sm">{bodyText}</pre></div> : <EdmEditor ref={editorRef} initial={initialBody.kind === "structured" ? initialBody.content : emptyContent} upload={uploadBodyImage} onChange={(content, ready) => { setUploadsReady(ready); if (!ready) return; try { setBodyText(serializeBodyContent(content)); setContentError(""); } catch { setContentError("請檢查圖片、按鈕網址與圖說後再送出"); } }} />}
+          <input type="hidden" name="body" value={bodyText} />
+          {!uploadsReady && <p className="mt-1 text-xs text-amber-700">圖片尚未全部完成上傳；請重試失敗項目後再寄送。</p>}
+          {contentError && <p className="mt-1 text-xs text-red-700">{contentError}</p>}
           {(preflight.errors.length > 0 || preflight.warnings.length > 0) && (
             <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
               <p className="mb-1 font-medium text-gray-700">寄送前檢查</p>
@@ -602,7 +544,7 @@ export function BroadcastForm({
             </div>
           )}
           <p className="mt-1 text-xs text-gray-400">
-            純文字即可，空一行會自動分段；信件會套用希望學院品牌版型（紅底 LOGO 頁首＋金邊卡片）。
+            {legacyBody ? "舊格式內文以原樣寄送。" : "可直接在編輯區排版，拖放或貼上多張圖片；圖片可設定寬度、對齊與圖說。"}信件會套用希望學院品牌版型（紅底 LOGO 頁首＋金邊卡片）。
             <br />
             可用變數：<span className="font-mono">{"{email}"}</span>＝收件人 email、
             <span className="font-mono">{"{name}"}</span>＝姓名、
@@ -614,12 +556,7 @@ export function BroadcastForm({
             用了這個變數但有人沒填連結會擋下不寄）。
             寄出時自動帶入每位收件人，沒有值的會留空。
             <br />
-            排版：<span className="font-mono">**粗體**</span>、
-            <span className="font-mono">## 標題</span>（獨立一段）、
-            <span className="font-mono">---</span>（獨立一段＝分隔線）、
-            工具列上傳圖片自動插入；放連結：直接貼網址（自動變可點）；做 CTA 按鈕：
-            <span className="font-mono">[立即報名](https://…)</span>
-            ——連結與按鈕都會計入點擊統計。
+            放連結可直接貼網址；CTA 按鈕可用工具列插入。連結與按鈕都會計入點擊統計。
           </p>
         </div>
 
