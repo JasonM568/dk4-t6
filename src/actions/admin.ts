@@ -165,8 +165,35 @@ export async function requestCourseImageUploadUrl(
     | "brief"
     | "article"
     | "session" = "intro",
+  fileSizeBytes?: number,
 ) {
   await requireEditor();
+  // The signed URL has no file bytes. Storage's bucket limit enforces the real
+  // upload size; this check gives the editor an immediate, useful error.
+  if (prefix === "broadcast" && (!Number.isSafeInteger(fileSizeBytes) || !fileSizeBytes || fileSizeBytes < 1)) {
+    return { ok: false as const, error: "請提供圖片大小" };
+  }
+  if (fileSizeBytes !== undefined && (!Number.isSafeInteger(fileSizeBytes) || fileSizeBytes < 1 || fileSizeBytes > 5 * 1024 * 1024)) {
+    return { ok: false as const, error: "圖片不可超過 5MB" };
+  }
+  const actor = await getAuthUser();
+  if (!actor) return { ok: false as const, error: "登入狀態已失效" };
+  // Reuse the existing shared throttle table under a separate key namespace.
+  // One atomic upsert works across serverless instances and concurrent requests.
+  const key = `image-upload:${actor.id}`;
+  const rows = await prisma.$queryRaw<{ failCount: number }[]>`
+    INSERT INTO "BoardLoginThrottle" ("key", "failCount", "windowStart", "updatedAt")
+    VALUES (${key}, 1, NOW(), NOW())
+    ON CONFLICT ("key") DO UPDATE SET
+      "failCount" = CASE WHEN "BoardLoginThrottle"."windowStart" < NOW() - INTERVAL '1 minute'
+        THEN 1 ELSE "BoardLoginThrottle"."failCount" + 1 END,
+      "windowStart" = CASE WHEN "BoardLoginThrottle"."windowStart" < NOW() - INTERVAL '1 minute'
+        THEN NOW() ELSE "BoardLoginThrottle"."windowStart" END,
+      "updatedAt" = NOW()
+    RETURNING "failCount"`;
+  if ((rows[0]?.failCount ?? 31) > 30) {
+    return { ok: false as const, error: "圖片上傳過於頻繁，請一分鐘後再試" };
+  }
   return createCourseImageSignedUpload(fileType, prefix);
 }
 

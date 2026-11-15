@@ -249,6 +249,9 @@ export async function generateSetPasswordLink(
 // ───── 課程圖片上傳（Supabase Storage：course-assets 公開 bucket）─────
 
 const COURSE_ASSETS_BUCKET = "course-assets";
+// Broadcast uploads use their own bucket so Storage can enforce the 5 MB limit
+// on actual bytes; course-assets also holds larger course documents.
+const BROADCAST_IMAGES_BUCKET = "broadcast-images";
 export const COURSE_MATERIALS_BUCKET = "course-materials";
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -284,8 +287,9 @@ export async function createCourseImageSignedUpload(
   const path = `${prefix}/${crypto.randomUUID()}.${ext}`;
 
   const supabase = createAdminClient();
+  const bucket = prefix === "broadcast" ? BROADCAST_IMAGES_BUCKET : COURSE_ASSETS_BUCKET;
   const { data, error } = await supabase.storage
-    .from(COURSE_ASSETS_BUCKET)
+    .from(bucket)
     .createSignedUploadUrl(path);
 
   if (error || !data) {
@@ -294,12 +298,12 @@ export async function createCourseImageSignedUpload(
   }
 
   const { data: pub } = supabase.storage
-    .from(COURSE_ASSETS_BUCKET)
+    .from(bucket)
     .getPublicUrl(data.path);
 
   return {
     ok: true,
-    bucket: COURSE_ASSETS_BUCKET,
+    bucket,
     path: data.path,
     token: data.token,
     publicUrl: pub.publicUrl,
