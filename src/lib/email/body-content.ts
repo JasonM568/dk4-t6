@@ -34,6 +34,18 @@ export type BodyContent = z.infer<typeof bodyContentSchema>;
 export type BodyBlock = BodyContent["blocks"][number];
 export type BodyImage = Extract<BodyBlock, { type: "images" }>["images"][number];
 
+/** A divider or an empty editor paragraph cannot be sent as an email body. */
+export function hasMeaningfulBodyContent(content: BodyContent): boolean {
+  return content.blocks.some((block) => {
+    if (block.type === "paragraph" || block.type === "heading") {
+      return block.content.some((run) => run.text.trim().length > 0);
+    }
+    if (block.type === "button") return block.label.trim().length > 0;
+    if (block.type === "images") return block.images.length === block.columns;
+    return false;
+  });
+}
+
 export type ReadBodyContent =
   | { kind: "legacy"; text: string }
   | { kind: "structured"; content: BodyContent }

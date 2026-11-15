@@ -40,6 +40,7 @@ import {
 import { FOLLOWUP_FILTER_LABEL, isFollowUpFilter } from "@/lib/email/followup";
 import { resolveMessageType } from "@/lib/email/message-type";
 import { inspectBroadcastDraft } from "@/lib/email/preflight";
+import { hasMeaningfulBodyContent, readBodyContent } from "@/lib/email/body-content";
 import { buildUnsubscribePageUrl } from "@/lib/email/unsubscribe";
 import { isAdminRole } from "@/lib/auth/role";
 import { extractYoutubeId } from "@/lib/youtube";
@@ -1194,6 +1195,11 @@ async function saveMailTemplateFromForm(
   const courseId = String(formData.get("courseId") ?? "");
   const name = String(formData.get("templateName") ?? "").trim() || subject;
   if (!name) return { error: "請填寫範本名稱" };
+  const parsedBody = readBodyContent(body);
+  if (parsedBody.kind === "invalid") return { error: parsedBody.error };
+  if (parsedBody.kind === "structured" && !hasMeaningfulBodyContent(parsedBody.content)) {
+    return { error: "請填寫內文或插入圖片／按鈕" };
+  }
 
   const existing = await prisma.mailTemplate.findUnique({ where: { name } });
   await prisma.mailTemplate.upsert({

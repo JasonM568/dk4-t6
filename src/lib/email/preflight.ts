@@ -1,4 +1,4 @@
-import { readBodyContent } from "./body-content";
+import { hasMeaningfulBodyContent, readBodyContent } from "./body-content";
 
 export type BroadcastPreflight = { errors: string[]; warnings: string[] };
 
@@ -18,6 +18,9 @@ export function inspectBroadcastDraft(input: {
   if (input.requireBody !== false && !body) errors.push("請填寫內文");
   const parsedBody = readBodyContent(body);
   if (parsedBody.kind === "invalid") errors.push(parsedBody.error);
+  if (input.requireBody !== false && parsedBody.kind === "structured" && !hasMeaningfulBodyContent(parsedBody.content)) {
+    errors.push("請填寫內文或插入圖片／按鈕");
+  }
   const scanBody = parsedBody.kind === "structured"
     ? parsedBody.content.blocks.map((block) => {
         if (block.type === "paragraph" || block.type === "heading") return block.content.map((run) => `${run.text} ${run.href ?? ""}`).join(" ");
