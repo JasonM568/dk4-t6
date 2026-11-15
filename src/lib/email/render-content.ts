@@ -17,6 +17,8 @@
  *  但來源不同：code 由場次帶出，link 只能由手動名單的第三欄貼進來——
  *  「一人一條不同網址」這種名單（語音邀請函、個人化報告）沒有任何資料表
  *  推得出來，只有操作者手上那份表知道誰對應哪一條。 */
+import { readBodyContent, serializeBodyContent, type BodyContent, type BodyImage } from "./body-content";
+
 export type Recipient = { email: string; name?: string; code?: string; link?: string };
 
 // 合併變數：在「原文」階段替換，之後 esc() 會轉義 → 不會注入。
@@ -26,11 +28,25 @@ export type Recipient = { email: string; name?: string; code?: string; link?: st
 // {link} 替換後只是一段明文網址，接著照常走 renderParagraph 的自動連結規則
 // 變成真 <a>——所以 Resend 的點擊追蹤改寫得到它，誰點了自己的專屬連結會回流。
 export function applyMergeTags(text: string, r: Recipient): string {
-  return text
+  const replace = (value: string) => value
     .replaceAll("{email}", r.email)
     .replaceAll("{name}", r.name ?? "")
     .replaceAll("{code}", r.code ?? "")
     .replaceAll("{link}", r.link ?? "");
+  const body = readBodyContent(text);
+  if (body.kind !== "structured") return replace(text);
+  const content: BodyContent = {
+    ...body.content,
+    blocks: body.content.blocks.map((block) => {
+      if (block.type === "paragraph" || block.type === "heading") {
+        return { ...block, content: block.content.map((run) => ({ ...run, text: replace(run.text), href: run.href ? replace(run.href) : undefined })) };
+      }
+      if (block.type === "button") return { ...block, label: replace(block.label), url: replace(block.url) };
+      if (block.type === "images") return { ...block, images: block.images.map((img) => ({ ...img, alt: replace(img.alt), caption: img.caption ? replace(img.caption) : undefined })) };
+      return block;
+    }),
+  };
+  return serializeBodyContent(content);
 }
 
 export function esc(s: string): string {
@@ -96,8 +112,62 @@ export function renderParagraph(p: string): string {
 
 /** 內文純文字 → 段落 HTML 串（不含品牌信外框）。
  *  段落層級：`---` 獨立一段 = 分隔線；`## ` 開頭 = 標題（只取行首語法）。 */
+function safeHttpUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? value : null;
+  } catch { return null; }
+}
+
+function renderRuns(runs: Extract<BodyContent["blocks"][number], { type: "paragraph" | "heading" }>["content"]): string {
+  return runs.map((run) => {
+    let html = esc(run.text).replaceAll("\n", "<br />");
+    const href = run.href && safeHttpUrl(run.href);
+    if (href) {
+      html = `<a href="${esc(href)}" target="_blank" style="color: #b71c1c; word-break: break-all;">${html}</a>`;
+    } else {
+      // Keeps the legacy {link} merge tag useful in structured plain-text runs.
+      html = html.replace(/https?:\/\/[^\s<\u0000　-鿿豈-﫿＀-￯]+/g, (match) => {
+        const url = match.replace(/[).,;:!?]+$/, "");
+        return `<a href="${url}" target="_blank" style="color: #b71c1c; word-break: break-all;">${url}</a>${match.slice(url.length)}`;
+      });
+    }
+    if (run.bold) html = `<strong>${html}</strong>`;
+    return html;
+  }).join("");
+}
+
+function renderImage(image: BodyImage, columns: 1 | 2): string {
+  const href = safeHttpUrl(image.url);
+  if (!href) return "";
+  const width = image.width;
+  const pixelWidth = Math.round(520 * width / (100 * columns));
+  const align = image.align;
+  const caption = image.caption?.trim();
+  return `<table role="presentation" align="${align}" width="${width}%" cellpadding="0" cellspacing="0" border="0" style="width: ${width}%; max-width: 100%; border-collapse: collapse; margin: 0 0 16px;"><tr><td align="${align}" style="padding: 0;"><img src="${esc(href)}" alt="${esc(image.alt)}" width="${pixelWidth}" style="display: block; width: 100%; max-width: 100%; height: auto; border: 0; border-radius: 8px;" /></td></tr>${caption ? `<tr><td align="${align}" style="padding: 6px 0 0; font-family: ${FONT_STACK}; font-size: 12px; line-height: 1.5; color: #777777; text-align: ${align};">${esc(caption)}</td></tr>` : ""}</table>`;
+}
+
+function renderStructuredContent(content: BodyContent): string {
+  return content.blocks.map((block) => {
+    if (block.type === "paragraph" || block.type === "heading") {
+      const heading = block.type === "heading";
+      return `<p style="margin: ${heading ? "24px 0 12px" : "0 0 16px"}; font-family: ${FONT_STACK}; font-size: ${heading ? 19 : 15}px; font-weight: ${heading ? "bold" : "normal"}; line-height: ${heading ? 1.5 : 1.9}; color: ${heading ? "#1a1a1a" : "#444444"};">${renderRuns(block.content)}</p>`;
+    }
+    if (block.type === "divider") return `<hr style="border: 0; border-top: 1px solid #ecdfc2; margin: 24px 0;" />`;
+    if (block.type === "button") {
+      const href = safeHttpUrl(block.url);
+      return href ? `<p style="margin: 0 0 16px;"><a href="${esc(href)}" target="_blank" style="display: inline-block; padding: 12px 36px; background-color: #d32f2f; font-family: ${FONT_STACK}; font-size: 15px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 8px;">${esc(block.label)}</a></p>` : "";
+    }
+    const cells = block.images.map((image) => `<td width="${block.columns === 2 ? "50%" : "100%"}" valign="top" align="${image.align}" style="padding: 0 ${block.columns === 2 ? "4px" : "0"};">${renderImage(image, block.columns)}</td>`).join("");
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: collapse;"><tr>${cells}</tr></table>`;
+  }).join("");
+}
+
 export function buildContentHtml(bodyText: string): string {
-  return bodyText
+  const body = readBodyContent(bodyText);
+  if (body.kind === "structured") return renderStructuredContent(body.content);
+  if (body.kind === "invalid") return "";
+  return body.text
     .split(/\n{2,}/)
     .map((raw) => {
       const p = raw.trim();
