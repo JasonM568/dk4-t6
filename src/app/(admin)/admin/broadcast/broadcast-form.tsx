@@ -33,7 +33,7 @@ async function uploadBodyImage(
   if (!ALLOWED_IMAGE_TYPES.includes(file.type))
     return { ok: false, error: "格式不支援（限 JPG/PNG/WebP/GIF）" };
   if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "圖片超過 5MB" };
-  const signed = await requestCourseImageUploadUrl(file.type, "broadcast");
+  const signed = await requestCourseImageUploadUrl(file.type, "broadcast", file.size);
   if (!signed.ok) return { ok: false, error: signed.error };
   const supabase = createClient();
   const { error } = await supabase.storage
