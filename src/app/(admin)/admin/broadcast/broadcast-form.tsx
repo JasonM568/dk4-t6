@@ -287,6 +287,9 @@ export function BroadcastForm({
   const [bodyText, setBodyText] = useState(defaultValues?.body ?? serializeBodyContent(emptyContent));
   const [uploadsReady, setUploadsReady] = useState(true);
   const [contentError, setContentError] = useState("");
+  const [contentEmpty, setContentEmpty] = useState(() => initialBody.kind === "structured"
+    ? !initialBody.content.blocks.some((block) => block.type === "button" || block.type === "images" || ((block.type === "paragraph" || block.type === "heading") && block.content.some((run) => run.text.trim())))
+    : !legacyBody);
   const [subjectText, setSubjectText] = useState(defaultValues?.subject ?? "");
   const preflight = inspectBroadcastDraft({ subject: subjectText, body: bodyText });
   const [showPreview, setShowPreview] = useState(initialPreview);
@@ -335,7 +338,7 @@ export function BroadcastForm({
 
   return (
     <>
-      <form ref={formRef} action={formAction} onSubmit={(event) => { if (!uploadsReady || contentError || invalidBody) event.preventDefault(); }} className="space-y-4">
+      <form ref={formRef} action={formAction} onSubmit={(event) => { const mode = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value; if (!uploadsReady || contentError || invalidBody || (contentEmpty && mode !== "draft")) event.preventDefault(); }} className="space-y-4">
         <input type="hidden" name="requestKey" value={requestKey} />
         <div>
           <label className="mb-1 block text-sm font-medium">主旨</label>
@@ -496,9 +499,10 @@ export function BroadcastForm({
             className="hidden"
             onChange={(e) => { editorRef.current?.insertFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }}
           />
-          {invalidBody ? <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">這份 EDM 內容格式或版本無法讀取，請先修復原始資料，避免覆寫。</p> : legacyBody ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3"><p className="mb-2 text-sm text-amber-900">舊格式內文以唯讀方式保留。建立新郵件可使用視覺化編輯器。</p><pre className="whitespace-pre-wrap text-sm">{bodyText}</pre></div> : <EdmEditor ref={editorRef} initial={initialBody.kind === "structured" ? initialBody.content : emptyContent} upload={uploadBodyImage} onChange={(content, ready) => { setUploadsReady(ready); if (!ready) return; try { setBodyText(serializeBodyContent(content)); setContentError(""); } catch { setContentError("請檢查圖片、按鈕網址與圖說後再送出"); } }} />}
+          {invalidBody ? <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">這份 EDM 內容格式或版本無法讀取，請先修復原始資料，避免覆寫。</p> : legacyBody ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3"><p className="mb-2 text-sm text-amber-900">舊格式內文以唯讀方式保留。建立新郵件可使用視覺化編輯器。</p><pre className="whitespace-pre-wrap text-sm">{bodyText}</pre></div> : <EdmEditor ref={editorRef} initial={initialBody.kind === "structured" ? initialBody.content : emptyContent} upload={uploadBodyImage} onChange={(content, ready) => { setUploadsReady(ready); setContentEmpty(!content.blocks.some((block) => block.type === "button" || block.type === "images" || ((block.type === "paragraph" || block.type === "heading") && block.content.some((run) => run.text.trim())))); if (!ready) return; try { setBodyText(serializeBodyContent(content)); setContentError(""); } catch { setContentError("請檢查圖片、按鈕網址與圖說後再送出"); } }} />}
           <input type="hidden" name="body" value={bodyText} />
           {!uploadsReady && <p className="mt-1 text-xs text-amber-700">圖片尚未全部完成上傳；請重試失敗項目後再寄送。</p>}
+          {contentEmpty && <p className="mt-1 text-xs text-amber-700">請輸入內文後再送出。</p>}
           {contentError && <p className="mt-1 text-xs text-red-700">{contentError}</p>}
           {(preflight.errors.length > 0 || preflight.warnings.length > 0) && (
             <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
@@ -1079,6 +1083,7 @@ export function BroadcastForm({
             value="all"
             disabled={pending}
             onClick={(e) => {
+              if (!uploadsReady || contentError || contentEmpty || invalidBody) { e.preventDefault(); return; }
               // checkbox 清單無法用 required 擋，自己攔下來才不會白跑一趟伺服器
               if (!followUp && audience === "group" && pickedGroups.length === 0) {
                 e.preventDefault();
