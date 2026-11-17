@@ -20,7 +20,9 @@ import {
   assignUnmatchedAction,
   saveBoardCodeAction,
   setSignupMealAction,
+  setSignupMealDinnerAction,
   setSignupGroupAction,
+  setSignupNoGroupAction,
   setSignupNameAction,
   setSignupPhoneAction,
   setSignupEmailAction,
@@ -69,8 +71,10 @@ export type SignupRow = {
   product: string | null;
   orderedAt: string | null;
   meal: string | null;
+  mealDinner: string | null; // 晚餐葷素；只有場次 needsDinner 開啟才有意義
   groupNo: number | null;
   isStaff: boolean;
+  noGroup: boolean; // 不參加分組：仍計入新舊生／用餐統計，自動分組一律跳過
   isRetrain: boolean | null; // 新舊生人工覆寫；null = 依產品名自動判斷
   deferredToSessionId: string | null;
   deferredFromSessionId: string | null;
@@ -90,6 +94,7 @@ export type SessionRow = {
   groupCap: number;
   groupCaps: number[]; // 逐組上限覆寫（index 0 = 第 1 組；0 = 用預設）
   groupCountFixed: number | null; // 固定組數；null = 自動推導
+  needsDinner: boolean; // 加開晚餐調查：午餐一律統計，開了這個每人多一欄晚餐葷素
   // 上課連結（/live 憑碼索取）；accessCode 有值 = 這場已開放索取
   accessCode: string | null;
   meetingUrl: string | null;
@@ -477,6 +482,12 @@ export function CreateSessionForm() {
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           <input type="checkbox" name="isVisible" defaultChecked /> 顯示於看板
         </label>
+        <label
+          className="flex items-center gap-1.5 text-sm text-gray-500"
+          title="午餐一律統計；兩天一夜等場次晚上也要訂餐時才勾，每人會多一欄晚餐葷素"
+        >
+          <input type="checkbox" name="needsDinner" /> 加開晚餐調查
+        </label>
       </div>
       <input
         name="keywords"
@@ -638,10 +649,13 @@ function AttendeeFinder({
 function AddSignupForm({
   sessionId,
   rosterNames,
+  needsDinner,
 }: {
   sessionId: string;
   /** 本場已在名單的人（姓名小寫）；找人結果標「已在名單」，免得重複加 */
   rosterNames: Set<string>;
+  /** 這場是否加開晚餐調查：開了才顯示晚餐葷素欄 */
+  needsDinner: boolean;
 }) {
   const [state, action, pending] = useActionState<SessionFormState, FormData>(
     addSignupAction.bind(null, sessionId),
@@ -656,7 +670,8 @@ function AddSignupForm({
   const [email, setEmail] = useState("");
   // 只在「這次送出成功」那一刻清空一次（比對 state 物件變化，不能只看 success——
   // 它會留到下一輪，成功後再打的新資料會被誤清）
-  const [meal, setMeal] = useState<"MEAT" | "VEG">("MEAT");
+  const [meal, setMeal] = useState<"MEAT" | "VEG" | "NONE">("MEAT");
+  const [mealDinner, setMealDinner] = useState<"MEAT" | "VEG" | "NONE">("MEAT");
   const [prevState, setPrevState] = useState(state);
   if (state !== prevState) {
     setPrevState(state);
@@ -665,6 +680,7 @@ function AddSignupForm({
       setPhone("");
       setEmail("");
       setMeal("MEAT");
+      setMealDinner("MEAT");
     }
   }
   return (
@@ -728,12 +744,33 @@ function AddSignupForm({
         <select
           name="meal"
           value={meal}
-          onChange={(e) => setMeal(e.target.value === "VEG" ? "VEG" : "MEAT")}
+          onChange={(e) =>
+            setMeal(e.target.value === "VEG" ? "VEG" : e.target.value === "NONE" ? "NONE" : "MEAT")
+          }
           className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
         >
           <option value="MEAT">葷</option>
           <option value="VEG">素</option>
+          <option value="NONE">不用餐</option>
         </select>
+        {/* 晚餐：只有這場加開晚餐調查才顯示 */}
+        {needsDinner && (
+          <select
+            name="mealDinner"
+            value={mealDinner}
+            title="晚餐葷素"
+            onChange={(e) =>
+              setMealDinner(
+                e.target.value === "VEG" ? "VEG" : e.target.value === "NONE" ? "NONE" : "MEAT",
+              )
+            }
+            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-black focus:outline-none"
+          >
+            <option value="MEAT">晚餐：葷</option>
+            <option value="VEG">晚餐：素</option>
+            <option value="NONE">晚餐：不用餐</option>
+          </select>
+        )}
         <input
           name="orderNo"
           placeholder="訂單編號（選填，留空自動編）"
@@ -774,8 +811,10 @@ function GroupPanel({ session }: { session: SessionRow }) {
   const [fixedCount, setFixedCount] = useState(
     session.groupCountFixed == null ? "" : String(session.groupCountFixed),
   );
-  // 工作人員不列入分組
-  const active = session.signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
+  // 工作人員、標「不參加分組」者不列入分組
+  const active = session.signups.filter(
+    (s) => !s.deferredToSessionId && !s.isStaff && !s.noGroup,
+  );
   const grouped = active.filter((s) => s.groupNo != null);
 
   // 各組摘要：人數/新舊/素
@@ -1268,7 +1307,12 @@ export function SessionCard({
   // 手動指定組別的選單範圍。設了固定組數就以它為準——多列出第 N+1 組是個陷阱，
   // 送出去後端也會擋（上界一致收斂到有效組數）。
   // 沒固定時：已用到的最大組號與公式組數取大者。
-  const autoGroupNo = groupCountFor(stats.total, session.groupCap, session.groupCaps);
+  // 標「不參加分組」者不佔組，估算組數時要扣掉，否則下拉選單的組數選項會比實際多
+  const autoGroupNo = groupCountFor(
+    stats.total - stats.noGroup,
+    session.groupCap,
+    session.groupCaps,
+  );
   const maxGroupNo =
     session.groupCountFixed ??
     Math.max(autoGroupNo, ...session.signups.map((s) => s.groupNo ?? 0));
@@ -1330,11 +1374,21 @@ export function SessionCard({
         <span className="text-xs text-gray-400">
           新生 {stats.fresh}｜舊生 {stats.retrain}
           {stats.staff > 0 && `｜工作人員 ${stats.staff}`}
-          ｜葷 {stats.meat} 素 {stats.veg}
+          ｜葷 {stats.meat} 素 {stats.veg} 不用餐 {stats.none}
           {stats.mealUnknown > 0 && (
             <span title="未標葷素，統計時視為葷">（未標 {stats.mealUnknown}）</span>
           )}
+          {/* 加開晚餐調查的場次才多顯示一組晚餐數字，跟午餐分開統計 */}
+          {session.needsDinner && (
+            <>
+              ｜晚餐 葷 {stats.meatDinner} 素 {stats.vegDinner} 不用餐 {stats.noneDinner}
+              {stats.mealDinnerUnknown > 0 && (
+                <span title="未標晚餐葷素，統計時視為葷">（未標 {stats.mealDinnerUnknown}）</span>
+              )}
+            </>
+          )}
           {stats.deferredOut > 0 && `｜延期 ${stats.deferredOut}`}
+          {stats.noGroup > 0 && `｜不參加分組 ${stats.noGroup}`}
         </span>
         {/* 課前通知進度：全部發完才不顯示，開課前一眼看出還有誰漏掉 */}
         {(notice.smsPending > 0 || notice.emailPending > 0) &&
@@ -1405,6 +1459,13 @@ export function SessionCard({
                 <input type="checkbox" name="isVisible" defaultChecked={session.isVisible} />
                 顯示於看板
               </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-gray-500"
+                title="午餐一律統計；兩天一夜等場次晚上也要訂餐時才勾，每人會多一欄晚餐葷素"
+              >
+                <input type="checkbox" name="needsDinner" defaultChecked={session.needsDinner} />
+                加開晚餐調查
+              </label>
             </div>
             <input
               name="keywords"
@@ -1464,6 +1525,7 @@ export function SessionCard({
                   .map((g) => g.name.trim().toLowerCase()),
               )
             }
+            needsDinner={session.needsDinner}
           />
         )}
 
@@ -1590,6 +1652,7 @@ export function SessionCard({
                 <th className="px-2 py-1.5">#</th>
                 <th className="px-2 py-1.5">姓名</th>
                 {!isSeminar && <th className="px-2 py-1.5">葷素</th>}
+                {!isSeminar && session.needsDinner && <th className="px-2 py-1.5">晚餐</th>}
                 {!isSeminar && <th className="px-2 py-1.5">組別</th>}
                 <th className="px-2 py-1.5">聯絡（手機／Email）</th>
                 <th className="px-2 py-1.5">產品／訂單</th>
@@ -1678,11 +1741,15 @@ export function SessionCard({
                   <td className="px-2 py-1.5 text-xs">
                     {canEdit && !deferredOut ? (
                       <select
-                        value={s.meal === "VEG" || s.meal === "MEAT" ? s.meal : ""}
+                        value={
+                          s.meal === "VEG" || s.meal === "MEAT" || s.meal === "NONE" ? s.meal : ""
+                        }
                         onChange={(e) =>
                           setSignupMealAction(
                             s.id,
-                            e.target.value === "VEG" || e.target.value === "MEAT"
+                            e.target.value === "VEG" ||
+                            e.target.value === "MEAT" ||
+                            e.target.value === "NONE"
                               ? e.target.value
                               : null,
                           )
@@ -1692,11 +1759,14 @@ export function SessionCard({
                             ? "border-green-300 text-green-700"
                             : s.meal === "MEAT"
                               ? "border-gray-300 text-gray-600"
-                              : "border-amber-300 text-amber-700"
+                              : s.meal === "NONE"
+                                ? "border-blue-300 text-blue-700"
+                                : "border-amber-300 text-amber-700"
                         }`}
                       >
                         <option value="MEAT">葷</option>
                         <option value="VEG">素</option>
+                        <option value="NONE">不用餐</option>
                         <option value="">未標</option>
                       </select>
                     ) : (
@@ -1704,27 +1774,77 @@ export function SessionCard({
                     )}
                   </td>
                   )}
+                  {/* 晚餐：只有場次加開晚餐調查才顯示這欄 */}
+                  {!isSeminar && session.needsDinner && (
+                  <td className="px-2 py-1.5 text-xs">
+                    {canEdit && !deferredOut ? (
+                      <select
+                        value={
+                          s.mealDinner === "VEG" || s.mealDinner === "MEAT" || s.mealDinner === "NONE"
+                            ? s.mealDinner
+                            : ""
+                        }
+                        onChange={(e) =>
+                          setSignupMealDinnerAction(
+                            s.id,
+                            e.target.value === "VEG" ||
+                            e.target.value === "MEAT" ||
+                            e.target.value === "NONE"
+                              ? e.target.value
+                              : null,
+                          )
+                        }
+                        className={`rounded border bg-white px-1.5 py-0.5 text-xs focus:border-black focus:outline-none ${
+                          s.mealDinner === "VEG"
+                            ? "border-green-300 text-green-700"
+                            : s.mealDinner === "MEAT"
+                              ? "border-gray-300 text-gray-600"
+                              : s.mealDinner === "NONE"
+                                ? "border-blue-300 text-blue-700"
+                                : "border-amber-300 text-amber-700"
+                        }`}
+                      >
+                        <option value="MEAT">葷</option>
+                        <option value="VEG">素</option>
+                        <option value="NONE">不用餐</option>
+                        <option value="">未標</option>
+                      </select>
+                    ) : (
+                      <span className="text-gray-500">
+                        {deferredOut ? "—" : mealLabel(s.mealDinner)}
+                      </span>
+                    )}
+                  </td>
+                  )}
                   {!isSeminar && (
                   <td className="px-2 py-1.5 text-xs">
                     {canEdit && !deferredOut && !s.isStaff ? (
                       <select
-                        value={s.groupNo ?? ""}
-                        onChange={(e) =>
-                          setSignupGroupAction(
-                            s.id,
-                            e.target.value ? Number(e.target.value) : null,
-                          )
-                        }
-                        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs focus:border-black focus:outline-none"
+                        value={s.noGroup ? "nogroup" : s.groupNo ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "nogroup") startTransition(() => setSignupNoGroupAction(s.id, true));
+                          else startTransition(() => setSignupGroupAction(s.id, v ? Number(v) : null));
+                        }}
+                        className={`rounded border bg-white px-1.5 py-0.5 text-xs focus:border-black focus:outline-none ${
+                          s.noGroup ? "border-sky-300 text-sky-700" : "border-gray-300"
+                        }`}
                       >
                         <option value="">未分組</option>
+                        <option value="nogroup">不參加分組</option>
                         {Array.from({ length: maxGroupNo }, (_, i) => i + 1).map((n) => (
                           <option key={n} value={n}>第 {n} 組</option>
                         ))}
                       </select>
                     ) : (
                       <span className="text-gray-500">
-                        {deferredOut || s.isStaff ? "—" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組"}
+                        {deferredOut || s.isStaff
+                          ? "—"
+                          : s.noGroup
+                            ? "不參加分組"
+                            : s.groupNo
+                              ? `第 ${s.groupNo} 組`
+                              : "未分組"}
                       </span>
                     )}
                   </td>

@@ -630,7 +630,7 @@ export async function importOrders(
   const cancelOrderNos: string[] = [];
   // 已匯入過的列 createMany 會略過不更新——葷素另外回填（只補 meal 仍空的列，
   // 不覆蓋後台手動標記；orderNo 全域唯一所以跨場次含延期列都會補到）
-  const mealBackfill: Record<Meal, string[]> = { VEG: [], MEAT: [] };
+  const mealBackfill: Record<Meal, string[]> = { VEG: [], MEAT: [], NONE: [] };
 
   for (const row of rows) {
     if (!row.orderNo || !row.name) {
@@ -859,7 +859,7 @@ export async function importOrders(
     }
   }
   // 葷素回填既有列：meal IS NULL 條件保證不覆蓋後台手動標記
-  for (const meal of ["VEG", "MEAT"] as const) {
+  for (const meal of ["VEG", "MEAT", "NONE"] as const) {
     if (mealBackfill[meal].length === 0) continue;
     await prisma.sessionSignup.updateMany({
       where: { orderNo: { in: mealBackfill[meal] }, attendeeKey: "buyer", meal: null },

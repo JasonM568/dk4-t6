@@ -11,14 +11,17 @@ export type BoardSignup = {
   product: string | null;
   isRetrain: boolean | null;
   meal: string | null;
+  mealDinner: string | null;
   groupNo: number | null;
   isStaff: boolean;
+  noGroup: boolean;
 };
 
 export type BoardSession = {
   id: string;
   title: string;
   dateLabel: string | null;
+  needsDinner: boolean;
   signups: BoardSignup[];
 };
 
@@ -181,8 +184,12 @@ function hitChip(g: BoardSignup) {
       {g.name}
       <span className="ml-1.5 text-xs text-gray-500">
         {g.isStaff ? "工作人員" : isRetrain(g) ? "複訓" : "新生"}
+        {g.noGroup && " · 不參加分組"}
         {g.groupNo != null && ` · 第 ${g.groupNo} 組`}
         {g.meal === "VEG" && " · 素"}
+        {g.meal === "NONE" && " · 不用餐"}
+        {g.mealDinner === "VEG" && " · 晚餐素"}
+        {g.mealDinner === "NONE" && " · 晚餐不用餐"}
       </span>
     </span>
   );
@@ -201,6 +208,9 @@ function SessionCard({
   const retrain = students.filter((g) => isRetrain(g));
   const fresh = students.length - retrain.length;
   const veg = s.signups.filter((g) => g.meal === "VEG").length;
+  const none = s.signups.filter((g) => g.meal === "NONE").length;
+  const vegDinner = s.signups.filter((g) => g.mealDinner === "VEG").length;
+  const noneDinner = s.signups.filter((g) => g.mealDinner === "NONE").length;
   // 有任何人分了組 → 依組別分節顯示；全未分組 → 維持扁平名字雲
   const hasGroups = students.some((g) => g.groupNo != null);
   const groups = hasGroups
@@ -237,10 +247,16 @@ function SessionCard({
                   工作人員 {staff.length}
                 </span>
               )}
-              {/* 葷 = 非素（含未標，訂餐往安全側算）；用餐統計含工作人員 */}
+              {/* 葷 = 非素、非不用餐（含未標，訂餐往安全側算）；用餐統計含工作人員 */}
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-600">
-                葷 {s.signups.length - veg}｜素 {veg}
+                葷 {s.signups.length - veg - none}｜素 {veg}｜不用餐 {none}
               </span>
+              {s.needsDinner && (
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-600">
+                  晚餐 葷 {s.signups.length - vegDinner - noneDinner}｜素 {vegDinner}｜不用餐{" "}
+                  {noneDinner}
+                </span>
+              )}
             </>
           )}
         </div>
@@ -265,17 +281,25 @@ function SessionCard({
                   </div>
                 );
               })}
-              {students.some((g) => g.groupNo == null) && (
+              {students.some((g) => g.groupNo == null && !g.noGroup) && (
                 <div>
                   <div className="mb-1.5 text-sm font-medium text-amber-600">未分組</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {students.filter((g) => g.groupNo == null).map(chip)}
+                    {students.filter((g) => g.groupNo == null && !g.noGroup).map(chip)}
                   </div>
                 </div>
               )}
             </>
           ) : (
             <div className="flex flex-wrap gap-1.5">{students.map(chip)}</div>
+          )}
+          {students.some((g) => g.noGroup) && (
+            <div>
+              <div className="mb-1.5 text-sm font-medium text-sky-600">不參加分組</div>
+              <div className="flex flex-wrap gap-1.5">
+                {students.filter((g) => g.noGroup).map(chip)}
+              </div>
+            </div>
           )}
           {staff.length > 0 && (
             <div>

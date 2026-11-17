@@ -39,31 +39,43 @@ export async function GET(
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("簽到表");
+  // 晚餐欄：只有這場加開晚餐調查才多一欄，欄數跟著變動，標題列合併與框線範圍都要跟著算
   ws.columns = [
     { header: "組別", key: "group", width: 10 },
     { header: "姓名", key: "name", width: 16 },
     { header: "新舊生", key: "type", width: 8 },
-    { header: "葷素", key: "meal", width: 10 },
+    { header: "午餐葷素", key: "meal", width: 10 },
+    ...(session.needsDinner
+      ? [{ header: "晚餐葷素", key: "mealDinner", width: 10 }]
+      : []),
     { header: "手機", key: "phone", width: 22 }, // 22：海外門號要塞得下號碼＋「海外·Email」註記
     { header: "簽名", key: "sign", width: 28 },
   ];
+  const colCount = ws.columns.length;
 
   // 標題列（場次名＋日期）插到最前面
   const dateText = session.eventDate
     ? session.eventDate.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })
     : "";
   ws.insertRow(1, [`${session.title}${dateText ? `　${dateText}` : ""}　簽到表`]);
-  ws.mergeCells(1, 1, 1, 6);
+  ws.mergeCells(1, 1, 1, colCount);
   ws.getRow(1).font = { size: 14, bold: true };
   ws.getRow(1).height = 24;
   ws.getRow(2).font = { bold: true };
 
   for (const s of rows) {
     const row = ws.addRow({
-      group: s.isStaff ? "工作人員" : s.groupNo ? `第 ${s.groupNo} 組` : "未分組",
+      group: s.isStaff
+        ? "工作人員"
+        : s.noGroup
+          ? "不參加分組"
+          : s.groupNo
+            ? `第 ${s.groupNo} 組`
+            : "未分組",
       name: s.name,
       type: s.isStaff ? "工作人員" : isRetrainSignup(s) ? "舊生" : "新生",
       meal: mealLabel(s.meal),
+      ...(session.needsDinner ? { mealDinner: mealLabel(s.mealDinner) } : {}),
       // 海外門號當場註記：現場拿這張表打電話／補通知的人，要一眼看出
       // 這支號碼不會收到提醒簡訊、得改寄 Email
       phone: s.phone
@@ -78,7 +90,7 @@ export async function GET(
 
   // 全表框線（標題列除外）
   for (let r = 2; r <= ws.rowCount; r++) {
-    for (let c = 1; c <= 6; c++) {
+    for (let c = 1; c <= colCount; c++) {
       ws.getCell(r, c).border = {
         top: { style: "thin" }, bottom: { style: "thin" },
         left: { style: "thin" }, right: { style: "thin" },
@@ -91,9 +103,12 @@ export async function GET(
   const summary = ws.addRow([
     `學員 ${stats.total}（新生 ${stats.fresh}／舊生 ${stats.retrain}）` +
       (stats.staff > 0 ? `｜工作人員 ${stats.staff}` : "") +
-      `｜用餐：葷 ${stats.meat}（含未標 ${stats.mealUnknown}）、素 ${stats.veg}（用餐統計含工作人員）`,
+      `｜午餐：葷 ${stats.meat}（含未標 ${stats.mealUnknown}）、素 ${stats.veg}、不用餐 ${stats.none}（用餐統計含工作人員）` +
+      (session.needsDinner
+        ? `｜晚餐：葷 ${stats.meatDinner}（含未標 ${stats.mealDinnerUnknown}）、素 ${stats.vegDinner}、不用餐 ${stats.noneDinner}`
+        : ""),
   ]);
-  ws.mergeCells(summary.number, 1, summary.number, 6);
+  ws.mergeCells(summary.number, 1, summary.number, colCount);
   summary.font = { bold: true };
 
   const buf = await wb.xlsx.writeBuffer();

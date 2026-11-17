@@ -2,7 +2,7 @@
 // 純函式、不掛 server-only——scripts/test-session-roster.ts 用 tsx 直測
 // （同 session-import.ts 不掛 server-only 的理由）。
 
-export type Meal = "VEG" | "MEAT";
+export type Meal = "VEG" | "MEAT" | "NONE";
 
 /** 舊生判別全站統一規則：產品名含「複訓」（手動新增舊生時寫入端也會補這個標記） */
 export function isRetrainProduct(product: string | null | undefined): boolean {
@@ -26,17 +26,20 @@ export const MEAL_HEADER_RE = /餐點|用餐|葷素|素食|葷食|飲食/;
  *  不能整串丟 parseMealValue：「葷素」兩字含「素」，整串比對會把葷食誤判成素。 */
 export const MEAL_IN_TEXT_RE = /(?:葷素|用餐|餐點|飲食)[^:：\n]*[:：]\s*([^\s，,;；、|]+)/;
 
-/** 值含「素」→ 素；其他非空 → 葷；空 → null（未標）。
- *  「不吃素」會被誤判成素——後台可逐人切換，是可接受的取捨。 */
+/** 值含「不用餐」等明確字樣 → 不用餐；含「素」→ 素；其他非空 → 葷；空 → null（未標）。
+ *  只認字面上明確的「不用餐／不訂餐／不需要餐」，不做「不」+「吃」之類的推論——
+ *  「不吃素」會被誤判成素（既有取捨，後台可逐人切換）,推論式偵測只會讓這類誤判更多。 */
 export function parseMealValue(value: string | null | undefined): Meal | null {
   const v = value?.trim();
   if (!v) return null;
+  if (v.includes("不用餐") || v.includes("不訂餐") || v.includes("不需要餐")) return "NONE";
   return v.includes("素") ? "VEG" : "MEAT";
 }
 
 export function mealLabel(meal: string | null | undefined): string {
   if (meal === "VEG") return "素";
   if (meal === "MEAT") return "葷";
+  if (meal === "NONE") return "不用餐";
   return "葷（未標）";
 }
 
@@ -67,9 +70,11 @@ export type RosterSignup = {
   product: string | null;
   isRetrain?: boolean | null;
   meal: string | null;
+  mealDinner?: string | null;
   deferredToSessionId: string | null;
   groupNo: number | null;
   isStaff?: boolean;
+  noGroup?: boolean;
 };
 
 export type RosterStats = {
@@ -77,17 +82,25 @@ export type RosterStats = {
   fresh: number;
   retrain: number;
   staff: number; // 工作人員（不分組、不算新舊生，但用餐要算）
-  veg: number; // 用餐統計含工作人員
+  veg: number; // 午餐用餐統計含工作人員
   meat: number; // 含未標（訂餐數字往安全側算）
+  none: number; // 明確標「不用餐」
   mealUnknown: number;
+  vegDinner: number; // 晚餐統計（只有場次開了 needsDinner 才有意義，顯示端自行判斷要不要秀）
+  meatDinner: number;
+  noneDinner: number;
+  mealDinnerUnknown: number;
   deferredOut: number;
-  ungrouped: number; // 學員中尚未分組者（工作人員不算）
+  ungrouped: number; // 學員中尚未分組者（工作人員、標「不參加分組」者不算）
+  noGroup: number; // 標「不參加分組」者（仍計入新舊生／用餐統計）
 };
 
 export function computeRosterStats(signups: RosterSignup[]): RosterStats {
   const stats: RosterStats = {
     total: 0, fresh: 0, retrain: 0, staff: 0,
-    veg: 0, meat: 0, mealUnknown: 0, deferredOut: 0, ungrouped: 0,
+    veg: 0, meat: 0, none: 0, mealUnknown: 0,
+    vegDinner: 0, meatDinner: 0, noneDinner: 0, mealDinnerUnknown: 0,
+    deferredOut: 0, ungrouped: 0, noGroup: 0,
   };
   for (const s of signups) {
     if (s.deferredToSessionId) {
@@ -96,9 +109,16 @@ export function computeRosterStats(signups: RosterSignup[]): RosterStats {
     }
     // 用餐統計含工作人員（訂便當是全場的量）
     if (s.meal === "VEG") stats.veg++;
+    else if (s.meal === "NONE") stats.none++;
     else {
       stats.meat++;
       if (s.meal !== "MEAT") stats.mealUnknown++;
+    }
+    if (s.mealDinner === "VEG") stats.vegDinner++;
+    else if (s.mealDinner === "NONE") stats.noneDinner++;
+    else {
+      stats.meatDinner++;
+      if (s.mealDinner !== "MEAT") stats.mealDinnerUnknown++;
     }
     if (s.isStaff) {
       stats.staff++;
@@ -107,7 +127,8 @@ export function computeRosterStats(signups: RosterSignup[]): RosterStats {
     stats.total++;
     if (isRetrainSignup(s)) stats.retrain++;
     else stats.fresh++;
-    if (s.groupNo == null) stats.ungrouped++;
+    if (s.noGroup) stats.noGroup++;
+    else if (s.groupNo == null) stats.ungrouped++;
   }
   return stats;
 }
@@ -163,13 +184,18 @@ export function groupCountFor(
 /** 已分組但組號超過 N 的人（把固定組數改小時會出現）。
  *  這些人不能靠補分組救——補分組不動已分好的組別，得全量重分。 */
 export function signupsBeyondGroup(
-  signups: { groupNo: number | null; deferredToSessionId: string | null; isStaff?: boolean }[],
+  signups: {
+    groupNo: number | null;
+    deferredToSessionId: string | null;
+    isStaff?: boolean;
+    noGroup?: boolean;
+  }[],
   groupCount: number,
 ): { count: number; maxGroupNo: number } {
   let count = 0;
   let maxGroupNo = 0;
   for (const s of signups) {
-    if (s.deferredToSessionId || s.isStaff || s.groupNo == null) continue;
+    if (s.deferredToSessionId || s.isStaff || s.noGroup || s.groupNo == null) continue;
     if (s.groupNo > groupCount) {
       count++;
       if (s.groupNo > maxGroupNo) maxGroupNo = s.groupNo;
@@ -186,6 +212,7 @@ export type GroupableSignup = {
   orderedAt: Date | null;
   createdAt: Date;
   isStaff?: boolean; // 工作人員不列入分組
+  noGroup?: boolean; // 手動標記不參加分組（仍計入新舊生統計，但自動分組一律跳過）
 };
 
 /** 第 g 組的實際上限：逐組覆寫（groupCaps，0 或缺值 = 用預設）優先於預設值 */
@@ -205,7 +232,7 @@ export function assignRemaining(
   fixedCount?: number | null,
 ): { assignments: Map<string, number>; groupCount: number } {
   const fixed = normalizeFixedCount(fixedCount);
-  const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
+  const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff && !s.noGroup);
   const grouped = active.filter((s) => s.groupNo != null);
   // 還沒分過組 → 等同全量分組
   if (grouped.length === 0) return assignGroups(active, cap, groupCaps, fixed);
@@ -274,7 +301,7 @@ export function assignGroups(
   groupCaps: number[] = [],
   fixedCount?: number | null,
 ): { assignments: Map<string, number>; groupCount: number } {
-  const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff);
+  const active = signups.filter((s) => !s.deferredToSessionId && !s.isStaff && !s.noGroup);
   // 組數：固定值優先；否則至少 6 組、容量累計到裝得下所有人
   const groupCount = groupCountFor(active.length, cap, groupCaps, fixedCount);
 

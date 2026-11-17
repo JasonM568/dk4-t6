@@ -32,6 +32,7 @@ export type TaggableSignup = RetrainLike & {
   meal: string | null;
   isStaff?: boolean;
   groupNo?: number | null;
+  noGroup?: boolean;
 };
 
 /** 組別關鍵字：「3組」「第3組」→ 第 3 組。 */
@@ -47,9 +48,12 @@ export function matchesTag(query: string, g: TaggableSignup): boolean {
     case "素":
     case "素食":
       return g.meal === "VEG";
+    case "不用餐":
+    case "不訂餐":
+      return g.meal === "NONE";
     case "葷":
     case "葷食":
-      return g.meal !== "VEG";
+      return g.meal !== "VEG" && g.meal !== "NONE";
     case "複訓":
     case "舊生":
       return !g.isStaff && isRetrainSignup(g);
@@ -58,7 +62,9 @@ export function matchesTag(query: string, g: TaggableSignup): boolean {
     case "工作人員":
       return !!g.isStaff;
     case "未分組":
-      return !g.isStaff && g.groupNo == null;
+      return !g.isStaff && !g.noGroup && g.groupNo == null;
+    case "不參加分組":
+      return !!g.noGroup;
     default:
       return false;
   }

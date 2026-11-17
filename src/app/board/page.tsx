@@ -33,7 +33,7 @@ export default async function BoardPage() {
           // 只給看板需要的最小欄位——刻意不含電話/信箱
           select: {
             id: true, name: true, product: true, isRetrain: true,
-            meal: true, groupNo: true, isStaff: true,
+            meal: true, mealDinner: true, groupNo: true, isStaff: true, noGroup: true,
           },
         },
       },
@@ -66,6 +66,7 @@ export default async function BoardPage() {
     title: s.title,
     dateLabel:
       s.eventDate?.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }) ?? null,
+    needsDinner: s.needsDinner,
     signups: s.signups,
   }));
 

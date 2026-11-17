@@ -841,6 +841,7 @@ model CourseSession {
   groupCap  Int       @default(8) // 每組人數上限預設值（自動分組用；組數 = max(6, ⌈人數/上限⌉)）
   groupCaps Int[]     @default([]) // 逐組上限覆寫（index 0 = 第 1 組；0 或缺值 = 用 groupCap）——場地桌子大小不一時逐組調
   groupCountFixed Int? // 固定組數（場地桌次固定時用）；null = 自動推導 max(6, ⌈人數/上限⌉)。有值時優先於下限 6，塞不下由 action 擋下
+  needsDinner Boolean @default(false) // 加開晚餐調查：午餐一律統計，這場若是兩天一夜課程、晚上還要訂餐，開這個就會多問每人一次晚餐葷素
 
   // ── 上課連結（/live 憑碼索取）──
   // 發簡訊給學員後，他們到 /live 輸入這場的 4 位上課碼即可看到會議連結與課程資料。
@@ -966,9 +967,11 @@ model SessionSignup {
   // 金額真值一律看 SessionOrderLine；此欄僅保留至寫入端清理（Phase 5）後移除。
   amount      Int?
   orderedAt   DateTime? // 訂單建立日期
-  meal        String? // 葷素："MEAT" 葷 / "VEG" 素 / null 未標（統計時往安全側算葷）
+  meal        String? // 午餐葷素："MEAT" 葷 / "VEG" 素 / "NONE" 不用餐 / null 未標（統計時往安全側算葷）
+  mealDinner  String? // 晚餐葷素，格式同 meal；只有 session.needsDinner 開啟的場次才會用到
   groupNo     Int? // 自動/手動分組結果；null = 未分組
   isStaff     Boolean       @default(false) // 工作人員：不列入分組與新舊生統計，但計入用餐葷素
+  noGroup     Boolean       @default(false) // 不參加分組：仍計入新舊生／用餐統計，但自動分組一律跳過、組別鎖在未分組
   // 新舊生人工覆寫：null = 依 product 是否含「複訓」自動判斷（預設）；
   // true/false = 管理員在後台改過，一律以此為準（訂單買錯方案、代訂、事後才知道是舊生）。
   // 判別入口統一走 session-roster.isRetrainSignup，勿在別處自行讀這兩個欄位。

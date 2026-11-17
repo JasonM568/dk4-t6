@@ -50,7 +50,8 @@ function parseSessionForm(formData: FormData) {
   if (endDate && eventDate && endDate < eventDate)
     return { error: "結束日不能早於開課日" as const };
   if (adminNote.length > 5_000) return { error: "場次備忘錄不可超過 5,000 字" as const };
-  return { title, eventDate, endDate, keywords, isVisible, adminNote: adminNote || null };
+  const needsDinner = formData.get("needsDinner") === "on"; // 加開晚餐調查，預設不開（只統計午餐）
+  return { title, eventDate, endDate, keywords, isVisible, adminNote: adminNote || null, needsDinner };
 }
 
 export async function createSessionAction(
@@ -145,7 +146,14 @@ export async function addSignupAction(
   const isStaff = type === "staff"; // 工作人員：不分組、不算新舊生，用餐要算
   const confirmOldStudent = formData.get("confirmOldStudent") === "on";
   const mealInput = String(formData.get("meal") ?? "");
-  const meal: Meal = mealInput === "VEG" ? "VEG" : "MEAT"; // 白名單，預設葷
+  const meal: Meal =
+    mealInput === "VEG" ? "VEG" : mealInput === "NONE" ? "NONE" : "MEAT"; // 白名單，預設葷
+  // 晚餐：只有場次開了 needsDinner 才會有這個欄位；沒送值就是 null（不適用），不強塞預設
+  const mealDinnerInput = String(formData.get("mealDinner") ?? "");
+  const mealDinner: Meal | null =
+    mealDinnerInput === "VEG" || mealDinnerInput === "MEAT" || mealDinnerInput === "NONE"
+      ? mealDinnerInput
+      : null;
   if (!name) return { error: "請填寫姓名" };
   if (email && !email.includes("@")) return { error: "Email 格式不正確" };
 
@@ -236,6 +244,7 @@ export async function addSignupAction(
         phone,
         product,
         meal,
+        mealDinner,
         isStaff,
         orderedAt: new Date(),
       },
@@ -346,7 +355,10 @@ export async function assignUnmatchedAction(
         orderedAt: orderedAt && !Number.isNaN(orderedAt.getTime()) ? orderedAt : null,
         // meal 經前端 JSON 來回，白名單收斂防竄改
         meal:
-          attendee.key === "buyer" && (r.meal === "VEG" || r.meal === "MEAT") ? r.meal : null,
+          attendee.key === "buyer" &&
+          (r.meal === "VEG" || r.meal === "MEAT" || r.meal === "NONE")
+            ? r.meal
+            : null,
       };
     });
   });
@@ -480,12 +492,23 @@ export async function setSignupTypeAction(id: string, type: "fresh" | "retrain" 
   revalidatePath("/board");
 }
 
-/** 逐人切換葷素（後台名單表格；匯入未標或同行者由這裡補） */
+/** 逐人切換午餐葷素（後台名單表格；匯入未標或同行者由這裡補） */
 export async function setSignupMealAction(id: string, meal: Meal | null) {
   await requireEditor();
-  const value = meal === "VEG" || meal === "MEAT" ? meal : null; // 白名單
+  const value = meal === "VEG" || meal === "MEAT" || meal === "NONE" ? meal : null; // 白名單
   await prisma.sessionSignup
     .update({ where: { id }, data: { meal: value } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
+/** 逐人切換晚餐葷素：只有場次開了「加開晚餐調查」才看得到這個欄位 */
+export async function setSignupMealDinnerAction(id: string, meal: Meal | null) {
+  await requireEditor();
+  const value = meal === "VEG" || meal === "MEAT" || meal === "NONE" ? meal : null; // 白名單
+  await prisma.sessionSignup
+    .update({ where: { id }, data: { mealDinner: value } })
     .catch(() => undefined);
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
@@ -517,8 +540,9 @@ export async function setGroupCapAction(sessionId: string, groupNo: number, cap:
 export async function setSignupGroupAction(id: string, groupNo: number | null) {
   await requireEditor();
   if (groupNo == null || !Number.isInteger(groupNo) || groupNo < 1) {
+    // 手動選回「未分組」也視為取消「不參加分組」——選了具體選項就是要回到可被分組的狀態
     await prisma.sessionSignup
-      .update({ where: { id }, data: { groupNo: null } })
+      .update({ where: { id }, data: { groupNo: null, noGroup: false } })
       .catch(() => undefined);
     revalidatePath("/admin/sessions");
     revalidatePath("/board");
@@ -537,17 +561,31 @@ export async function setSignupGroupAction(id: string, groupNo: number | null) {
     }),
     prisma.sessionSignup.findMany({
       where: { sessionId: signup.sessionId },
-      select: { deferredToSessionId: true, isStaff: true },
+      select: { deferredToSessionId: true, isStaff: true, noGroup: true },
     }),
   ]);
-  const activeCount = signups.filter((s) => !s.deferredToSessionId && !s.isStaff).length;
+  const activeCount = signups.filter((s) => !s.deferredToSessionId && !s.isStaff && !s.noGroup).length;
   const maxGroup = session
     ? groupCountFor(activeCount, session.groupCap, session.groupCaps, session.groupCountFixed)
     : 99;
   const value = groupNo <= maxGroup ? groupNo : null;
 
   await prisma.sessionSignup
-    .update({ where: { id }, data: { groupNo: value } })
+    .update({ where: { id }, data: { groupNo: value, noGroup: false } })
+    .catch(() => undefined);
+  revalidatePath("/admin/sessions");
+  revalidatePath("/board");
+}
+
+/** 逐人切換「不參加分組」：仍計入新舊生／用餐統計，但自動分組／補分組一律跳過
+ *  （主持人、提前離場等不需要併桌的人）。開啟時一併清掉既有組別。 */
+export async function setSignupNoGroupAction(id: string, noGroup: boolean) {
+  await requireEditor();
+  await prisma.sessionSignup
+    .update({
+      where: { id },
+      data: noGroup ? { noGroup: true, groupNo: null } : { noGroup: false },
+    })
     .catch(() => undefined);
   revalidatePath("/admin/sessions");
   revalidatePath("/board");
@@ -579,17 +617,17 @@ export async function autoGroupAction(
       where: { sessionId },
       select: {
         id: true, product: true, deferredToSessionId: true, orderedAt: true, createdAt: true,
-        groupNo: true, isStaff: true,
+        groupNo: true, isStaff: true, noGroup: true,
       },
     }),
   ]);
   const groupCaps = session?.groupCaps ?? [];
-  if (signups.every((s) => s.deferredToSessionId || s.isStaff))
+  if (signups.every((s) => s.deferredToSessionId || s.isStaff || s.noGroup))
     return { error: "沒有可分組的學員" };
 
   // 固定組數的兩道閘門：**先算清楚再動任何資料**，擋下時名單零變動。
   if (fixed !== null) {
-    const activeCount = signups.filter((s) => !s.deferredToSessionId && !s.isStaff).length;
+    const activeCount = signups.filter((s) => !s.deferredToSessionId && !s.isStaff && !s.noGroup).length;
     const capacity = groupCapacity(fixed, cap, groupCaps);
     if (capacity < activeCount)
       return {
@@ -622,9 +660,12 @@ export async function autoGroupAction(
     ...[...byGroup.entries()].map(([groupNo, ids]) =>
       prisma.sessionSignup.updateMany({ where: { id: { in: ids } }, data: { groupNo } }),
     ),
-    // 延出者與工作人員不佔組
+    // 延出者、工作人員、標「不參加分組」者都不佔組
     prisma.sessionSignup.updateMany({
-      where: { sessionId, OR: [{ deferredToSessionId: { not: null } }, { isStaff: true }] },
+      where: {
+        sessionId,
+        OR: [{ deferredToSessionId: { not: null } }, { isStaff: true }, { noGroup: true }],
+      },
       data: { groupNo: null },
     }),
   ]);
@@ -673,7 +714,9 @@ export async function deferSignupAction(
           amount: signup.amount,
           orderedAt: signup.orderedAt,
           meal: signup.meal,
+          mealDinner: signup.mealDinner,
           isStaff: signup.isStaff,
+          noGroup: signup.noGroup,
           groupNo: null,
           deferredFromSessionId: signup.sessionId,
         },
@@ -708,7 +751,7 @@ export async function undoDeferSignupAction(signupId: string): Promise<SessionFo
         attendeeKey: signup.attendeeKey,
       },
     },
-    select: { id: true, deferredToSessionId: true, meal: true, phone: true },
+    select: { id: true, deferredToSessionId: true, meal: true, mealDinner: true, phone: true },
   });
   if (targetRow?.deferredToSessionId)
     return { error: "對方場次那筆又再延期了，請先到該場次取消後續延期" };
@@ -721,7 +764,9 @@ export async function undoDeferSignupAction(signupId: string): Promise<SessionFo
         deferredToSessionId: null,
         // 延期期間在對方場次改過的葷素／手機要帶回來，否則人回到原場次、
         // 便當數卻還是延期前的舊值（原列在延出期間是唯讀的，改不到）
-        ...(targetRow ? { meal: targetRow.meal, phone: targetRow.phone } : {}),
+        ...(targetRow
+          ? { meal: targetRow.meal, mealDinner: targetRow.mealDinner, phone: targetRow.phone }
+          : {}),
       },
     }),
   ]);
